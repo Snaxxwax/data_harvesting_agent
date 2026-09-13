@@ -1,6 +1,6 @@
 # Architecture hypothesis and implementation
 
-Decision date: 2026-09-12. Implemented version: 0.1.0.
+Initial decision date: 2026-09-12. Revised 2026-09-13. Implemented version: 0.2.0.
 
 ## Runtime boundary
 
@@ -19,8 +19,10 @@ flowchart TD
   Operator["Objective and limits"] --> Jobs["Durable job and frontier"]
   Jobs --> Worker["Leased worker"]
   Worker --> Acquire["HTTP or search"]
-  Acquire --> Extract["Deterministic extraction"]
-  Extract --> Commit["Atomic evidence commit"]
+  Acquire --> Checkpoint["Capture and extraction task commit"]
+  Checkpoint --> Extract["Deterministic extraction"]
+  Extract --> Commit["Atomic assertion revision commit"]
+  Replay["Offline replay"] --> Extract
   Commit --> Model["Optional bounded reasoning"]
   Model --> Jobs
   Commit --> Jobs
@@ -51,9 +53,11 @@ requirements exceed this implementation. Do not claim the current Store is porta
 1. Claim a task in a transaction and issue a random lease token.
 2. Reserve each network request before dispatch; persist retry counts and budget usage.
 3. Acquire outside the transaction, subject to scope, robots, throttling and size checks.
-4. Parse with deterministic adapters; create observations and follow-up proposals.
-5. Commit the raw body, capture, observations, sightings, follow-up tasks, task completion,
-   and corresponding events in one transaction. An invalid or expired token rejects it.
+4. Commit raw body, capture, extraction task/revision, acquisition completion and events
+   in one transaction. If the frontier cap prevents extraction, retain evidence and report partial.
+5. A separately leased task parses the stored body. Commit observations, extraction
+   membership, sightings, follow-up tasks and extraction completion in a second transaction.
+   Invalid/expired tokens reject both boundaries. Parsing failures leave the capture intact.
 6. If a worker dies, its lease expires. Another worker reclaims the task up to the attempt
    limit. A heartbeat normally extends a lease every 15 seconds; default lease is 120s.
 
@@ -62,6 +66,12 @@ that the local worker never records as a capture. Database results are idempoten
 the task/observation keys. There is no claim of exactly-once external execution. Model
 calls have the same uncertain-outcome problem; reserved cost is not refunded on failure.
 
+This revises the original single-transaction hypothesis based on observed evidence loss;
+see [ADR 0002](docs/adr/0002-durable-acquisition-and-replay.md). A crash after the acquisition
+checkpoint requires re-extraction, not reacquisition. Offline replay jobs reference existing
+captures and create new assertion memberships, never fake retrieval timestamps. Replay
+uses deterministic adapters and does not enqueue leads or model work. It is not a plugin sandbox.
+
 `completed`, `partial`, `failed`, `cancelled`, `budget_exhausted`, and `plateau` are terminal.
 Job creation is idempotent only when the caller provides the same key and spec. Changing
 the spec under the same key is rejected. Reprocessing a terminal job requires a new job.
@@ -69,13 +79,16 @@ the spec under the same key is rejected. Reprocessing a terminal job requires a 
 ## Evidence and reconciliation
 
 Captured response representations (after bounded content decoding) are content-addressed BLOBs in SQLite for the milestone. This allows atomic
-evidence/result commits and coherent backups. Bounded responses keep individual writes
+evidence/checkpoint commits and coherent backups. Bounded responses keep individual writes
 manageable. This deliberately trades large-scale object storage efficiency for a smaller,
 testable failure surface. Object storage needs a staged-write protocol before adoption.
 
 Observations retain field, typed value, evidence, locator, method, extractor version,
 confidence and source URL. Sightings connect an observation to every capture where it was
-seen. Canonical read views use the latest capture from each source; disagreement produces
+seen. `extractions` and `assertions` distinguish interpretations of the same capture.
+Canonical read views use the latest usable extraction of each source's latest successfully
+interpreted retrieval; pending/failed newer attempts are surfaced as stale source states.
+A newer replay cannot make an older retrieval fresher than a later retrieval. Disagreement produces
 multiple candidates and an unset canonical value. This is neither voting nor truth scoring.
 
 ## Research controller

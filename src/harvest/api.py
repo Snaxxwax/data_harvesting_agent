@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from .config import Settings
 from .engine import Engine
-from .models import JobSpec
+from .models import JobSpec, ReplaySpec
 
 
 def create_app(settings: Settings | None = None):
@@ -24,7 +24,7 @@ def create_app(settings: Settings | None = None):
 
     app = FastAPI(
         title="Harvest Platform",
-        version="0.1.0",
+        version="0.2.0",
         description="Durable jobs, evidence and source observations. Run a separate harvest worker.",
         dependencies=[Depends(authenticate)],
     )
@@ -39,7 +39,7 @@ def create_app(settings: Settings | None = None):
     def health():
         with engine.store.connection() as db:
             db.execute("SELECT 1")
-        return {"status": "ok", "version": "0.1.0"}
+        return {"status": "ok", "version": "0.2.0"}
 
     @app.post("/jobs", status_code=202)
     def submit(spec: JobSpec, idempotency_key: str | None = Header(default=None, max_length=200)):
@@ -50,6 +50,30 @@ def create_app(settings: Settings | None = None):
                 status_code=409 if "idempotency" in str(exc) else 422, detail=str(exc)
             ) from exc
         return engine.store.job(job)
+
+    @app.post("/replays", status_code=202)
+    def replay(
+        spec: ReplaySpec, idempotency_key: str | None = Header(default=None, max_length=200)
+    ):
+        try:
+            job = engine.replay(spec, idempotency_key)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=409 if "idempotency" in str(exc) else 422, detail=str(exc)
+            ) from exc
+        return engine.store.job(job)
+
+    @app.get("/jobs/{job_id}/captures")
+    def job_captures(
+        job_id: str, after: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=1000)
+    ):
+        return engine.store.captures(job_id, after, limit)
+
+    @app.get("/jobs/{job_id}/extractions")
+    def extractions(
+        job_id: str, after: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=1000)
+    ):
+        return engine.store.extractions(job_id, after, limit)
 
     @app.get("/jobs")
     def jobs(limit: int = Query(100, ge=1, le=1000)):

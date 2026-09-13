@@ -1,0 +1,29 @@
+{
+  "verified_at": "2026-09-13",
+  "source_schema": 1,
+  "destination_schema": 2,
+  "original_unchanged": true,
+  "preserved": {
+    "counts": {"jobs": 3, "tasks": 3, "events": 12, "blobs": 2, "captures": 3, "entities": 2, "observations": 89, "sightings": 173, "schedules": 0},
+    "hashes": {
+      "captures": "0257cb569bba9619031c03e83b80e7e4630ef01e27475aec903ff38d64d2c8dd",
+      "observations": "252f67df85a709320f0458cb4ee9562de25ad33bd8546baf4c8c916268fef8d7",
+      "sightings": "08c91e40bfa225576954a5110166677dac6b529b90f85ecb67fb8b5f599fd48f",
+      "schedules": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "blobs": "63947f8833c82a723e4d01b2b2688c977c6a913a763ae3f04bba703eb845e36a"
+    }
+  },
+  "extractions": 3,
+  "assertions": 173,
+  "idempotency_keys_verified": 3,
+  "integrity_check": "ok",
+  "foreign_key_check": [],
+  "subsequent_offline_replay": {
+    "capture_id": 2,
+    "observations": 84,
+    "requests": 0,
+    "model_calls": 0,
+    "new_http_captures": 0,
+    "original_retrieval_preserved": true
+  }
+}

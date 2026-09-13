@@ -1,8 +1,8 @@
 # Data model
 
-Schema version 1 is in `src/harvest/store.py`. Unknown schema versions fail startup.
-Future schema changes must use explicit tested migrations; adding application code alone
-is not a migration strategy. Timestamps are UTC Unix seconds.
+Schema version 2 is in `src/harvest/store.py`. The immutable schema-1 bootstrap is followed
+by a transactional migration that backfills extraction membership for legacy captures and
+model sightings. Unknown versions fail startup. Timestamps are UTC Unix seconds.
 
 | Table | Purpose and important invariants |
 |---|---|
@@ -11,9 +11,11 @@ is not a migration strategy. Timestamps are UTC Unix seconds.
 | `events` | Append-only chronological audit of job decisions, captures, retries, budget reservations and limits |
 | `blobs` | SHA-256 addressed permitted response bytes; identical captures share one body |
 | `captures` | Unique task result, original/final URL, retrieval time/status/headers, raw hash, prior capture and changed flag |
+| `extractions` | One deterministic interpretation attempt per leased task; job, original capture, extractor, outcome and processing timestamps |
+| `assertions` | Observation membership in an extraction revision; optional reasoning adds assertions to that revision |
 | `entities` | Dataset-scoped deterministic identity key; no implicit fuzzy merge |
 | `observations` | Immutable source assertion, typed JSON value, evidence and extraction metadata |
-| `sightings` | Many-to-many link from observations to retrieval captures, enabling history and freshness |
+| `sightings` | Historical union of observation/capture support across interpretations; not the authoritative current-revision view |
 | `origin_state` | Shared per-origin next-request time across workers |
 | `robots` | Cached robots policy and expiry; failures are not cached as permission |
 | `schedules` | Durable refresh interval, next run, last job and enabled state |
@@ -33,7 +35,18 @@ An observation ID hashes entity, field, typed value, source URL, evidence, locat
 extractor version and extraction confidence. Rerunning identical extraction reuses the
 observation; a new sighting records its new capture time. Different values, evidence, or
 extraction versions remain separate. Raw body hash comparison emits a content change even
-when the structured values did not change.
+when the structured values did not change. Replay adds an extraction revision and memberships
+without duplicating captures or changing their retrieval times. Job results join through
+`assertions`, not capture ownership, so old job exports do not gain later replay assertions.
+`observations.extraction_ids` in API/JSONL output identifies supporting revisions.
+
+Extraction outcome is `complete` or `partial` after a successful deterministic commit;
+pending/running/failed/blocked/cancelled state comes from its owning task. Reasoning has its
+own task state and shares the deterministic revision. Capture `extractor` is a legacy field:
+new source captures use `acquisition/1`; consult extraction records for actual parser versions.
+Jobs distinguish `execution=online` from `offline_replay`. `captures` counts new acquisitions;
+`evidence_captures` also counts captures referenced by replay. `extraction_progress` reports
+interpretation states. Replay IDs and network prohibition are recorded in `replay_created`.
 
 Evidence locators are JSON Pointers for JSON, row/field locators for CSV, CSS/script
 locations for HTML/JSON-LD, and offsets in normalized text for model extraction. The full
@@ -43,7 +56,12 @@ retained. Extractor versioning is required whenever that behavior changes.
 
 ## Current value view
 
-For a given entity and field, select observations sighted in each source's latest capture.
+For a given entity and field, select assertions in each source's latest usable extraction,
+ordered by capture retrieval time, capture ID, then extraction ID. `complete` and `partial`
+interpretations are usable; partial means known omissions, not full coverage. Pending/failed
+attempts cannot silently replace successful values. `source_states` and candidate `stale`
+flags disclose newer attempts not represented in those values. This is extraction staleness,
+not an age-based freshness SLA or evidence that an unreachable source remains current.
 If these have one distinct typed value, expose it with all supporting candidate references.
 If values differ, set `conflict=true` and `value=null`, retaining every candidate. Absent
 fields are unknown, not empty or false. Old captures remain queryable through their

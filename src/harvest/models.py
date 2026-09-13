@@ -23,7 +23,7 @@ def canonical_url(value: str) -> str:
 
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False, validate_default=True)
 
 
 class Limits(StrictModel):
@@ -39,6 +39,18 @@ class Limits(StrictModel):
     cost_usd: float = Field(default=2, ge=0, le=1000)
     no_gain_pages: int = Field(default=8, ge=1, le=1000)
     domain_delay: float = Field(default=1, ge=0.1, le=120)
+
+
+class ReplaySpec(StrictModel):
+    capture_ids: list[int] = Field(min_length=1, max_length=100)
+    limits: Limits = Field(default_factory=Limits)
+
+    @field_validator("capture_ids", mode="before")
+    @classmethod
+    def positive_ids(cls, values):
+        if not isinstance(values, list) or any(type(v) is not int or v < 1 for v in values):
+            raise ValueError("capture IDs must be positive integers")
+        return values
 
 
 class JobSpec(StrictModel):

@@ -1,4 +1,21 @@
-# Validation record — 2026-09-12
+# Validation record
+
+## 0.2 — 2026-09-13
+
+See [four-mode before/after results](validation/v02-workloads.md),
+[upgrade report](validation/v02-upgrade.json), and the current
+[test summary](validation/test-summary.json). The 0.1 public acquisition evidence below
+is retained as history, not presented as fresh 0.2 network results.
+
+The actual 0.1 acceptance database was backed up and migrated: 89 observations, 173
+sightings, all three captures and idempotency keys were preserved; integrity and foreign-key
+checks passed. Original schema-1 data was not modified. A fresh public-source check in this
+session timed out after three attempts, receiving zero bytes. It is not counted as a pass.
+Owned-source HTTP workloads and offline replay verification do not require public egress.
+
+The published 0.1 [GitHub CI run](https://github.com/Snaxxwax/data_harvesting_agent/actions/runs/34735441601)
+passed tests, distribution builds and Docker build (checked 2026-09-13). This does not
+establish Compose runtime behavior, deployment, or the conclusion of later commits.
 
 ## Public acquisition
 
@@ -34,16 +51,16 @@ supported migration path is adopted. They are not suppressed in the suite.
 
 ## What this does not establish
 
-- The Docker image/Compose stack was not executed because Docker is unavailable here.
-  CI is prepared to build the image once the repository is on GitHub.
+- The Compose stack was not executed because Docker is unavailable here. The 0.1 Docker
+  image build subsequently passed in GitHub CI; see the dated update above.
 - No live LLM or live SearXNG instance was configured. Model/search contracts were exercised
   against actual local HTTP endpoints with controlled responses; research quality remains
   unbenchmarked. No model charges were incurred.
 - No prolonged production soak, throughput study, full disk failure experiment, multi-host
   deployment, or comprehensive security/dependency audit has been performed.
-- GitHub repository creation/push is blocked by missing creation capability in the connected
-  integration. A local Git repository and transfer bundle are prepared. No remote repository
-  or deployed service is claimed.
+- The initial GitHub publication blocker was resolved. The canonical repository is
+  [Snaxxwax/data_harvesting_agent](https://github.com/Snaxxwax/data_harvesting_agent).
+  Publishing the repository does not deploy a service.
 
 ## Corrections driven by verification
 

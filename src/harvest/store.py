@@ -76,7 +76,6 @@ CREATE TABLE IF NOT EXISTS schedules (
  id TEXT PRIMARY KEY, spec TEXT NOT NULL, interval INTEGER NOT NULL, next_run REAL NOT NULL,
  last_job TEXT REFERENCES jobs(id), enabled INTEGER NOT NULL DEFAULT 1
 );
-PRAGMA user_version=1;
 """
 
 
@@ -88,11 +87,91 @@ class Store:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1):
+            if version not in (0, 1, 2):
                 raise RuntimeError(f"unsupported database version {version}")
             # Rollback journal deliberately avoids old SQLite WAL-reset affected releases.
             db.execute("PRAGMA journal_mode=DELETE")
             db.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self):
+        """Schema 1 -> 2, including existing evidence and in-flight reason tasks."""
+        with self.transaction() as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] == 2:
+                return
+            db.execute("ALTER TABLE jobs ADD COLUMN execution TEXT NOT NULL DEFAULT 'online'")
+            db.execute("""CREATE TABLE extractions (
+                id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL UNIQUE REFERENCES tasks(id),
+                job_id TEXT NOT NULL REFERENCES jobs(id), capture_id INTEGER NOT NULL REFERENCES captures(id),
+                extractor TEXT, outcome TEXT, created REAL NOT NULL, finished REAL
+            )""")
+            db.execute("CREATE INDEX extraction_capture ON extractions(capture_id,id)")
+            db.execute("CREATE INDEX extraction_job ON extractions(job_id,id)")
+            db.execute("""CREATE TABLE assertions (
+                extraction_id INTEGER NOT NULL REFERENCES extractions(id),
+                observation_id TEXT NOT NULL REFERENCES observations(id),
+                PRIMARY KEY(extraction_id,observation_id)
+            )""")
+            # 0.1 committed retrieval, deterministic extraction and observations together.
+            # Model sightings belong to the same analysis revision as their parent capture.
+            db.execute("""INSERT INTO extractions(task_id,job_id,capture_id,extractor,outcome,created,finished)
+                SELECT c.task_id,c.job_id,c.id,c.extractor,
+                  CASE WHEN EXISTS(SELECT 1 FROM events e WHERE e.job_id=c.job_id
+                    AND e.type='extraction_limit' AND json_extract(e.details,'$.task')=c.task_id)
+                  THEN 'partial' ELSE 'complete' END,c.retrieved,c.retrieved
+                FROM captures c JOIN tasks t ON t.id=c.task_id WHERE t.kind='fetch'""")
+            db.execute("""INSERT INTO assertions
+                SELECT x.id,s.observation_id FROM sightings s
+                JOIN extractions x ON x.capture_id=s.capture_id""")
+            db.execute("PRAGMA user_version=2")
+
+    def replay(self, request, key=None):
+        """Create an offline revision, never a new retrieval or a refresh schedule."""
+        ids = sorted(set(request.capture_ids))
+        with self.transaction() as db:
+            captures = []
+            for capture_id in ids:
+                row = db.execute(
+                    """SELECT c.*,t.kind,j.spec FROM captures c
+                    JOIN tasks t ON t.id=c.task_id JOIN jobs j ON j.id=c.job_id WHERE c.id=?""",
+                    (capture_id,),
+                ).fetchone()
+                if not row:
+                    raise KeyError(capture_id)
+                if row["kind"] != "fetch":
+                    raise ValueError("replay accepts source captures, not search-service responses")
+                captures.append(row)
+            if len({c["dataset"] for c in captures}) != 1:
+                raise ValueError("replay captures must belong to one dataset")
+            if len(ids) > request.limits.tasks:
+                raise ValueError("task budget must cover every selected capture")
+            spec = JobSpec(
+                objective="Offline re-extraction of captured evidence",
+                dataset=captures[0]["dataset"],
+                fields=JobSpec.model_validate_json(captures[0]["spec"]).fields,
+                limits=request.limits,
+            )
+            fingerprint = digest(packed({"spec": spec.model_dump(), "capture_ids": ids}))
+            if key:
+                old = db.execute(
+                    "SELECT id,spec_hash,spec,execution FROM jobs WHERE idempotency_key=?", (key,)
+                ).fetchone()
+                if old:
+                    if old["spec_hash"] != fingerprint:
+                        raise ValueError(
+                            "idempotency key already belongs to a different replay specification"
+                        )
+                    return old["id"]
+            initial = [
+                {"kind": "extract", "key": str(i), "payload": {"capture_id": i}} for i in ids
+            ]
+            job = self._create(db, spec, initial, key)
+            db.execute(
+                "UPDATE jobs SET execution='offline_replay',spec_hash=? WHERE id=?",
+                (fingerprint, job),
+            )
+            self.event(db, job, "replay_created", {"capture_ids": ids, "network_allowed": False})
+            return job
 
     @contextmanager
     def connection(self):
@@ -130,10 +209,13 @@ class Store:
         with self.transaction() as db:
             if key:
                 old = db.execute(
-                    "SELECT id,spec_hash FROM jobs WHERE idempotency_key=?", (key,)
+                    "SELECT id,spec_hash,spec,execution FROM jobs WHERE idempotency_key=?", (key,)
                 ).fetchone()
                 if old:
-                    if old["spec_hash"] != digest(spec_json):
+                    if old["spec_hash"] != digest(spec_json) and (
+                        old["execution"] != "online"
+                        or JobSpec.model_validate_json(old["spec"]) != spec
+                    ):
                         raise ValueError(
                             "idempotency key already belongs to a different job specification"
                         )
@@ -181,6 +263,16 @@ class Store:
                 task.get("reason", "seed"),
             ),
         )
+        if cur.rowcount and task["kind"] == "extract":
+            capture_id = task["payload"]["capture_id"]
+            cap = db.execute("SELECT dataset FROM captures WHERE id=?", (capture_id,)).fetchone()
+            if cap is None or cap["dataset"] != spec.dataset:
+                raise ValueError("extraction capture is missing or outside the dataset")
+            db.execute(
+                """INSERT INTO extractions(task_id,job_id,capture_id,created)
+                VALUES(?,?,?,?)""",
+                (cur.lastrowid, job, capture_id, time.time()),
+            )
         return bool(cur.rowcount)
 
     @staticmethod
@@ -214,7 +306,7 @@ class Store:
                     db, task["job_id"], "lease_expired", {"task": task["id"], "status": status}
                 )
             row = db.execute(
-                """SELECT t.*,j.spec FROM tasks t JOIN jobs j ON j.id=t.job_id
+                """SELECT t.*,j.spec,j.execution FROM tasks t JOIN jobs j ON j.id=t.job_id
                 WHERE t.status='pending' AND t.ready<=? AND j.status IN ('queued','running')
                 AND (? IS NULL OR j.id=?)
                 AND NOT EXISTS(SELECT 1 FROM tasks r WHERE r.job_id=j.id AND r.status='running')
@@ -332,6 +424,7 @@ class Store:
             job = self.owned(db, task)
             spec = JobSpec.model_validate_json(job["spec"])
             novel = 0
+            extraction_id = None
             changed = False
             if response is not None:
                 body_hash = digest(response.body)
@@ -355,7 +448,9 @@ class Store:
                         body_hash,
                         old["id"] if old else None,
                         int(changed),
-                        extraction.extractor if extraction else "discovery/1",
+                        extraction.extractor
+                        if extraction
+                        else ("acquisition/1" if task["kind"] == "fetch" else "discovery/1"),
                         spec.dataset,
                     ),
                 ).lastrowid
@@ -370,11 +465,25 @@ class Store:
                     self.event(
                         db, job["id"], "extraction_limit", {"task": task["id"], "reason": warning}
                     )
-                cap = db.execute(
-                    "SELECT * FROM captures WHERE id=? AND job_id=?", (capture_id, job["id"])
-                ).fetchone()
-                if not cap:
-                    raise ValueError("capture is not part of job")
+                cap = db.execute("SELECT * FROM captures WHERE id=?", (capture_id,)).fetchone()
+                if task["kind"] == "reason":
+                    revision = db.execute(
+                        """SELECT * FROM extractions WHERE job_id=? AND capture_id=?
+                        AND (? IS NULL OR id=?) ORDER BY id DESC LIMIT 1""",
+                        (
+                            job["id"],
+                            capture_id,
+                            task["payload"].get("extraction_id"),
+                            task["payload"].get("extraction_id"),
+                        ),
+                    ).fetchone()
+                else:
+                    revision = db.execute(
+                        "SELECT * FROM extractions WHERE task_id=?", (task["id"],)
+                    ).fetchone()
+                if not cap or not revision or revision["capture_id"] != capture_id:
+                    raise ValueError("capture is not assigned to this extraction task")
+                extraction_id = revision["id"]
                 for claim in extraction.claims:
                     entity = digest(packed([spec.dataset, claim.entity_key]))
                     db.execute(
@@ -415,17 +524,43 @@ class Store:
                     db.execute(
                         "INSERT OR IGNORE INTO sightings VALUES(?,?)", (observation, capture_id)
                     )
+                    db.execute(
+                        "INSERT OR IGNORE INTO assertions VALUES(?,?)", (extraction_id, observation)
+                    )
+                if task["kind"] == "extract":
+                    db.execute(
+                        "UPDATE extractions SET extractor=?,outcome=?,finished=? WHERE id=?",
+                        (
+                            extraction.extractor,
+                            "partial" if extraction.warnings else "complete",
+                            time.time(),
+                            extraction_id,
+                        ),
+                    )
+                    self.event(
+                        db,
+                        job["id"],
+                        "extracted",
+                        {
+                            "extraction": extraction_id,
+                            "capture": capture_id,
+                            "extractor": extraction.extractor,
+                            "claims": len(extraction.claims),
+                        },
+                    )
             for lead in leads:
                 item = {**lead, "parent": task["id"]}
-                if item.get("kind") == "reason" and capture_id is not None:
+                if item.get("kind") in {"extract", "reason"} and capture_id is not None:
                     item["payload"] = {"capture_id": capture_id}
                     item["key"] = str(capture_id)
+                    if item["kind"] == "reason":
+                        item["payload"]["extraction_id"] = extraction_id
                 self.enqueue(db, job["id"], item, spec)
             db.execute(
                 "UPDATE tasks SET status='done',token=NULL,lease_until=NULL,error=NULL WHERE id=?",
                 (task["id"],),
             )
-            if task["kind"] == "fetch":
+            if task["kind"] == "extract":
                 db.execute(
                     "UPDATE jobs SET no_gain=CASE WHEN ? > 0 THEN 0 ELSE no_gain+1 END WHERE id=?",
                     (novel, job["id"]),
@@ -519,11 +654,24 @@ class Store:
             result["captures"] = db.execute(
                 "SELECT count(*) FROM captures WHERE job_id=?", (job_id,)
             ).fetchone()[0]
+            result["evidence_captures"] = db.execute(
+                """SELECT count(*) FROM (
+                SELECT id FROM captures WHERE job_id=? UNION SELECT capture_id FROM extractions WHERE job_id=?)""",
+                (job_id, job_id),
+            ).fetchone()[0]
+            result["extraction_progress"] = dict(
+                db.execute(
+                    """SELECT
+                CASE WHEN t.status='done' THEN x.outcome ELSE t.status END state,count(*)
+                FROM extractions x JOIN tasks t ON t.id=x.task_id WHERE x.job_id=? GROUP BY state""",
+                    (job_id,),
+                ).fetchall()
+            )
             result["cost_reserved_usd"] = result["cost_microusd"] / 1_000_000
             fields = {
                 r[0]
                 for r in db.execute(
-                    "SELECT DISTINCT o.field FROM observations o JOIN sightings s ON s.observation_id=o.id JOIN captures c ON c.id=s.capture_id WHERE c.job_id=?",
+                    "SELECT DISTINCT o.field FROM observations o JOIN assertions a ON a.observation_id=o.id JOIN extractions x ON x.id=a.extraction_id WHERE x.job_id=?",
                     (job_id,),
                 )
             }
@@ -564,14 +712,43 @@ class Store:
                 raise KeyError(capture_id)
             return dict(row)
 
+    def captures(self, job_id, after=0, limit=100):
+        self.job(job_id)
+        with self.connection() as db:
+            return [
+                dict(r)
+                for r in db.execute(
+                    """SELECT c.* FROM captures c WHERE c.id>?
+                AND (c.job_id=? OR EXISTS(SELECT 1 FROM extractions x WHERE x.capture_id=c.id AND x.job_id=?))
+                ORDER BY c.id LIMIT ?""",
+                    (after, job_id, job_id, limit),
+                )
+            ]
+
+    def extractions(self, job_id, after=0, limit=100):
+        self.job(job_id)
+        with self.connection() as db:
+            return [
+                dict(r)
+                for r in db.execute(
+                    """SELECT x.*,t.error,
+                CASE WHEN t.status='done' THEN x.outcome ELSE t.status END status,
+                (SELECT count(*) FROM assertions a WHERE a.extraction_id=x.id) observations
+                FROM extractions x JOIN tasks t ON t.id=x.task_id
+                WHERE x.job_id=? AND x.id>? ORDER BY x.id LIMIT ?""",
+                    (job_id, after, limit),
+                )
+            ]
+
     def observations(self, job_id, after="", limit=100):
         self.job(job_id)
         with self.connection() as db:
             rows = db.execute(
                 """SELECT o.*,e.entity_key,max(c.retrieved) last_seen,
-                  group_concat(DISTINCT c.id) capture_ids FROM observations o
-                  JOIN entities e ON e.id=o.entity_id JOIN sightings s ON s.observation_id=o.id
-                  JOIN captures c ON c.id=s.capture_id WHERE c.job_id=? AND o.id>?
+                  group_concat(DISTINCT c.id) capture_ids,group_concat(DISTINCT x.id) extraction_ids FROM observations o
+                  JOIN entities e ON e.id=o.entity_id JOIN assertions a ON a.observation_id=o.id
+                  JOIN extractions x ON x.id=a.extraction_id
+                  JOIN captures c ON c.id=x.capture_id WHERE x.job_id=? AND o.id>?
                   GROUP BY o.id ORDER BY o.id LIMIT ?""",
                 (job_id, after, limit),
             ).fetchall()
@@ -580,12 +757,13 @@ class Store:
                     **dict(r),
                     "value": json.loads(r["value"]),
                     "capture_ids": [int(x) for x in r["capture_ids"].split(",")],
+                    "extraction_ids": [int(x) for x in r["extraction_ids"].split(",")],
                 }
                 for r in rows
             ]
 
     def canonical(self, dataset: str, after="", limit=100):
-        """Latest source captures; disagreement is returned rather than overwritten."""
+        """Latest usable analysis per source, with newer unsuccessful attempts disclosed."""
         with self.connection() as db:
             entities = db.execute(
                 "SELECT * FROM entities WHERE dataset=? AND id>? ORDER BY id LIMIT ?",
@@ -594,14 +772,33 @@ class Store:
             results = []
             for entity in entities:
                 rows = db.execute(
-                    """SELECT DISTINCT o.*,c.retrieved,c.id capture_id FROM observations o
-                    JOIN sightings s ON s.observation_id=o.id JOIN captures c ON c.id=s.capture_id
-                    WHERE o.entity_id=? AND c.id=(SELECT c2.id FROM captures c2
-                      WHERE c2.dataset=c.dataset AND c2.url=c.url ORDER BY c2.retrieved DESC,c2.id DESC LIMIT 1) ORDER BY o.field,c.retrieved DESC""",
+                    """SELECT DISTINCT o.*,c.retrieved,c.id capture_id,x.id extraction_id FROM observations o
+                    JOIN assertions a ON a.observation_id=o.id JOIN extractions x ON x.id=a.extraction_id
+                    JOIN captures c ON c.id=x.capture_id
+                    WHERE o.entity_id=? AND x.id=(SELECT x2.id FROM extractions x2
+                      JOIN captures c2 ON c2.id=x2.capture_id
+                      WHERE c2.dataset=c.dataset AND c2.url=c.url AND x2.outcome IN ('complete','partial')
+                      ORDER BY c2.retrieved DESC,c2.id DESC,x2.id DESC LIMIT 1) ORDER BY o.field,c.retrieved DESC""",
                     (entity["id"],),
                 ).fetchall()
                 fields = {}
+                source_states = {}
                 for r in rows:
+                    if r["source_url"] not in source_states:
+                        latest = db.execute(
+                            """SELECT c.id capture_id,c.retrieved,x.id extraction_id,
+                            CASE WHEN t.status='done' THEN x.outcome ELSE coalesce(t.status,'not_scheduled') END status
+                            FROM captures c LEFT JOIN extractions x ON x.capture_id=c.id
+                            LEFT JOIN tasks t ON t.id=x.task_id WHERE c.dataset=? AND c.url=?
+                            ORDER BY c.retrieved DESC,c.id DESC,x.id DESC LIMIT 1""",
+                            (dataset, r["source_url"]),
+                        ).fetchone()
+                        source_states[r["source_url"]] = {
+                            "source_url": r["source_url"],
+                            **dict(latest),
+                            "stale": latest["capture_id"] != r["capture_id"]
+                            or latest["extraction_id"] != r["extraction_id"],
+                        }
                     field = fields.setdefault(
                         r["field"], {"value": None, "conflict": False, "candidates": []}
                     )
@@ -611,6 +808,8 @@ class Store:
                             "observation_id": r["id"],
                             "source_url": r["source_url"],
                             "capture_id": r["capture_id"],
+                            "extraction_id": r["extraction_id"],
+                            "stale": source_states[r["source_url"]]["stale"],
                             "retrieved": r["retrieved"],
                             "extraction_confidence": r["confidence"],
                         }
@@ -619,7 +818,13 @@ class Store:
                     unique = {packed(x["value"]) for x in field["candidates"]}
                     field["conflict"] = len(unique) > 1
                     field["value"] = field["candidates"][0]["value"] if len(unique) == 1 else None
-                results.append({**dict(entity), "fields": fields})
+                results.append(
+                    {
+                        **dict(entity),
+                        "fields": fields,
+                        "source_states": list(source_states.values()),
+                    }
+                )
             return results
 
     def schedule_tick(self):

@@ -2,6 +2,10 @@
 
 Status: accepted for the first single-host milestone; revisit after measured workload limits.
 
+2026-09-13: acquisition/extraction coupling is superseded by [ADR 0002](0002-durable-acquisition-and-replay.md)
+after four-mode workloads demonstrated loss of already-acquired malformed/unsupported
+evidence. Leases, transactionally acknowledged domain work and atomic assertion commits remain.
+
 The essential failure case is a worker dying between acquiring evidence, storing assertions,
 adding leads and acknowledging work. An independently committed crawler queue requires
 another recovery protocol around those writes. Inspected Huey/Crawlee source made that

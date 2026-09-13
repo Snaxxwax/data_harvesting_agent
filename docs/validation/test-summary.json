@@ -1,14 +1,18 @@
 {
-  "tests": "39",
+  "version": "0.2.0",
+  "tests": "61",
   "failures": "0",
   "errors": "0",
   "skipped": "0",
-  "time": "17.972",
-  "timestamp": "2026-09-12T18:59:39.665755-05:00",
+  "time": "31.94",
+  "verified_date": "2026-09-13",
   "lint": "passed",
   "format": "passed",
   "wheel_build": "passed",
   "sdist_build": "passed",
-  "docker_execution": "unavailable",
-  "provider_integration": "local HTTP fixtures; no live model"
+  "docker_execution": "unavailable locally; 0.1 Docker build passed in GitHub CI",
+  "provider_integration": "local HTTP fixtures; no live model",
+  "schema_1_real_database_upgrade": "passed on a new backup; original unchanged",
+  "historical_public_capture_offline_replay": "84 observations; zero requests",
+  "fresh_public_network_run": "failed: three timed-out attempts, zero bytes; not counted as a pass"
 }

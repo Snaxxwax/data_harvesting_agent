@@ -5,8 +5,9 @@
 One host, local filesystem, trusted operator. SQLite is not supported on NFS/SMB or a
 shared multi-host volume. The API and workers must use the same database. Docker Compose
 provides a loopback-bound API, worker, local named volume, restart policy and log rotation.
-Docker runtime validation remains a deployment gate; only Python execution was available
-during development. The base image and GitHub Actions major tags are not digest-pinned.
+Docker runtime validation remains a deployment gate; local Docker execution is unavailable.
+The published 0.1 Docker image build passed in GitHub CI, but Compose was not smoke-tested.
+The base image and GitHub Actions major tags are not digest-pinned.
 
 ## Configuration
 
@@ -63,7 +64,7 @@ are not estimated by this ledger.
 ## Status and inspection
 
 `GET /jobs/{id}` returns counts, reserved resources, captures, missing requested fields and
-status. `/events`, `/tasks`, `/observations`, and `/datasets/{name}/entities` provide bounded
+status. `/events`, `/tasks`, `/captures`, `/extractions`, `/observations`, and `/datasets/{name}/entities` provide bounded
 pages. Events use an integer `after` cursor; observations/entities use the last record ID.
 `/captures/{id}` provides metadata and `/captures/{id}/body` downloads inert evidence bytes.
 `/jobs/{id}/export` streams JSONL. Export a terminal job for a stable complete snapshot;
@@ -75,9 +76,23 @@ The worker executes due schedules after restart, without overlapping active gene
 
 Failure categories are durable. Policy blocks do not retry. Transient HTTP/network errors
 retry with backoff and jitter, honoring Retry-After for affected origins. Invalid adapter
-output fails the task while other work may continue. Source response bodies are committed
-only after valid extraction; malformed/unsupported extraction failures currently retain
-failure metadata, not a raw capture. A budget stop retains all previously committed evidence.
+output fails extraction while other work may continue. Successful permitted source responses
+(HTTP 200 or reused 304) are checkpointed before parsing. Malformed/unsupported bodies survive
+with a failed extraction record. Rejected oversized bodies, failed HTTP requests and invalid
+search-service responses are not guaranteed captures. A budget stop retains prior checkpoints.
+
+Use `harvest replay CAPTURE_ID... --key KEY` after installing an improved adapter, or submit
+`POST /replays` with `capture_ids` and optional `limits`. Replay accepts up to 100 source
+captures from one dataset, not search responses. CLI `--submit-only` queues for workers.
+Replay has zero acquisition/model cost counters; task/time/attempt limits still apply.
+Stored-body reads are not billed as network bytes. Internal extraction tasks also count
+toward the ordinary task frontier. If that cap prevents extraction, find the retained body
+through `/jobs/{id}/captures` and replay it with a sufficient task budget.
+
+Replay always uses currently installed deterministic adapters. It does not repair malformed
+JSON automatically and does not regenerate model claims. Prior model assertions remain in
+the old revision. Review revised results before downstream use; a successful new interpretation
+is eligible for the current view even when it omits fields. There is no revision-approval UI.
 
 ## Backup and upgrades
 
@@ -89,7 +104,12 @@ Keep backups off the service disk and monitor free space. No retention policy or
 pruning is installed; continuous jobs can grow the database indefinitely.
 
 Run `uv sync --frozen` for upgrades from an reviewed commit. Validate database migrations
-against a restored copy first. This release only recognizes schema version 1. Package
+against a restored copy first. Stop all old API/worker processes before upgrading; mixed-version
+operation is unsupported. This release migrates schema 1 to 2 automatically and transactionally;
+legacy raw evidence, observation IDs, sightings, keys and schedules are preserved. Use
+`uv run python scripts/verify_upgrade.py OLD_DB NEW_COPY` to exercise migration on a new copy
+without modifying OLD_DB. Roll back by restoring the pre-upgrade backup and old code together;
+there is no down-migration. Package
 updates require rerunning the recovery and provider contract tests; a lockfile does not
 replace supply-chain review.
 

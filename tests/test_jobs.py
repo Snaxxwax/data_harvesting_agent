@@ -109,7 +109,8 @@ def test_partial_failure_does_not_discard_success(engine, source):
     job_spec.seeds.append(source["base"] + "/bad")
     result = engine.run(engine.submit(job_spec))
     assert result["status"] == "partial"
-    assert result["captures"] == 1
+    assert result["captures"] == 2  # Malformed evidence survives; only extraction fails.
+    assert result["extraction_progress"] == {"complete": 1, "failed": 1}
 
 
 def test_retry_recovers_503(engine, source):
@@ -137,6 +138,7 @@ def test_stale_worker_cannot_commit_after_reclaim(engine, source):
     with pytest.raises(LostLease):
         engine.store.finish(first)
     engine.process(second)
+    engine.run(job)  # Acquisition now checkpoints a separate extraction task.
     engine.store.settle(job)
     assert engine.store.job(job)["status"] == "completed"
 
@@ -159,23 +161,30 @@ def test_two_workers_never_claim_same_job_concurrently(engine, source):
     assert sum(t is not None for t in tasks) == 1
 
 
-def test_atomic_commit_failure_rolls_back_capture_and_observations(engine, source):
+def test_atomic_extraction_failure_preserves_checkpoint_and_rolls_back_results(engine, source):
     job = engine.submit(spec(source, "/page2"))
     task = engine.store.claim(job)
+    engine.process(task)
+    task = engine.store.claim(job)
+    assert task["kind"] == "extract"
+    requests = len(source["requests"])
     with engine.store.connection() as db:
         db.execute(
             "CREATE TRIGGER simulate_disk_failure BEFORE INSERT ON observations BEGIN SELECT RAISE(ABORT,'fault injection'); END"
         )
     with pytest.raises(sqlite3.IntegrityError, match="fault injection"):
         engine.process(task)
-    assert table_count(engine.store, "captures") == 0
-    assert table_count(engine.store, "blobs") == 0
+    assert table_count(engine.store, "captures") == 1
+    assert table_count(engine.store, "blobs") == 1
     assert table_count(engine.store, "observations") == 0
+    assert table_count(engine.store, "assertions") == 0
+    assert engine.store.extractions(job)[0]["outcome"] is None
     with engine.store.transaction() as db:
         db.execute("DROP TRIGGER simulate_disk_failure")
         db.execute("UPDATE tasks SET lease_until=0 WHERE id=?", (task["id"],))
     restarted = Engine(engine.settings)
     assert restarted.run(job)["status"] == "completed"
+    assert len(source["requests"]) == requests
 
 
 def test_continuous_schedule_is_durable_and_does_not_overlap(engine, source):

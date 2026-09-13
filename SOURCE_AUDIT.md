@@ -66,3 +66,18 @@ distributed brokers add no present requirement and are deferred.
    now emit visible warnings and produce a partial status.
 5. Deferred-retry tests exposed deadline handling outside ready work; the worker now expires
    elapsed jobs even while no task is eligible.
+
+## 0.2 re-evaluation — 2026-09-13
+
+Four-mode HTTP workloads showed that point 1 above coupled durability too tightly to
+successful parsing. Already-downloaded malformed/unsupported bodies were lost. The
+revised design checkpoints acquisition and extraction work first, then commits assertions
+atomically with extraction completion. See [ADR 0002](docs/adr/0002-durable-acquisition-and-replay.md).
+
+Re-inspected [dlt production retry behavior](https://dlthub.com/docs/running-in-production/running),
+[Scrapy response caching](https://docs.scrapy.org/en/latest/topics/downloader-middleware.html#module-scrapy.downloadermiddlewares.httpcache),
+and [warcio capture code](https://github.com/webrecorder/warcio/blob/master/warcio/capture_http.py).
+dlt's pending-data processing informed staged durability. Scrapy caching alone does not
+provide this platform's interpretation/job lineage. warcio's `http.client` interception
+would not directly cover the policy-pinned HTTPX transport. WARC interchange remains a
+possible future adapter. No new dependency or service was needed for the selected milestone.

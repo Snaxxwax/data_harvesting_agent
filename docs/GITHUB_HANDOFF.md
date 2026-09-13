@@ -1,25 +1,21 @@
 # Repository handoff
 
-The authenticated GitHub account is `Snaxxwax`. The currently exposed GitHub connector
-supports file/branch/commit writes to existing repositories but does not expose repository
-creation. No CLI credential is available in this workspace. This is a capability limitation,
-not a permission request or an automatic approval rejection.
+The canonical repository is
+[Snaxxwax/data_harvesting_agent](https://github.com/Snaxxwax/data_harvesting_agent).
+The 0.1 implementation was published in commit `d66f3d33f5926ac50e277df8df83200eda7fedfd`.
+The initial inability to create a repository is resolved; old transfer archives describe
+0.1 and are not the source of truth for later work.
 
-Create an empty private repository named `harvest-platform` (or choose another name).
-Avoid initializing it with README/license/gitignore because this project already has them.
-Once its URL is available, the prepared local Git history can be pushed and the included
-GitHub Actions workflow can verify the build, including the Docker image.
-
-If transferring the downloadable Git bundle to another machine:
+Clone with your normally configured GitHub authentication:
 
 ```bash
-git clone harvest-platform.bundle harvest-platform
-cd harvest-platform
-git remote remove origin
-git remote add origin git@github.com:Snaxxwax/harvest-platform.git
-git push -u origin main
+git clone https://github.com/Snaxxwax/data_harvesting_agent.git
+cd data_harvesting_agent
+uv sync --frozen
+uv run pytest -q
 ```
 
-The source ZIP is also usable as a normal source checkout. Run `uv sync --frozen` and the
-commands in README. Neither archive includes secrets, runtime databases, virtual
-environments or the failed intermediate network experiments.
+Changes are published with the existing branch head as parent and without forced updates.
+The GitHub Actions workflow tests, builds distributions, and builds the Docker image.
+Inspect its actual conclusion before deployment; a commit does not imply successful CI
+or a running service. Runtime databases, local environments and credentials are not committed.

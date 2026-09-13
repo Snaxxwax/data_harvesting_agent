@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .config import Settings
 from .engine import Engine
-from .models import JobSpec
+from .models import JobSpec, ReplaySpec
 
 
 def export(engine, job_id, path):
@@ -49,8 +49,14 @@ def main():
     command.add_argument("--key")
     command = commands.add_parser("worker")
     command.add_argument("--once", action="store_true")
-    for name in ("status", "resume", "cancel", "events"):
+    for name in ("status", "resume", "cancel", "events", "captures", "extractions"):
         commands.add_parser(name).add_argument("job_id")
+    command = commands.add_parser(
+        "replay", help="offline deterministic re-extraction of existing captures"
+    )
+    command.add_argument("capture_ids", type=int, nargs="+")
+    command.add_argument("--key")
+    command.add_argument("--submit-only", action="store_true")
     command = commands.add_parser("export")
     command.add_argument("job_id")
     command.add_argument("path")
@@ -72,6 +78,14 @@ def main():
         uvicorn.run(create_app(settings), host=args.host, port=args.port)
         return
     engine = Engine(settings)
+    if args.command == "replay":
+        job_id = engine.replay(ReplaySpec(capture_ids=args.capture_ids), args.key)
+        if args.submit_only:
+            print(job_id)
+            return
+        result = engine.run(job_id)
+        print(json.dumps(result, indent=2))
+        raise SystemExit(0 if result["status"] == "completed" else 2)
     if args.command in {"submit", "run", "investigate"}:
         if args.command == "investigate":
             spec = JobSpec(
@@ -107,6 +121,8 @@ def main():
         engine.store.stop(args.job_id)
     elif args.command == "events":
         print(json.dumps(engine.store.events(args.job_id, limit=1000), indent=2))
+    elif args.command in {"captures", "extractions"}:
+        print(json.dumps(getattr(engine.store, args.command)(args.job_id, limit=1000), indent=2))
     elif args.command == "export":
         export(engine, args.job_id, args.path)
     elif args.command == "backup":

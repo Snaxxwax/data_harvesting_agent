@@ -3,8 +3,8 @@
 A self-hosted harvesting service that turns objectives or seed URLs into durable jobs,
 structured observations, raw evidence, and inspectable research decisions.
 
-**Status: tested 0.1 foundation, with a single-host deployment boundary.** The initial
-end-to-end milestone is implemented. This is not yet a fully hardened general-purpose
+**Status: tested 0.2 foundation, with durable acquisition and offline replay.** The initial
+end-to-end milestone and evidence-recovery milestone are implemented. This is not yet a fully hardened general-purpose
 research product. Current capabilities and the limits of verification are explicit below.
 
 ## Quick start
@@ -35,6 +35,27 @@ uv run harvest backup backup.sqlite
 `resume` continues an interrupted active job. A terminal job remains terminal. A fresh
 submission creates a new budget and retrieval history. Non-completed runs exit with code
 2 while retaining intermediate results.
+
+## Recover and re-extract evidence
+
+Permitted, bounded source responses are now committed **before parsing**. A malformed or
+unsupported source remains inspectable even if extraction fails. After installing an
+improved trusted adapter, reprocess selected captures without a new GET or model call:
+
+```bash
+uv run harvest captures JOB_ID
+uv run harvest extractions JOB_ID
+uv run harvest replay 1 2 --key parser-upgrade-1
+```
+
+The authenticated API equivalent is `POST /replays` with `{"capture_ids":[1,2]}` and an
+optional `Idempotency-Key` header. The response is a queued job; a worker must run it.
+Replay creates extraction revisions, not new HTTP captures. Original jobs, raw bytes,
+retrieval times and previous interpretations remain unchanged. Replay suppresses leads,
+search, models and refresh scheduling. Installed adapters are trusted code, not sandboxed.
+
+Before upgrading 0.1, stop old API/workers and back up the database. Startup migrates
+schema 1 to 2 transactionally. Old binaries cannot open schema 2. See [OPERATIONS.md](OPERATIONS.md).
 
 ## Describe an objective
 
@@ -96,7 +117,8 @@ docker compose logs -f worker
 The API binds to host loopback. Put it behind your authenticated TLS reverse proxy or
 private network for remote use. Containers share a local named volume and run as a
 non-root user. Docker execution was unavailable in the development environment;
-the included CI builds the image when pushed to GitHub.
+the published 0.1 CI run passed its image build. The included CI also builds subsequent revisions;
+check their actual results before deployment. Compose execution remains unverified.
 
 ## What works
 
@@ -106,8 +128,9 @@ the included CI builds the image when pushed to GitHub.
 | Enumeration | JSON/CSV records, JSON-LD entities, body/HTTP Link pagination; bounded frontier |
 | Continuous jobs | Persistent refresh schedules, no overlapping generations, new sightings and content-change events |
 | Deep Research | Recursive model-proposed leads and queries, diversity/relevance priorities, prior observations and gaps as context, quote checking, persisted reasoning and plateau stopping |
-| Evidence | SHA-256 raw body, response metadata, retrieval time, previous capture, field locator and extractor version |
-| Conflicts | Latest-source candidate view; differing values remain visible and canonical value is unset |
+| Evidence | Durable acquisition checkpoint, SHA-256 body, response metadata, retrieval history, locators and versioned extraction membership |
+| Replay | Offline deterministic re-extraction; original results preserved; revised interpretations are not fabricated retrievals |
+| Conflicts | Latest usable source analysis; differing source values remain visible; failed newer extraction attempts mark retained candidates stale |
 | Recovery | Transactional commits, expiring leases, heartbeat, stale-worker fencing, idempotency keys |
 | Controls | Request, byte, response, time, depth, frontier, attempt, model-call, token and estimated cost limits |
 | Operations | CLI, authenticated API, cursor pagination, JSONL export, cancellation, event log, backup |
@@ -122,6 +145,12 @@ the included CI builds the image when pushed to GitHub.
 - Built-in structured extraction caps each response at 100 records and 100 fields per
   record. Limit warnings cause a `partial` result and retain the full permitted body.
   Large populations need paginated APIs or a dedicated streaming adapter.
+- The four-mode workload probes measured 100/250 register entities and missed a research
+  fact beyond the model's 14,000-character source window. Replay fixes recovery, not those
+  coverage limits. See [the before/after evidence](docs/validation/v02-workloads.md).
+- Internal extraction tasks count toward `limits.tasks`; allow roughly two tasks per
+  acquired source before reasoning/discovery work. If the frontier is full, evidence is
+  still retained and the job is partial; it can be replayed later.
 - Identity uses exact URLs or source-local IDs. No fuzzy merge, merge/split UI, semantic
   cross-document entity matching, relationship graph query, or independent-source score.
 - Model quotes are checked for literal support, not entailment. Confidence describes
@@ -146,12 +175,11 @@ See [ARCHITECTURE.md](ARCHITECTURE.md), [SOURCE_AUDIT.md](SOURCE_AUDIT.md),
 
 ```bash
 uv sync --frozen
-uv run ruff check src tests
-uv run ruff format --check src tests
+uv run ruff check src tests scripts
+uv run ruff format --check src tests scripts
 uv run pytest -q
 uv build
 ```
 
 Dependencies are pinned in `uv.lock`. Tests use real local HTTP servers and a deterministic
 test model endpoint; they do not spend money or require public network access.
-

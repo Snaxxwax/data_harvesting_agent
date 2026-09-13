@@ -13,7 +13,15 @@ import httpx
 
 from .config import Settings
 from .extract import Extractors, http_url
-from .models import BudgetExceeded, JobSpec, LostLease, PolicyDenied, RetryLater, canonical_url
+from .models import (
+    BudgetExceeded,
+    JobSpec,
+    LostLease,
+    PolicyDenied,
+    ReplaySpec,
+    RetryLater,
+    canonical_url,
+)
 from .network import Fetcher, in_scope
 from .reasoning import Reasoner
 from .store import Store
@@ -96,6 +104,57 @@ class Engine:
             "previous_decisions": decisions[:2],
         }
 
+    def replay(self, spec: ReplaySpec, key=None):
+        return self.store.replay(spec, key)
+
+    def extract_capture(self, task):
+        spec = JobSpec.model_validate_json(task["spec"])
+        cap = self.store.capture(task["payload"]["capture_id"])
+        headers = json.loads(cap["headers"])
+        extraction = self.extractors.extract(
+            cap["body"], cap["final_url"], headers.get("content-type", "")
+        )
+        for item in headers.get("link", "").split(","):
+            match = re.search(r'<([^>]+)>;\s*rel="?next"?', item)
+            if match:
+                from .models import Lead
+
+                if candidate := http_url(match.group(1), cap["final_url"]):
+                    extraction.leads.insert(
+                        0, Lead(url=candidate, reason="pagination", priority=50)
+                    )
+        offline = task["execution"] == "offline_replay"
+        leads = [] if offline else self.select_leads(task, extraction.leads)
+        found_fields = {c.field for c in extraction.claims}
+        needs_reason = (
+            not extraction.claims
+            or bool(set(spec.fields) - found_fields)
+            or spec.mode == "deep_research"
+        )
+        if not offline and spec.use_model and needs_reason and extraction.text:
+            leads.append(
+                {
+                    "kind": "reason",
+                    "key": "capture",
+                    "payload": {},
+                    "depth": task["depth"],
+                    "priority": 100,
+                    "reason": "evidence extraction and gap analysis",
+                }
+            )
+        self.store.finish(
+            task,
+            capture_id=cap["id"],
+            extraction=extraction,
+            leads=leads,
+            details={
+                "extracted_claims": len(extraction.claims),
+                "accepted_leads": len(leads),
+                "offline": offline,
+                "suppressed_leads": len(extraction.leads) if offline else 0,
+            },
+        )
+
     def select_leads(self, task, leads, *, search=False):
         spec = JobSpec.model_validate_json(task["spec"])
         with self.store.connection() as db:
@@ -147,6 +206,11 @@ class Engine:
     def process(self, task):
         spec = JobSpec.model_validate_json(task["spec"])
         self.store.reserve(task)
+        if task["execution"] == "offline_replay" and task["kind"] != "extract":
+            raise PolicyDenied("offline replay cannot execute network or model tasks")
+        if task["kind"] == "extract":
+            self.extract_capture(task)
+            return
         if task["kind"] == "reason":
             cap = self.store.capture(task["payload"]["capture_id"])
             extraction = self.extractors.extract(
@@ -208,51 +272,29 @@ class Engine:
                 )
                 return
             response = fetcher.fetch(task["payload"]["url"])
-            extraction = self.extractors.extract(
-                response.body, response.final_url, response.headers.get("content-type", "")
-            )
-            # RFC Link pagination is complementary to body pagination.
-            link_header = response.headers.get("link", "")
-            for item in link_header.split(","):
-                match = re.search(r'<([^>]+)>;\s*rel="?next"?', item)
-                if match:
-                    from .models import Lead
-
-                    if candidate := http_url(match.group(1), response.final_url):
-                        extraction.leads.insert(
-                            0, Lead(url=candidate, reason="pagination", priority=50)
-                        )
-            leads = self.select_leads(task, extraction.leads)
-            found_fields = {c.field for c in extraction.claims}
-            needs_reason = (
-                not extraction.claims
-                or bool(set(spec.fields) - found_fields)
-                or spec.mode == "deep_research"
-            )
-            if spec.use_model and needs_reason and extraction.text:
-                leads.append(
+            # The extraction task and evidence become durable together, before any parser runs.
+            self.store.finish(
+                task,
+                response=response,
+                leads=[
                     {
-                        "kind": "reason",
+                        "kind": "extract",
                         "key": "capture",
                         "payload": {},
                         "depth": task["depth"],
                         "priority": 100,
-                        "reason": "evidence extraction and gap analysis",
+                        "reason": "interpret captured evidence",
                     }
-                )
-            self.store.finish(
-                task,
-                response=response,
-                extraction=extraction,
-                leads=leads,
-                details={"extracted_claims": len(extraction.claims), "accepted_leads": len(leads)},
+                ],
+                details={"acquired": True},
             )
         finally:
             fetcher.close()
 
     def step(self, job_id=None):
         self.store.expire_deadlines(job_id)
-        self.store.schedule_tick()
+        if job_id is None or self.store.job(job_id)["execution"] != "offline_replay":
+            self.store.schedule_tick()
         task = self.store.claim(job_id)
         if task is None:
             self.store.settle(job_id)
