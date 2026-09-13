@@ -1,0 +1,40 @@
+name: harvest-platform
+x-common: &common
+  build: .
+  image: harvest-platform:local
+  restart: unless-stopped
+  init: true
+  env_file: .env
+  environment:
+    HARVEST_DB: /data/harvest.sqlite
+  volumes:
+    - harvest-data:/data
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  mem_limit: 512m
+  cpus: 1.0
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+services:
+  api:
+    <<: *common
+    ports:
+      - "127.0.0.1:8000:8000"
+    command: ["harvest", "serve", "--host", "0.0.0.0"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/health',headers={'Authorization':'Bearer '+os.environ['HARVEST_API_TOKEN']}); urllib.request.urlopen(r,timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  worker:
+    <<: *common
+    command: ["harvest", "worker"]
+    stop_grace_period: 90s
+volumes:
+  harvest-data:

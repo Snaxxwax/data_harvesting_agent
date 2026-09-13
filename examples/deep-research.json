@@ -1,0 +1,12 @@
+{
+  "objective": "Investigate HTTPX maintenance, supported protocols, extension points and known limitations using primary evidence and independent corroboration",
+  "dataset": "httpx-research",
+  "mode": "deep_research",
+  "use_model": true,
+  "fields": ["maintenance_status", "supported_protocols", "limitations"],
+  "limits": {
+    "requests": 100, "seconds": 900, "depth": 4, "tasks": 150,
+    "model_calls": 8, "model_tokens": 180000, "cost_usd": 2.0,
+    "no_gain_pages": 10
+  }
+}

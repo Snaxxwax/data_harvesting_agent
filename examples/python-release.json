@@ -1,0 +1,7 @@
+{
+  "objective": "Collect authoritative metadata about the Python website",
+  "dataset": "python-website",
+  "seeds": ["https://www.python.org/"],
+  "allowed_domains": ["python.org"],
+  "limits": {"depth": 0, "requests": 5, "seconds": 120}
+}

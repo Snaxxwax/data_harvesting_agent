@@ -1,0 +1,7 @@
+{
+  "objective": "Acquire the official GitHub repository metadata for HTTPX",
+  "dataset": "httpx-project",
+  "seeds": ["https://api.github.com/repos/encode/httpx"],
+  "allowed_domains": ["api.github.com"],
+  "limits": {"depth": 0, "requests": 5, "seconds": 120}
+}

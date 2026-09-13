@@ -1,0 +1,101 @@
+[
+  {
+    "id": "bc88bff36879417e9c3d03972bb37852",
+    "status": "completed",
+    "created": 1789257511.7076151,
+    "finished": 1789257517.357696,
+    "requests": 2,
+    "bytes": 12099,
+    "captures": 1,
+    "progress": {
+      "done": 1
+    },
+    "source": "https://www.python.org/",
+    "observations": 5,
+    "key": "python",
+    "captures_metadata": [
+      {
+        "id": 1,
+        "job_id": "bc88bff36879417e9c3d03972bb37852",
+        "task_id": 1,
+        "url": "https://www.python.org/",
+        "final_url": "https://www.python.org/",
+        "retrieved": 1789257517.3089561,
+        "status": 200,
+        "headers": "{\"content-type\":\"text/html; charset=utf-8\",\"x-harvest-decoded-from\":\"gzip\"}",
+        "body_hash": "00072447a2910a765e149104eb749a2fc0ac4a63e235e9437d068e52f03eef37",
+        "previous_id": null,
+        "changed": 1,
+        "extractor": "html-jsonld/1",
+        "dataset": "python-website"
+      }
+    ],
+    "same_key_rerun_extra_requests": 0
+  },
+  {
+    "id": "36d5de161e8b4c9d88690b1029039acc",
+    "status": "completed",
+    "created": 1789257517.360369,
+    "finished": 1789257522.5536325,
+    "requests": 2,
+    "bytes": 6170,
+    "captures": 1,
+    "progress": {
+      "done": 1
+    },
+    "source": "https://api.github.com/repos/encode/httpx",
+    "observations": 84,
+    "key": "github",
+    "captures_metadata": [
+      {
+        "id": 2,
+        "job_id": "36d5de161e8b4c9d88690b1029039acc",
+        "task_id": 2,
+        "url": "https://api.github.com/repos/encode/httpx",
+        "final_url": "https://api.github.com/repos/encode/httpx",
+        "retrieved": 1789257522.5488255,
+        "status": 200,
+        "headers": "{\"content-type\":\"application/json; charset=utf-8\",\"etag\":\"W/\\\"3dec902d24d1d35bcc3ae9b454391f02e67553562911fe81c34dbab5dd64e256\\\"\",\"last-modified\":\"Sat, 12 Sep 2026 22:52:20 GMT\"}",
+        "body_hash": "c7dbd3df3c946d15278945774e803eae7ff76abb118b295a1aa4cfb50f88e95e",
+        "previous_id": null,
+        "changed": 1,
+        "extractor": "json/1",
+        "dataset": "httpx-project"
+      }
+    ],
+    "same_key_rerun_extra_requests": 0
+  },
+  {
+    "id": "9aca3aa8b3b14e84b5c7b33b077f0d70",
+    "status": "completed",
+    "created": 1789257522.5573225,
+    "finished": 1789257527.3883002,
+    "requests": 1,
+    "bytes": 0,
+    "captures": 1,
+    "progress": {
+      "done": 1
+    },
+    "source": "https://api.github.com/repos/encode/httpx",
+    "observations": 84,
+    "key": "github-refresh",
+    "captures_metadata": [
+      {
+        "id": 3,
+        "job_id": "9aca3aa8b3b14e84b5c7b33b077f0d70",
+        "task_id": 3,
+        "url": "https://api.github.com/repos/encode/httpx",
+        "final_url": "https://api.github.com/repos/encode/httpx",
+        "retrieved": 1789257527.3829765,
+        "status": 304,
+        "headers": "{\"content-type\":\"application/json; charset=utf-8\",\"etag\":\"W/\\\"3dec902d24d1d35bcc3ae9b454391f02e67553562911fe81c34dbab5dd64e256\\\"\",\"last-modified\":\"Sat, 12 Sep 2026 22:52:20 GMT\"}",
+        "body_hash": "c7dbd3df3c946d15278945774e803eae7ff76abb118b295a1aa4cfb50f88e95e",
+        "previous_id": 2,
+        "changed": 0,
+        "extractor": "json/1",
+        "dataset": "httpx-project"
+      }
+    ],
+    "same_key_rerun_extra_requests": 0
+  }
+]

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "harvest-platform"
+version = "0.1.0"
+description = "Durable, evidence-first self-hosted data harvesting"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+  "httpx[socks]==0.28.1",
+  "httpcore==1.0.9",
+  "pydantic==2.13.5",
+  "fastapi==0.141.1",
+  "uvicorn==0.52.4",
+  "beautifulsoup4==4.15.0",
+  "protego==0.6.2",
+]
+
+[project.scripts]
+harvest = "harvest.cli:main"
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "ruff==0.16.7"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/harvest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["live: optional public-network acquisition"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]

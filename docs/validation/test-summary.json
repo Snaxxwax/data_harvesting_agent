@@ -1,0 +1,14 @@
+{
+  "tests": "39",
+  "failures": "0",
+  "errors": "0",
+  "skipped": "0",
+  "time": "17.972",
+  "timestamp": "2026-09-12T18:59:39.665755-05:00",
+  "lint": "passed",
+  "format": "passed",
+  "wheel_build": "passed",
+  "sdist_build": "passed",
+  "docker_execution": "unavailable",
+  "provider_integration": "local HTTP fixtures; no live model"
+}
