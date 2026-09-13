@@ -45,6 +45,9 @@ def source():
             state["counts"][path] += 1
             if path == "/robots.txt":
                 self.reply(200, state["robots"], "text/plain")
+            elif path in state.get("routes", {}):
+                body, media = state["routes"][path]
+                self.reply(200, body, media)
             elif path == "/records":
                 tag = f'"v{state["version"]}"'
                 if self.headers.get("If-None-Match") == tag:

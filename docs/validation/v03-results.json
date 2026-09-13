@@ -1,0 +1,22 @@
+{
+  "verified_date": "2026-09-13",
+  "baseline_commit": "097b2e0d3fc5a06d28caf892d207a813d5aefae8",
+  "owned_http_runs": [
+    {"format":"json","source_records":5000,"recovered_entities":5000,"observations":25000,"body_bytes":516687,"requests":2,"acquisition_seconds":1.151,"replay_seconds":0.830,"replay_requests":0,"batches":100,"peak_process_rss_bytes":127614976,"database_bytes":22847488,"integrity_check":"ok"},
+    {"format":"csv","source_records":5000,"recovered_entities":5000,"observations":25000,"body_bytes":186713,"requests":2,"acquisition_seconds":1.211,"replay_seconds":0.863,"replay_requests":0,"batches":100,"peak_process_rss_bytes":127442944,"database_bytes":22429696,"integrity_check":"ok"}
+  ],
+  "real_database_upgrade": {
+    "source_schema":2,"destination_schema":3,"original_unchanged":true,
+    "preserved_counts":{"jobs":4,"tasks":4,"events":17,"blobs":2,"captures":3,"entities":2,"observations":89,"sightings":173,"schedules":0},
+    "preserved_hashes":{
+      "captures":"0257cb569bba9619031c03e83b80e7e4630ef01e27475aec903ff38d64d2c8dd",
+      "observations":"252f67df85a709320f0458cb4ee9562de25ad33bd8546baf4c8c916268fef8d7",
+      "sightings":"08c91e40bfa225576954a5110166677dac6b529b90f85ecb67fb8b5f599fd48f",
+      "blobs":"63947f8833c82a723e4d01b2b2688c977c6a913a763ae3f04bba703eb845e36a",
+      "schedules":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "extractions":4,"assertions":257,"idempotency_keys_verified":4,"integrity_check":"ok","foreign_key_check":[]
+  },
+  "fresh_public_acquisition":"not attempted in 0.3",
+  "model_quality":"not benchmarked; scripted HTTP contracts only"
+}

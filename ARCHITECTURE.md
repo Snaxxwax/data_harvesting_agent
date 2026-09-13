@@ -1,6 +1,6 @@
 # Architecture hypothesis and implementation
 
-Initial decision date: 2026-09-12. Revised 2026-09-13. Implemented version: 0.2.0.
+Initial decision date: 2026-09-12. Revised 2026-09-13. Implemented version: 0.3.0.
 
 ## Runtime boundary
 
@@ -56,8 +56,11 @@ requirements exceed this implementation. Do not claim the current Store is porta
 4. Commit raw body, capture, extraction task/revision, acquisition completion and events
    in one transaction. If the frontier cap prevents extraction, retain evidence and report partial.
 5. A separately leased task parses the stored body. Commit observations, extraction
-   membership, sightings, follow-up tasks and extraction completion in a second transaction.
-   Invalid/expired tokens reject both boundaries. Parsing failures leave the capture intact.
+   membership, sightings, follow-up tasks and processing progress atomically. Built-in JSON/CSV
+   uses at most 50 records per transaction. The same lease and parser iterator continue across
+   batches; only the final batch completes the task and publishes its interpretation.
+   Invalid/expired tokens reject each boundary. Parsing failures leave captures and prior
+   committed batches intact. Non-batch adapters retain a single extraction commit.
 6. If a worker dies, its lease expires. Another worker reclaims the task up to the attempt
    limit. A heartbeat normally extends a lease every 15 seconds; default lease is 120s.
 
@@ -71,6 +74,13 @@ see [ADR 0002](docs/adr/0002-durable-acquisition-and-replay.md). A crash after t
 checkpoint requires re-extraction, not reacquisition. Offline replay jobs reference existing
 captures and create new assertion memberships, never fake retrieval timestamps. Replay
 uses deterministic adapters and does not enqueue leads or model work. It is not a plugin sandbox.
+
+[ADR 0003](docs/adr/0003-resumable-record-extraction.md) records the next revision:
+an extraction cursor and job-wide record/claim counters now advance with each batch.
+On lease recovery the parser restarts once and skips the committed ordinal. Normal execution
+parses JSON once per lease attempt, rather than once per batch. Body hashes are checked
+before applying a cursor. Completed source views exclude unfinished revisions, even if those
+revisions contain inspectable committed assertions. Earlier source values remain marked stale.
 
 `completed`, `partial`, `failed`, `cancelled`, `budget_exhausted`, and `plateau` are terminal.
 Job creation is idempotent only when the caller provides the same key and spec. Changing
@@ -120,5 +130,7 @@ one generation. Deletion detection and selective field freshness are deferred.
 The implementation intentionally has no Redis, vector database, browser pool, autonomous
 shell, agent framework, graph database or distributed workflow service. Each would need
 evidence that it solves an observed limitation better than the present adapter boundaries.
-The first likely changes are streaming record extraction, improved identity semantics,
-quality benchmarks, explicit source refresh policy, and storage/concurrency measurements.
+The strongest observed remaining gap is long-document evidence selection. Larger source
+streaming, identity semantics, explicit refresh policies and storage/concurrency changes
+remain contingent on representative workload measurements; the 0.3 batches address bounded
+JSON/CSV processing rather than proving those broader capabilities.

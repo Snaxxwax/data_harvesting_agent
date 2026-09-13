@@ -1,18 +1,19 @@
 {
-  "version": "0.2.0",
-  "tests": "61",
+  "version": "0.3.0",
+  "tests": "86",
   "failures": "0",
   "errors": "0",
   "skipped": "0",
-  "time": "31.94",
+  "time": "47.29",
   "verified_date": "2026-09-13",
   "lint": "passed",
   "format": "passed",
   "wheel_build": "passed",
   "sdist_build": "passed",
-  "docker_execution": "unavailable locally; 0.1 Docker build passed in GitHub CI",
+  "docker_execution": "unavailable locally; 0.2 Docker build passed in GitHub CI",
   "provider_integration": "local HTTP fixtures; no live model",
-  "schema_1_real_database_upgrade": "passed on a new backup; original unchanged",
-  "historical_public_capture_offline_replay": "84 observations; zero requests",
-  "fresh_public_network_run": "failed: three timed-out attempts, zero bytes; not counted as a pass"
+  "schema_2_real_database_upgrade": "passed on a new backup; original unchanged; all four online/replay keys preserved",
+  "owned_json_and_csv_benchmarks": "5000 entities / 25000 observations each; 100 batches; two requests each",
+  "offline_replay": "same 25000 observations for each benchmark; zero requests",
+  "fresh_public_network_run": "not attempted in 0.3; see the historical 0.2 failed attempt"
 }

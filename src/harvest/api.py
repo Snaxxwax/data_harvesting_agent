@@ -24,7 +24,7 @@ def create_app(settings: Settings | None = None):
 
     app = FastAPI(
         title="Harvest Platform",
-        version="0.2.0",
+        version="0.3.0",
         description="Durable jobs, evidence and source observations. Run a separate harvest worker.",
         dependencies=[Depends(authenticate)],
     )
@@ -39,7 +39,7 @@ def create_app(settings: Settings | None = None):
     def health():
         with engine.store.connection() as db:
             db.execute("SELECT 1")
-        return {"status": "ok", "version": "0.2.0"}
+        return {"status": "ok", "version": "0.3.0"}
 
     @app.post("/jobs", status_code=202)
     def submit(spec: JobSpec, idempotency_key: str | None = Header(default=None, max_length=200)):

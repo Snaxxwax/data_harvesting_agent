@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import itertools
 import json
 from importlib.metadata import entry_points
 from typing import Protocol
@@ -9,7 +10,7 @@ from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 
-from .models import Claim, Extraction, Lead, canonical_url
+from .models import Claim, Extraction, ExtractionBatch, Lead, canonical_url
 from .store import digest, packed
 
 
@@ -49,13 +50,13 @@ def record_key(record, url, index):
     return f"record:{url}:{digest(packed(record))}"
 
 
-def records_extraction(records, url, prefix="", extractor="json/1", single=False):
+def records_extraction(records, url, prefix="", extractor="json/1", single=False, offset=0):
     claims, leads, warnings = [], [], []
     if len(records) > 100:
         warnings.append(
             "record limit: only the first 100 records were extracted; raw evidence retained"
         )
-    for index, record in enumerate(records[:100]):
+    for index, record in enumerate(records[:100], start=offset):
         if not isinstance(record, dict):
             if "non-object records skipped" not in warnings:
                 warnings.append("non-object records skipped")
@@ -106,13 +107,47 @@ def records_extraction(records, url, prefix="", extractor="json/1", single=False
     )
 
 
+def record_batches(
+    records, url, *, start, maximum, extractor, prefix="", single=False, total=None, leads=()
+):
+    """One parser pass per lease attempt. Durable record ordinal is the restart cursor."""
+    iterator = iter(itertools.islice(records, start, None))
+    sentinel = object()
+    pending = next(iterator, sentinel)
+    cursor, remaining = start, maximum
+    if pending is sentinel:
+        yield ExtractionBatch(
+            extraction=Extraction(extractor=extractor, leads=list(leads)),
+            start=start,
+            end=start,
+            total=start,
+            done=True,
+        )
+        return
+    while remaining > 0:
+        batch = [pending]
+        batch.extend(itertools.islice(iterator, min(50, remaining) - 1))
+        pending = next(iterator, sentinel)
+        done = pending is sentinel
+        result = records_extraction(batch, url, prefix, extractor, single, offset=cursor)
+        result.leads = list(leads) + result.leads if cursor == start else result.leads
+        result.leads = result.leads[:500]
+        end = cursor + len(batch)
+        yield ExtractionBatch(
+            extraction=result, start=cursor, end=end, total=end if done else total, done=done
+        )
+        cursor, remaining = end, remaining - len(batch)
+        if done:
+            return
+
+
 class JsonAdapter:
     name = "json/1"
 
     def accepts(self, content_type, url):
         return "json" in content_type or urlsplit(url).path.endswith(".json")
 
-    def extract(self, body, url):
+    def records(self, body):
         def reject_constant(value):
             raise ValueError(f"invalid JSON number {value}")
 
@@ -129,14 +164,36 @@ class JsonAdapter:
         if not isinstance(records, list):
             raise ValueError("JSON source must contain an object or list of objects")
         single = isinstance(data, dict) and not prefix
-        result = records_extraction(records, url, prefix, self.name, single=single)
+        return data, records, prefix, single
+
+    def pagination(self, data, url):
         if isinstance(data, dict):
             next_link = data.get("next")
             if isinstance(data.get("links"), dict):
                 next_link = data["links"].get("next", next_link)
             if next_link and (link := http_url(next_link, url)):
-                result.leads.insert(0, Lead(url=link, reason="pagination", priority=50))
+                return [Lead(url=link, reason="pagination", priority=50)]
+        return []
+
+    def extract(self, body, url):
+        data, records, prefix, single = self.records(body)
+        result = records_extraction(records, url, prefix, self.name, single=single)
+        result.leads = self.pagination(data, url) + result.leads
         return result
+
+    def batches(self, body, url, start, maximum):
+        data, records, prefix, single = self.records(body)
+        return record_batches(
+            records,
+            url,
+            start=start,
+            maximum=maximum,
+            extractor=self.name,
+            prefix=prefix,
+            single=single,
+            total=len(records),
+            leads=self.pagination(data, url),
+        )
 
 
 class CsvAdapter:
@@ -153,6 +210,22 @@ class CsvAdapter:
         if any(None in r for r in records):
             raise ValueError("CSV rows have more values than headers")
         return records_extraction(records, url, "row", self.name)
+
+    def batches(self, body, url, start, maximum):
+        reader = csv.DictReader(io.StringIO(body.decode("utf-8-sig"), newline=""), strict=True)
+        headers = reader.fieldnames
+        if not headers or any(not h for h in headers) or len(set(headers)) != len(headers):
+            raise ValueError("CSV requires unique non-empty headers")
+
+        def records():
+            for row in reader:
+                if None in row or any(v is None for v in row.values()):
+                    raise ValueError("CSV row width does not match headers")
+                yield row
+
+        return record_batches(
+            records(), url, start=start, maximum=maximum, extractor=self.name, prefix="row"
+        )
 
 
 class HtmlAdapter:
@@ -241,3 +314,12 @@ class Extractors:
                 result = adapter.extract(body, url)
                 return Extraction.model_validate(result.model_dump())
         raise ValueError(f"unsupported content type: {content_type[:100]}")
+
+    def batches(self, body, url, content_type, start, maximum):
+        for adapter in self.adapters:
+            if adapter.accepts(content_type.lower(), url):
+                # Existing third-party subclasses may override extract only. Do not bypass them.
+                if type(adapter) in (JsonAdapter, CsvAdapter):
+                    return adapter.batches(body, url, start, maximum)
+                return None
+        return None

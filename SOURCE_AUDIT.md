@@ -81,3 +81,15 @@ dlt's pending-data processing informed staged durability. Scrapy caching alone d
 provide this platform's interpretation/job lineage. warcio's `http.client` interception
 would not directly cover the policy-pinned HTTPX transport. WARC interchange remains a
 possible future adapter. No new dependency or service was needed for the selected milestone.
+
+## 0.3 re-evaluation — 2026-09-13
+
+The remaining 100-row extraction ceiling became the next measured constraint. Inspected
+[ijson](https://github.com/ICRAR/ijson), [Python's CSV interfaces](https://docs.python.org/3/library/csv.html),
+and [dlt processing-size controls](https://dlthub.com/docs/reference/performance).
+Implemented durable 50-record commits without replacing the parser stack. JSON is parsed
+once per lease attempt; CSV rows are iterated with strict parsing and proper newline handling.
+Reclaimed work skips its stored ordinal. ijson's incremental parsing remains a candidate for
+larger sources, but numeric compatibility and archive cursor ownership require separate work.
+The bounded 5,000-row JSON/CSV probes passed without a new dependency or staging service.
+See [ADR 0003](docs/adr/0003-resumable-record-extraction.md) for measured limits and deferrals.

@@ -1,4 +1,4 @@
-"""Verify a schema-1 database upgrade on a new backup, never on the original."""
+"""Verify a schema-1/2 database upgrade on a new backup, never on the original."""
 
 import argparse
 import json
@@ -42,7 +42,8 @@ def main():
     if destination.exists():
         parser.error("destination must not already exist")
     with sqlite3.connect(source.as_uri() + "?mode=ro", uri=True) as original:
-        assert original.execute("PRAGMA user_version").fetchone()[0] == 1
+        source_version = original.execute("PRAGMA user_version").fetchone()[0]
+        assert source_version in (1, 2)
         with sqlite3.connect(destination) as target:
             original.backup(target)
     with sqlite3.connect(destination) as db:
@@ -54,22 +55,36 @@ def main():
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
         keys = db.execute(
-            "SELECT id,spec,idempotency_key FROM jobs WHERE idempotency_key IS NOT NULL"
+            "SELECT id,spec,idempotency_key,execution FROM jobs WHERE idempotency_key IS NOT NULL"
         ).fetchall()
         revisions = db.execute("SELECT count(*) FROM extractions").fetchone()[0]
         memberships = db.execute("SELECT count(*) FROM assertions").fetchone()[0]
     for job in keys:
-        assert (
-            store.create(JobSpec.model_validate_json(job["spec"]), [], job["idempotency_key"])
-            == job["id"]
-        )
+        if job["execution"] == "offline_replay":
+            from harvest.models import ReplaySpec
+
+            ids = [x["capture_id"] for x in store.extractions(job["id"])]
+            assert (
+                store.replay(
+                    ReplaySpec(
+                        capture_ids=ids, limits=JobSpec.model_validate_json(job["spec"]).limits
+                    ),
+                    job["idempotency_key"],
+                )
+                == job["id"]
+            )
+        else:
+            assert (
+                store.create(JobSpec.model_validate_json(job["spec"]), [], job["idempotency_key"])
+                == job["id"]
+            )
     with sqlite3.connect(source.as_uri() + "?mode=ro", uri=True) as original:
-        assert original.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert original.execute("PRAGMA user_version").fetchone()[0] == source_version
     print(
         json.dumps(
             {
-                "source_schema": 1,
-                "destination_schema": 2,
+                "source_schema": source_version,
+                "destination_schema": 3,
                 "original_unchanged": True,
                 "preserved": before,
                 "extractions": revisions,

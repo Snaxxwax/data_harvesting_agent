@@ -24,7 +24,7 @@ from .models import (
 )
 from .network import Fetcher, in_scope
 from .reasoning import Reasoner
-from .store import Store
+from .store import Store, digest
 
 log = logging.getLogger("harvest")
 ACTIVE = {"queued", "running"}
@@ -110,10 +110,38 @@ class Engine:
     def extract_capture(self, task):
         spec = JobSpec.model_validate_json(task["spec"])
         cap = self.store.capture(task["payload"]["capture_id"])
+        if digest(cap["body"]) != cap["body_hash"]:
+            raise ValueError("capture body hash mismatch")
         headers = json.loads(cap["headers"])
+        revision = self.store.extraction_task(task)
+        remaining = max(
+            0, spec.limits.records - self.store.job(task["job_id"])["records_processed"]
+        )
+        batches = self.extractors.batches(
+            cap["body"],
+            cap["final_url"],
+            headers.get("content-type", ""),
+            revision["records_processed"] or 0,
+            remaining,
+        )
+        if batches is not None:
+            done = False
+            for batch in batches:
+                self.store.reserve(task)
+                self.commit_extraction(task, cap, headers, batch.extraction, batch=batch)
+                done = batch.done
+            if not done:
+                raise BudgetExceeded("records limit reached; partial extraction retained")
+            return
+        if revision["batches"]:
+            raise ValueError("adapter changed during extraction; create a new replay")
         extraction = self.extractors.extract(
             cap["body"], cap["final_url"], headers.get("content-type", "")
         )
+        self.commit_extraction(task, cap, headers, extraction)
+
+    def commit_extraction(self, task, cap, headers, extraction, batch=None):
+        spec = JobSpec.model_validate_json(task["spec"])
         for item in headers.get("link", "").split(","):
             match = re.search(r'<([^>]+)>;\s*rel="?next"?', item)
             if match:
@@ -126,12 +154,28 @@ class Engine:
         offline = task["execution"] == "offline_replay"
         leads = [] if offline else self.select_leads(task, extraction.leads)
         found_fields = {c.field for c in extraction.claims}
+        if batch is not None and batch.done:
+            with self.store.connection() as db:
+                found_fields.update(
+                    r[0]
+                    for r in db.execute(
+                        """SELECT DISTINCT o.field FROM observations o
+                    JOIN assertions a ON a.observation_id=o.id JOIN extractions x ON x.id=a.extraction_id WHERE x.task_id=?""",
+                        (task["id"],),
+                    )
+                )
         needs_reason = (
             not extraction.claims
             or bool(set(spec.fields) - found_fields)
             or spec.mode == "deep_research"
         )
-        if not offline and spec.use_model and needs_reason and extraction.text:
+        if (
+            not offline
+            and spec.use_model
+            and needs_reason
+            and extraction.text
+            and (batch is None or batch.done)
+        ):
             leads.append(
                 {
                     "kind": "reason",
@@ -146,6 +190,7 @@ class Engine:
             task,
             capture_id=cap["id"],
             extraction=extraction,
+            batch=batch,
             leads=leads,
             details={
                 "extracted_claims": len(extraction.claims),

@@ -1,8 +1,15 @@
 # Data model
 
-Schema version 2 is in `src/harvest/store.py`. The immutable schema-1 bootstrap is followed
+Schema version 3 is in `src/harvest/store.py`. The immutable schema-1 bootstrap is followed
 by a transactional migration that backfills extraction membership for legacy captures and
 model sightings. Unknown versions fail startup. Timestamps are UTC Unix seconds.
+
+The schema-2 -> 3 migration adds extraction batch progress and job processing counters.
+Legacy record counts stay NULL/unknown. Historical claim counters are initialized from
+stored assertion memberships; this is a lower bound where the old parser emitted duplicate
+claims. New batches charge emitted claims even when observation deduplication reuses a row.
+The job record counter starts at zero for processing counted by 0.3; it does not reconstruct
+how many rows earlier versions visited. Per-extraction NULL values disclose that limitation.
 
 | Table | Purpose and important invariants |
 |---|---|
@@ -47,6 +54,15 @@ new source captures use `acquisition/1`; consult extraction records for actual p
 Jobs distinguish `execution=online` from `offline_replay`. `captures` counts new acquisitions;
 `evidence_captures` also counts captures referenced by replay. `extraction_progress` reports
 interpretation states. Replay IDs and network prohibition are recorded in `replay_created`.
+
+`extractions.records_processed` is the durable record ordinal for native JSON/CSV batches.
+It counts visited records, including non-object entries skipped with warnings, not distinct
+entities. `records_total` and computed `records_remaining` stay NULL when unknown; CSV learns
+its total at EOF. `batches`, `batch_format`, `had_warnings` and `novel_claims` retain restart
+state. Outcome stays NULL until the final batch. An unfinished/failed revision's assertions
+remain in the owning job's export, but are excluded from the current-value selection below.
+`jobs.records_processed` and `claims_processed` enforce aggregate processing limits across
+captures, pagination, and (for claims) model and custom-adapter output.
 
 Evidence locators are JSON Pointers for JSON, row/field locators for CSV, CSS/script
 locations for HTML/JSON-LD, and offsets in normalized text for model extraction. The full

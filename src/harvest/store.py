@@ -87,17 +87,18 @@ class Store:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2):
+            if version not in (0, 1, 2, 3):
                 raise RuntimeError(f"unsupported database version {version}")
             # Rollback journal deliberately avoids old SQLite WAL-reset affected releases.
             db.execute("PRAGMA journal_mode=DELETE")
             db.executescript(SCHEMA)
         self._migrate()
+        self._migrate_batches()
 
     def _migrate(self):
         """Schema 1 -> 2, including existing evidence and in-flight reason tasks."""
         with self.transaction() as db:
-            if db.execute("PRAGMA user_version").fetchone()[0] == 2:
+            if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
                 return
             db.execute("ALTER TABLE jobs ADD COLUMN execution TEXT NOT NULL DEFAULT 'online'")
             db.execute("""CREATE TABLE extractions (
@@ -124,6 +125,25 @@ class Store:
                 SELECT x.id,s.observation_id FROM sightings s
                 JOIN extractions x ON x.capture_id=s.capture_id""")
             db.execute("PRAGMA user_version=2")
+
+    def _migrate_batches(self):
+        with self.transaction() as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] == 3:
+                return
+            db.execute("ALTER TABLE jobs ADD COLUMN records_processed INTEGER NOT NULL DEFAULT 0")
+            db.execute("ALTER TABLE jobs ADD COLUMN claims_processed INTEGER NOT NULL DEFAULT 0")
+            for definition in (
+                "records_processed INTEGER",
+                "records_total INTEGER",
+                "batches INTEGER NOT NULL DEFAULT 0",
+                "had_warnings INTEGER NOT NULL DEFAULT 0",
+                "novel_claims INTEGER NOT NULL DEFAULT 0",
+                "batch_format TEXT",
+            ):
+                db.execute("ALTER TABLE extractions ADD COLUMN " + definition)
+            db.execute("""UPDATE jobs SET claims_processed=(SELECT count(*) FROM assertions a
+                JOIN extractions x ON x.id=a.extraction_id WHERE x.job_id=jobs.id)""")
+            db.execute("PRAGMA user_version=3")
 
     def replay(self, request, key=None):
         """Create an offline revision, never a new retrieval or a refresh schedule."""
@@ -157,7 +177,18 @@ class Store:
                     "SELECT id,spec_hash,spec,execution FROM jobs WHERE idempotency_key=?", (key,)
                 ).fetchone()
                 if old:
-                    if old["spec_hash"] != fingerprint:
+                    previous_ids = [
+                        r[0]
+                        for r in db.execute(
+                            "SELECT DISTINCT capture_id FROM extractions WHERE job_id=? ORDER BY capture_id",
+                            (old["id"],),
+                        )
+                    ]
+                    if old["spec_hash"] != fingerprint and (
+                        old["execution"] != "offline_replay"
+                        or previous_ids != ids
+                        or JobSpec.model_validate_json(old["spec"]) != spec
+                    ):
                         raise ValueError(
                             "idempotency key already belongs to a different replay specification"
                         )
@@ -417,7 +448,15 @@ class Store:
             )
 
     def finish(
-        self, task, *, response=None, extraction=None, leads=(), details=None, capture_id=None
+        self,
+        task,
+        *,
+        response=None,
+        extraction=None,
+        leads=(),
+        details=None,
+        capture_id=None,
+        batch=None,
     ):
         self.reserve(task)
         with self.transaction() as db:
@@ -484,6 +523,34 @@ class Store:
                 if not cap or not revision or revision["capture_id"] != capture_id:
                     raise ValueError("capture is not assigned to this extraction task")
                 extraction_id = revision["id"]
+                if job["claims_processed"] + len(extraction.claims) > spec.limits.claims:
+                    raise BudgetExceeded("claims limit reached; last complete batch retained")
+                if batch is not None:
+                    if task["kind"] != "extract" or batch.start != (
+                        revision["records_processed"] or 0
+                    ):
+                        raise LostLease("extraction cursor changed")
+                    if batch.end < batch.start or (
+                        batch.total is not None and batch.end > batch.total
+                    ):
+                        raise ValueError("invalid extraction progress")
+                    if job["records_processed"] + batch.end - batch.start > spec.limits.records:
+                        raise BudgetExceeded("records limit reached")
+                    if revision["batch_format"] not in (None, extraction.extractor + ":batch/1"):
+                        raise ValueError("batch adapter changed; create a new replay")
+                    db.execute(
+                        """UPDATE extractions SET records_processed=?,records_total=?,batches=batches+1,
+                        batch_format=? WHERE id=?""",
+                        (batch.end, batch.total, extraction.extractor + ":batch/1", extraction_id),
+                    )
+                    db.execute(
+                        "UPDATE jobs SET records_processed=records_processed+? WHERE id=?",
+                        (batch.end - batch.start, job["id"]),
+                    )
+                db.execute(
+                    "UPDATE jobs SET claims_processed=claims_processed+? WHERE id=?",
+                    (len(extraction.claims), job["id"]),
+                )
                 for claim in extraction.claims:
                     entity = digest(packed([spec.dataset, claim.entity_key]))
                     db.execute(
@@ -528,24 +595,30 @@ class Store:
                         "INSERT OR IGNORE INTO assertions VALUES(?,?)", (extraction_id, observation)
                     )
                 if task["kind"] == "extract":
+                    warnings = bool(extraction.warnings) or revision["had_warnings"]
+                    complete = batch is None or batch.done
                     db.execute(
-                        "UPDATE extractions SET extractor=?,outcome=?,finished=? WHERE id=?",
+                        "UPDATE extractions SET extractor=?,outcome=?,finished=?,had_warnings=?,novel_claims=novel_claims+? WHERE id=?",
                         (
                             extraction.extractor,
-                            "partial" if extraction.warnings else "complete",
-                            time.time(),
+                            ("partial" if warnings else "complete") if complete else None,
+                            time.time() if complete else None,
+                            int(warnings),
+                            novel,
                             extraction_id,
                         ),
                     )
                     self.event(
                         db,
                         job["id"],
-                        "extracted",
+                        "extracted" if complete else "extraction_batch",
                         {
                             "extraction": extraction_id,
                             "capture": capture_id,
                             "extractor": extraction.extractor,
                             "claims": len(extraction.claims),
+                            "records_processed": batch.end if batch else None,
+                            "records_total": batch.total if batch else None,
                         },
                     )
             for lead in leads:
@@ -556,11 +629,16 @@ class Store:
                     if item["kind"] == "reason":
                         item["payload"]["extraction_id"] = extraction_id
                 self.enqueue(db, job["id"], item, spec)
+            if batch is not None and not batch.done:
+                # Keep the same lease and parser iterator. A crash reclaims this task at its cursor.
+                return capture_id
             db.execute(
                 "UPDATE tasks SET status='done',token=NULL,lease_until=NULL,error=NULL WHERE id=?",
                 (task["id"],),
             )
             if task["kind"] == "extract":
+                if batch is not None:
+                    novel += revision["novel_claims"]
                 db.execute(
                     "UPDATE jobs SET no_gain=CASE WHEN ? > 0 THEN 0 ELSE no_gain+1 END WHERE id=?",
                     (novel, job["id"]),
@@ -732,6 +810,7 @@ class Store:
                 dict(r)
                 for r in db.execute(
                     """SELECT x.*,t.error,
+                CASE WHEN x.records_total IS NOT NULL THEN x.records_total-coalesce(x.records_processed,0) END records_remaining,
                 CASE WHEN t.status='done' THEN x.outcome ELSE t.status END status,
                 (SELECT count(*) FROM assertions a WHERE a.extraction_id=x.id) observations
                 FROM extractions x JOIN tasks t ON t.id=x.task_id
@@ -739,6 +818,13 @@ class Store:
                     (job_id, after, limit),
                 )
             ]
+
+    def extraction_task(self, task):
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM extractions WHERE task_id=?", (task["id"],)).fetchone()
+            if row is None:
+                raise ValueError("missing extraction revision")
+            return dict(row)
 
     def observations(self, job_id, after="", limit=100):
         self.job(job_id)

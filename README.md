@@ -3,8 +3,8 @@
 A self-hosted harvesting service that turns objectives or seed URLs into durable jobs,
 structured observations, raw evidence, and inspectable research decisions.
 
-**Status: tested 0.2 foundation, with durable acquisition and offline replay.** The initial
-end-to-end milestone and evidence-recovery milestone are implemented. This is not yet a fully hardened general-purpose
+**Status: tested 0.3 foundation, with resumable JSON/CSV extraction.** Durable acquisition,
+offline replay and bounded record batches are implemented. This is not yet a fully hardened general-purpose
 research product. Current capabilities and the limits of verification are explicit below.
 
 ## Quick start
@@ -54,8 +54,22 @@ Replay creates extraction revisions, not new HTTP captures. Original jobs, raw b
 retrieval times and previous interpretations remain unchanged. Replay suppresses leads,
 search, models and refresh scheduling. Installed adapters are trusted code, not sandboxed.
 
-Before upgrading 0.1, stop old API/workers and back up the database. Startup migrates
-schema 1 to 2 transactionally. Old binaries cannot open schema 2. See [OPERATIONS.md](OPERATIONS.md).
+Before upgrading, stop old API/workers and back up the database. Startup upgrades schema
+1 or 2 to schema 3 through transactional migrations. Older binaries cannot open schema 3.
+See [OPERATIONS.md](OPERATIONS.md).
+
+## Enumerate larger registers
+
+Built-in JSON and CSV jobs process the whole permitted response in batches of at most
+50 records. A worker crash resumes at the last committed record without repeating its
+assertions or issuing another GET. `harvest extractions JOB_ID` reports processed records,
+known total, remaining records and committed batches. CSV totals stay unknown until EOF.
+
+Use `limits.records` (default 10,000) and `limits.claims` (default 100,000) in a JSON job
+specification or API replay request to bound processing across the job. Claim limits apply
+to all adapters and models and commit whole batches. A budget stop retains committed rows;
+use a new replay with higher limits to recover more. Partial in-progress revisions are
+inspectable in job exports and do not replace current source values until extraction finishes.
 
 ## Describe an objective
 
@@ -125,7 +139,7 @@ check their actual results before deployment. Compose execution remains unverifi
 | Capability | Implemented behavior |
 |---|---|
 | Targeted jobs | Seed URLs or objective-based SearXNG discovery; scoped follow-up acquisition |
-| Enumeration | JSON/CSV records, JSON-LD entities, body/HTTP Link pagination; bounded frontier |
+| Enumeration | Resumable JSON/CSV record batches, processing quotas and progress; JSON-LD entities and body/HTTP Link pagination |
 | Continuous jobs | Persistent refresh schedules, no overlapping generations, new sightings and content-change events |
 | Deep Research | Recursive model-proposed leads and queries, diversity/relevance priorities, prior observations and gaps as context, quote checking, persisted reasoning and plateau stopping |
 | Evidence | Durable acquisition checkpoint, SHA-256 body, response metadata, retrieval history, locators and versioned extraction membership |
@@ -142,12 +156,14 @@ check their actual results before deployment. Compose execution remains unverifi
   each job processes one task at a time. No cluster or network-filesystem support.
 - `completed` means the eligible frontier ran successfully. Population coverage is
   unmeasured. Missing fields are exposed; no universal completeness claim is made.
-- Built-in structured extraction caps each response at 100 records and 100 fields per
-  record. Limit warnings cause a `partial` result and retain the full permitted body.
-  Large populations need paginated APIs or a dedicated streaming adapter.
-- The four-mode workload probes measured 100/250 register entities and missed a research
-  fact beyond the model's 14,000-character source window. Replay fixes recovery, not those
-  coverage limits. See [the before/after evidence](docs/validation/v02-workloads.md).
+- JSON/CSV batching removes the old 100-record response cap; 100 fields per record and
+  oversized-value limits remain. HTML/JSON-LD and custom adapters retain their existing
+  limits. Warnings produce a partial result and retain the permitted body. JSON is parsed
+  in memory within the response-size ceiling; arbitrarily large files are not supported.
+- The register probe now recovers 250/250 entities, and both 5,000-row JSON/CSV probes
+  recover every fixture entity. This does not prove unknown population completeness.
+  Deep Research still misses evidence beyond its 14,000-character source window.
+  See [the 0.3 measurements](docs/validation/v03-workloads.md).
 - Internal extraction tasks count toward `limits.tasks`; allow roughly two tasks per
   acquired source before reasoning/discovery work. If the frontier is full, evidence is
   still retained and the job is partial; it can be replayed later.

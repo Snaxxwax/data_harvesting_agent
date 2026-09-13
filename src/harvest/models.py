@@ -39,6 +39,8 @@ class Limits(StrictModel):
     cost_usd: float = Field(default=2, ge=0, le=1000)
     no_gain_pages: int = Field(default=8, ge=1, le=1000)
     domain_delay: float = Field(default=1, ge=0.1, le=120)
+    records: int = Field(default=10_000, ge=1, le=1_000_000)
+    claims: int = Field(default=100_000, ge=1, le=5_000_000)
 
 
 class ReplaySpec(StrictModel):
@@ -112,6 +114,14 @@ class Extraction(StrictModel):
     text: str = Field(default="", max_length=100_000)
     extractor: str = "builtin/1"
     warnings: list[str] = Field(default_factory=list, max_length=50)
+
+
+class ExtractionBatch(StrictModel):
+    extraction: Extraction
+    start: int = Field(ge=0)
+    end: int = Field(ge=0)
+    total: int | None = Field(default=None, ge=0)
+    done: bool
 
 
 class BudgetExceeded(Exception):

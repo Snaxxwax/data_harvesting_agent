@@ -1,5 +1,24 @@
 # Validation record
 
+## 0.3 — 2026-09-13
+
+The [0.3 workloads](validation/v03-workloads.md) now recover all 250 entities in the original
+register and all 5,000 entities in each larger JSON/CSV case. Each larger case produces
+25,000 observations with two HTTP requests and reproduces them by offline replay with no
+new requests. [Machine-readable measurements](validation/v03-results.json) include timings,
+process memory and the real schema-2 database upgrade. Current automated results are in
+[test-summary.json](validation/test-summary.json).
+
+The schema-2 acceptance database upgraded on a new copy with 89 observations, 173 sightings,
+three captures, four extraction revisions and all four online/replay keys preserved. Record
+progress was not invented for old runs. Crash/fault, processing budgets, late malformed CSV,
+partial refresh, cursor provenance and migration rollback tests passed. No fresh public
+request was attempted for this milestone; owned-source HTTP and historical-evidence upgrade
+are the validation scope. Deep Research's long-document omission remains reproducible.
+
+The [published 0.2 CI run](https://github.com/Snaxxwax/data_harvesting_agent/actions/runs/34753480469)
+passed tests, package and Docker builds. Later revisions have their own CI outcomes.
+
 ## 0.2 — 2026-09-13
 
 See [four-mode before/after results](validation/v02-workloads.md),

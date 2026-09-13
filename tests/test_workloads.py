@@ -175,8 +175,10 @@ def test_enumeration_register_250_rows(workload):
     result, observations = run_case(
         engine, state, "enumerative", ["/register.csv"], fields=["name", "status"]
     )
-    assert result["status"] == "partial"
-    assert len({o["entity_key"] for o in observations}) == 100
+    assert result["status"] == "completed"
+    assert len({o["entity_key"] for o in observations}) == 250
+    assert result["records_processed"] == 250
+    assert engine.store.extractions(result["id"])[0]["records_remaining"] == 0
     assert result["missing_fields"] == []  # Presence is NOT population coverage.
 
 

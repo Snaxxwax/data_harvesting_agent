@@ -274,7 +274,7 @@ def test_schema_one_migration_preserves_data_keys_and_backup(tmp_path):
     spec = JobSpec.model_validate(store.job("old")["spec"])
     assert store.create(spec, [], "old-key") == "old"
     with store.connection() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     backup = tmp_path / "backup.sqlite"

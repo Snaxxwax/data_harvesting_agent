@@ -8,7 +8,7 @@ class Settings:
     database: str = field(default_factory=lambda: os.getenv("HARVEST_DB", "data/harvest.sqlite"))
     api_token: str = field(default_factory=lambda: os.getenv("HARVEST_API_TOKEN", ""))
     user_agent: str = field(
-        default_factory=lambda: os.getenv("HARVEST_USER_AGENT", "HarvestPlatform/0.2")
+        default_factory=lambda: os.getenv("HARVEST_USER_AGENT", "HarvestPlatform/0.3")
     )
     private_hosts: frozenset[str] = field(
         default_factory=lambda: frozenset(

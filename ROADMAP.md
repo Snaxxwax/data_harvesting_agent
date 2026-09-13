@@ -12,23 +12,29 @@ failed newer extraction attempts, and schema-1 history migrates without replacin
 See [ADR 0002](docs/adr/0002-durable-acquisition-and-replay.md) and
 [four-mode results](docs/validation/v02-workloads.md).
 
+0.3 removes the native JSON/CSV 100-record cap through resumable record batches with
+job-wide processing limits, record progress and atomic cursor checkpoints. The original
+register now yields 250/250 entities; both 5,000-row JSON/CSV probes yield all entities and
+25,000 observations. See [ADR 0003](docs/adr/0003-resumable-record-extraction.md) and
+[0.3 evidence](docs/validation/v03-workloads.md). These are owned-source results, not
+proof of coverage for arbitrary discovered populations.
+
 ## Observed priorities, not a feature checklist
 
-1. **Bounded structured-population coverage.** The 250-row owned register yields 100
-   entities, although all requested field names are present. Implement resumable extraction
-   batches with explicit processed/remaining counts and global assertion/resource limits.
-   Evaluate streaming JSON/CSV libraries against the existing 20 MB response ceiling before
-   adopting one. Use the new replay path to compare implementations on identical evidence.
-   Do not simply raise an arbitrary cap and label enumeration complete.
-2. **Document evidence selection.** Deep Research missed an explicit accreditation fact
+1. **Document evidence selection.** Deep Research still misses an explicit accreditation fact
    beyond character 14,000. Compare deterministic passage selection and bounded multi-pass
    extraction against a labeled long-document corpus. Preserve exact supporting passages
    and account for additional model cost. Test an actual configured provider before making
    research-quality claims; current model fixtures test contracts, not intelligence.
-3. **Target identity and contradiction usefulness.** Source-local IDs and model claims
+2. **Target identity and contradiction usefulness.** Source-local IDs and model claims
    attached to documents do not form a resolved target dossier. Measure exact-identifier
    reconciliation and cross-source evidence recall before fuzzy merges or graph infrastructure.
    Conflicts are preserved only when entity keys already match.
+3. **Extraction diversity and larger sources.** Native JSON/CSV now processes bounded full
+   responses, but HTML/JSON-LD retains its old caps, nested unknown JSON wrappers are not
+   inferred, and custom plugins remain single-call adapters. The 5,000-row measurements
+   do not justify unbounded JSON buffering. Adopt a streaming parser or external object
+   storage only when representative source/memory measurements require it.
 4. **Refresh semantics and operations.** New extraction staleness flags do not solve HTTP
    disappearance, entity deletion, partial snapshots, age-based freshness, or schedule-wide
    cost ceilings. Add explicit source-state/deletion rules only against labeled refresh cases.

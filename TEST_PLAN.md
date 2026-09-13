@@ -13,6 +13,11 @@ Recorded results are in `docs/VALIDATION.md`.
 | Crashed worker | Expired lease is reclaimed; stale worker cannot finish or charge budget |
 | Partial transaction | Acquisition checkpoint survives; SQLite fault injection rolls back assertions, revision outcome and extraction completion together |
 | Offline replay | No fetcher/model client; zero requests; old job exports stable; original capture/time retained; revised interpretation without false source conflicts |
+| Record coverage | 250-row JSON/CSV and 5,100-assertion wide response complete; record locators remain global across batches |
+| Batch durability | Crash/restart, stale token, cancellation and injected DB fault preserve cursor/claim/counter atomicity without repeat GET |
+| Processing budgets | Whole-batch claim limits across adapters/models; record limits shared across pages; unknown CSV remaining counts stay NULL |
+| Partial refresh | Unfinished revisions retain inspectable rows without replacing the last complete source interpretation |
+| CSV correctness | Multiline quoted Unicode values retain row locators; duplicate headers, mismatched row widths and late malformed quotes fail visibly |
 | Evidence loss | Malformed/unsupported bytes survive parsing failure; abrupt post-checkpoint process exit does not require another GET |
 | Migration | Schema-1 evidence, keys and pending reasoning survive; DDL rollback/restart and concurrent startup; migrated backup restored |
 | Stale interpretation | Failed newer refresh/replay retains old candidates with explicit stale/attempt state; old replay does not supersede newer retrieval |
@@ -39,6 +44,13 @@ Before/after results and remaining failures are in `docs/validation/v02-workload
 Opt-in public verification: `uv run python scripts/verify_public.py --db data/new-public-check.sqlite`.
 Use normal `HARVEST_*` network policy configuration; the script does not read ambient proxy
 credentials or disable TLS. It contacts the public HTTPX GitHub metadata endpoint only.
+
+For the larger reproducible owned-source probe, run
+`uv run python scripts/benchmark_batches.py --db data/new-benchmark.sqlite --format json`
+(or `--format csv` with a different new DB). The script checks all 5,000 entities and
+25,000 observations, replays the original capture without new requests, verifies evidence
+references and SQLite integrity, and reports timings and whole-process peak RSS. Measurements
+are workspace-specific, not a throughput SLA. See `docs/validation/v03-workloads.md`.
 
 Before production deployment beyond a single trusted operator, require: actual Docker image
 and Compose smoke test, chosen model/SearXNG provider integration, prolonged mixed-workload

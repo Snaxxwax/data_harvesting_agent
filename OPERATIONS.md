@@ -61,6 +61,14 @@ and the configured price covers its billing. Set provider-side limits too for pa
 SearXNG query charges, infrastructure, electrical power and other externally billed services
 are not estimated by this ledger.
 
+`limits.records` (default 10,000) bounds native JSON/CSV source rows visited per job;
+`limits.claims` (default 100,000) bounds emitted assertions across all extraction methods,
+including duplicate assertions and model output. Claim budget checks and processing counters
+commit atomically with results. A whole batch must fit the claim budget, so some remaining
+quota may go unused. Up to 50 records form one batch, within the existing extraction task.
+Row batching does not consume additional task slots or attempts. Body/request/time limits
+remain independent. JSON is buffered and parsed once per attempt, not streamed from disk.
+
 ## Status and inspection
 
 `GET /jobs/{id}` returns counts, reserved resources, captures, missing requested fields and
@@ -69,6 +77,14 @@ pages. Events use an integer `after` cursor; observations/entities use the last 
 `/captures/{id}` provides metadata and `/captures/{id}/body` downloads inert evidence bytes.
 `/jobs/{id}/export` streams JSONL. Export a terminal job for a stable complete snapshot;
 new observations created behind a cursor can otherwise be omitted from an in-flight export.
+
+`/jobs/{id}/extractions` additionally returns `records_processed`, `records_total`,
+`records_remaining` and `batches`. NULL means unknown, including legacy/custom-adapter
+record counts and CSV totals before EOF. Processing an entire response is not evidence
+that all external population members or requested facts have been discovered.
+On partial failure or cancellation, exports may contain committed prefixes of unfinished
+revisions. Inspect extraction status before using those rows downstream. Canonical views
+do not publish an unfinished batch revision over the last usable source interpretation.
 
 `POST /jobs/{id}/cancel` cancels that generation. For continuous jobs, separately call
 `POST /schedules/{id}/disable` (the first job ID is the schedule ID) to stop future runs.
@@ -84,7 +100,7 @@ search-service responses are not guaranteed captures. A budget stop retains prio
 Use `harvest replay CAPTURE_ID... --key KEY` after installing an improved adapter, or submit
 `POST /replays` with `capture_ids` and optional `limits`. Replay accepts up to 100 source
 captures from one dataset, not search responses. CLI `--submit-only` queues for workers.
-Replay has zero acquisition/model cost counters; task/time/attempt limits still apply.
+Replay has zero acquisition/model cost counters; task/time/attempt and processing limits still apply.
 Stored-body reads are not billed as network bytes. Internal extraction tasks also count
 toward the ordinary task frontier. If that cap prevents extraction, find the retained body
 through `/jobs/{id}/captures` and replay it with a sufficient task budget.
@@ -105,10 +121,12 @@ pruning is installed; continuous jobs can grow the database indefinitely.
 
 Run `uv sync --frozen` for upgrades from an reviewed commit. Validate database migrations
 against a restored copy first. Stop all old API/worker processes before upgrading; mixed-version
-operation is unsupported. This release migrates schema 1 to 2 automatically and transactionally;
+operation is unsupported. This release migrates schema 1 -> 2 -> 3 automatically, each step transactionally;
 legacy raw evidence, observation IDs, sightings, keys and schedules are preserved. Use
 `uv run python scripts/verify_upgrade.py OLD_DB NEW_COPY` to exercise migration on a new copy
-without modifying OLD_DB. Roll back by restoring the pre-upgrade backup and old code together;
+without modifying OLD_DB (schema 1 or 2). Legacy record progress is unknown, not reconstructed
+as zero or complete; legacy claim counters use stored assertion membership counts. The new
+default processing limits apply to active legacy jobs too. Roll back by restoring the pre-upgrade backup and old code together;
 there is no down-migration. Package
 updates require rerunning the recovery and provider contract tests; a lockfile does not
 replace supply-chain review.
