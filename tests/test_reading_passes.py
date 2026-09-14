@@ -112,6 +112,33 @@ def test_pass_cap_bounds_model_calls(engine, source):
     assert result["status"] == "completed" and source["model_calls"] == 2
 
 
+def test_retry_after_transient_pass_two_failure_repeats_same_selection(engine, source):
+    job, text = six_field_job(engine, source)
+    # The 2nd POST is pass 2's first attempt; drop that connection to force an engine retry.
+    source["fail_model_attempts"] = {2}
+    result = engine.run(job)
+    assert result["status"] == "completed" and result["missing_fields"] == []
+    assert result["model_calls"] == 3  # Conservative reservation counts the failed call.
+    assert source["model_calls"] == 2 and source["counts"]["/report"] == 1
+    audits = reserved(engine, job)
+    assert [a["reading_pass"] for a in audits] == [1, 2, 2]
+    first_pass, failed_attempt, retried_attempt = audits
+    # Same durable task, retried once after the dropped connection.
+    assert failed_attempt["task"] == retried_attempt["task"]
+    assert failed_attempt["attempt"] != retried_attempt["attempt"]
+    # The retry must reproduce the exact prompt/passage selection of pass 2's first attempt.
+    assert failed_attempt["prompt_sha256"] == retried_attempt["prompt_sha256"]
+    assert failed_attempt["selection"]["spans"] == retried_attempt["selection"]["spans"]
+    # Pass 1's already-shown spans remain excluded from pass 2.
+    shown_first = {(s["start"], s["end"]) for s in first_pass["selection"]["spans"]}
+    shown_retry = {(s["start"], s["end"]) for s in retried_attempt["selection"]["spans"]}
+    assert not shown_first & shown_retry
+    assert any(e["type"] == "deferred" for e in engine.store.events(job))
+    for field, fact in zip(FIELDS, FACTS, strict=True):
+        observation = next(o for o in engine.store.observations(job) if o["field"] == field)
+        assert observation["locator"] == f"text:{text.index(fact)}"
+
+
 def test_restart_between_passes_resumes_without_repeating_work(engine, source):
     job, _ = six_field_job(engine, source)
     for _ in range(3):  # acquire, extract, reason pass 1

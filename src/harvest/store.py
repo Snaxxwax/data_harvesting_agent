@@ -775,8 +775,15 @@ class Store:
             )
         }
 
-    def shown_spans(self, job_id, capture_id):
-        """Adapter-text ranges already sent to the model for this capture, from persisted audits."""
+    def shown_spans(self, job_id, capture_id, *, exclude_task_id):
+        """Adapter-text ranges already sent to the model for this capture, from persisted audits.
+
+        Omits records from exclude_task_id: a retry of that same durable task must see the
+        spans its own earlier (possibly failed) attempts already reserved, not treat them as
+        already shown, so it reproduces the identical prompt/selection on every attempt.
+        exclude_task_id is required (not defaulted) so callers cannot silently omit it and
+        reintroduce the retry-selection-drift bug this guards against.
+        """
         spans = []
         with self.connection() as db:
             rows = db.execute(
@@ -785,7 +792,7 @@ class Store:
             ).fetchall()
         for row in rows:
             details = json.loads(row[0])
-            if details.get("capture_id") == capture_id:
+            if details.get("capture_id") == capture_id and details.get("task") != exclude_task_id:
                 spans.extend((s["start"], s["end"]) for s in details["selection"]["spans"])
         return spans
 

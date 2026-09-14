@@ -112,6 +112,11 @@ def source():
                 self.reply(404)
 
         def do_POST(self):
+            state["model_post_attempts"] = state.get("model_post_attempts", 0) + 1
+            if state["model_post_attempts"] in state.get("fail_model_attempts", ()):
+                # Simulate a transient provider failure: connection drops with no response sent.
+                self.close_connection = True
+                return
             state["model_calls"] += 1
             data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             state["last_model_request"] = data
