@@ -271,7 +271,9 @@ class Engine:
                 normalizer=extraction.extractor,
                 body_hash=cap["body_hash"],
                 fields=task["payload"].get("unresolved_fields"),
-                exclude=self.store.shown_spans(task["job_id"], cap["id"])
+                exclude=self.store.shown_spans(
+                    task["job_id"], cap["id"], exclude_task_id=task["id"]
+                )
                 if reading_pass > 1
                 else (),
                 reading_pass=reading_pass,
