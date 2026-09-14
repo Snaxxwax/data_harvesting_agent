@@ -1,6 +1,6 @@
 # Architecture hypothesis and implementation
 
-Initial decision date: 2026-09-12. Revised 2026-09-13. Implemented version: 0.3.0.
+Initial decision date: 2026-09-12. Revised 2026-09-14. Implemented version: 0.4.0.
 
 ## Runtime boundary
 
@@ -117,6 +117,15 @@ stops on exhausted frontier, limits, cancellation, or consecutive pages with no 
 observations. New wording/metadata can count as novelty; calibrated information gain is
 future work. No quality guarantee follows from the existence of this loop.
 
+[ADR 0004](docs/adr/0004-bounded-document-evidence.md) replaces prefix-only model input with
+bounded FTS5-ranked passages, introduction/conclusion context and explicit omission counts.
+Exact messages and source-coordinate mappings are persisted before each provider request.
+Quote validation rejects joins across omitted text and stores original adapter-text offsets.
+The per-attempt search index is ephemeral; evidence stays in existing captures and events.
+No extra model call or persistent schema is needed. Missing fields use the complete stored
+field set, while reasoning observations remain a bounded sample. A missing FTS5 module uses
+an explicitly audited coverage fallback; it does not prevent deterministic harvesting.
+
 ## Scheduling and refresh
 
 Continuous jobs create a durable schedule. The next generation starts only after the
@@ -130,7 +139,8 @@ one generation. Deletion detection and selective field freshness are deferred.
 The implementation intentionally has no Redis, vector database, browser pool, autonomous
 shell, agent framework, graph database or distributed workflow service. Each would need
 evidence that it solves an observed limitation better than the present adapter boundaries.
-The strongest observed remaining gap is long-document evidence selection. Larger source
-streaming, identity semantics, explicit refresh policies and storage/concurrency changes
-remain contingent on representative workload measurements; the 0.3 batches address bounded
-JSON/CSV processing rather than proving those broader capabilities.
+The new selector improves input coverage but still misses unmatched vocabulary and competing
+fields. Compare durable multi-pass coverage and semantic retrieval against these measured
+failures next. Larger-source streaming, identity semantics, refresh policies and storage
+changes remain contingent on representative measurements; no general research-quality or
+full-document coverage claim follows from the 0.4 results.

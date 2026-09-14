@@ -70,6 +70,16 @@ captured body is available independently. Model offsets refer to the stored extr
 normalization procedure, not the original byte offset; the exact supporting quote is also
 retained. Extractor versioning is required whenever that behavior changes.
 
+Since 0.4, `model_reserved` events retain exact `system_prompt`/`user_prompt`, task attempt,
+capture/extraction IDs, body hash, normalizer name and a `selection` object. Its original
+normalized-text hash, selected/omitted character counts, selector/backend version and spans
+make the input inspectable even after an adapter upgrade. Each span has original `start/end`
+and selected-input `input_start/input_end`, all Unicode code points with exclusive ends.
+`model/2` locators refer to original adapter text, not the concatenated selection. A quote
+must fit one selected contiguous range. Prompt hashes cover system plus user message strings.
+Earlier audit events do not gain invented prompt text. Schema remains 3; no backfill is needed.
+Events describe reservations/attempts, not confirmation that the provider executed a request.
+
 ## Current value view
 
 For a given entity and field, select assertions in each source's latest usable extraction,

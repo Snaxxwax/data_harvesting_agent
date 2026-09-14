@@ -1,5 +1,22 @@
 # Validation record
 
+## 0.4 — 2026-09-14
+
+The [four-mode runs and document probes](validation/v04-workloads.md) reproduce the original
+long-report omission and then recover its accreditation quote with unchanged model-call and
+request counts. Targeted/continuous long text and HTML retain exact original quote offsets;
+pre-dispatch model inputs survive interruption. Existing enumeration and failed-refresh
+behavior remain verified. Schema stays 3; no data migration is introduced.
+
+The [synthetic comparison](validation/v04-passages.json) exposes 12/16 labeled quotes using
+ranked passages, versus 2/16 for the prefix and 2/16 for uniform sampling. Unmatched vocabulary
+and competing-field misses remain explicit. No fresh public acquisition or live model was
+used, and these are input-coverage results rather than semantic research-quality claims.
+The [current test summary](validation/test-summary.json) records the final automated run.
+
+The published [0.3 CI run](https://github.com/Snaxxwax/data_harvesting_agent/actions/runs/34780019468)
+passed tests and Docker build. This historical result does not certify later revisions.
+
 ## 0.3 — 2026-09-13
 
 The [0.3 workloads](validation/v03-workloads.md) now recover all 250 entities in the original

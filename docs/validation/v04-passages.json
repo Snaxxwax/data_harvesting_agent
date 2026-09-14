@@ -1,0 +1,102 @@
+{
+  "kind": "synthetic exact-quote input coverage; no model calls",
+  "elapsed_seconds": 0.0227,
+  "totals": {
+    "facts": 16,
+    "prefix_hits": 2,
+    "uniform_hits": 2,
+    "ranked_hits": 12
+  },
+  "cases": [
+    {
+      "case": "fact-at-500",
+      "facts": 1,
+      "prefix_hits": 1,
+      "uniform_hits": 1,
+      "ranked_hits": 1,
+      "selected_chars": 13000,
+      "input_chars": 13132
+    },
+    {
+      "case": "fact-at-8500",
+      "facts": 1,
+      "prefix_hits": 1,
+      "uniform_hits": 0,
+      "ranked_hits": 1,
+      "selected_chars": 13000,
+      "input_chars": 13132
+    },
+    {
+      "case": "fact-at-14000",
+      "facts": 1,
+      "prefix_hits": 0,
+      "uniform_hits": 0,
+      "ranked_hits": 1,
+      "selected_chars": 13000,
+      "input_chars": 13132
+    },
+    {
+      "case": "fact-at-25100",
+      "facts": 1,
+      "prefix_hits": 0,
+      "uniform_hits": 1,
+      "ranked_hits": 1,
+      "selected_chars": 12600,
+      "input_chars": 12699
+    },
+    {
+      "case": "fact-at-37300",
+      "facts": 1,
+      "prefix_hits": 0,
+      "uniform_hits": 0,
+      "ranked_hits": 1,
+      "selected_chars": 13000,
+      "input_chars": 13132
+    },
+    {
+      "case": "fact-at-61000",
+      "facts": 1,
+      "prefix_hits": 0,
+      "uniform_hits": 0,
+      "ranked_hits": 1,
+      "selected_chars": 13000,
+      "input_chars": 13132
+    },
+    {
+      "case": "fact-at-89500",
+      "facts": 1,
+      "prefix_hits": 0,
+      "uniform_hits": 0,
+      "ranked_hits": 1,
+      "selected_chars": 13000,
+      "input_chars": 13132
+    },
+    {
+      "case": "distant-conflict",
+      "facts": 2,
+      "prefix_hits": 0,
+      "uniform_hits": 0,
+      "ranked_hits": 2,
+      "selected_chars": 13000,
+      "input_chars": 13132
+    },
+    {
+      "case": "unmatched-vocabulary",
+      "facts": 1,
+      "prefix_hits": 0,
+      "uniform_hits": 0,
+      "ranked_hits": 0,
+      "selected_chars": 13000,
+      "input_chars": 13132
+    },
+    {
+      "case": "six-competing-fields",
+      "facts": 6,
+      "prefix_hits": 0,
+      "uniform_hits": 0,
+      "ranked_hits": 3,
+      "selected_chars": 13000,
+      "input_chars": 13132
+    }
+  ]
+}

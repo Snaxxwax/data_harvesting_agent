@@ -284,10 +284,13 @@ class HtmlAdapter:
                 leads.append(Lead(url=link, reason=reason, priority=50 if pagination else 0))
         for node in soup(["script", "style", "noscript", "nav", "footer"]):
             node.decompose()
+        text = soup.get_text(" ", strip=True)
+        if len(text) > 100000:
+            warnings.append("normalized text exceeds 100000 characters; remainder omitted")
         return Extraction(
             claims=claims[:5000],
             leads=leads[:500],
-            text=soup.get_text(" ", strip=True)[:100000],
+            text=text[:100000],
             extractor=self.name,
             warnings=list(dict.fromkeys(warnings))[:50],
         )
@@ -300,7 +303,14 @@ class TextAdapter:
         return content_type.startswith("text/plain")
 
     def extract(self, body, url):
-        return Extraction(text=body.decode("utf-8", errors="replace")[:100000], extractor=self.name)
+        text = body.decode("utf-8", errors="replace")
+        return Extraction(
+            text=text[:100000],
+            extractor=self.name,
+            warnings=["normalized text exceeds 100000 characters; remainder omitted"]
+            if len(text) > 100000
+            else [],
+        )
 
 
 class Extractors:

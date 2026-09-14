@@ -1,5 +1,30 @@
 # Operations
 
+## 0.4 evidence selection and upgrade
+
+Stop workers before updating code, keep a normal database backup, then run `uv sync --frozen`
+and restart. Database schema stays 3; no new migration, dependency, model account or service
+is required. Existing completed jobs and offline replays remain intact. Pending reasoning
+uses the installed selector. New model observations identify `model/2:<model-name>`.
+
+Reasoning uses at most 14,000 characters of selected source text per call, plus schema and
+research context. Global token/cost/call budgets still govern dispatch; this source bound
+is fixed rather than a new job setting. The selector uses SQLite FTS5 when available and
+records `coverage-fallback-no-fts5` in audit metadata otherwise. Full-text search installation
+is unnecessary for deterministic acquisition/extraction jobs.
+
+Inspect `model_reserved` in the existing job events API/CLI for exact model input, source
+spans, omission counts, normalizer, hashes, attempt and reservation. These events now contain
+source passages and stored observation context, so protect exports/backups like raw evidence.
+Authorization headers and model API keys are not recorded. Audit storage grows with each
+attempt; retention/disk quotas remain unimplemented. A reservation is not proof of provider
+execution, and uncertain attempts are not refunded or automatically response-cached.
+
+HTML/plain-text sources over the existing 100,000-character normalization bound now produce
+an omission warning and a partial extraction. This makes a prior silent omission visible;
+the raw acquired representation remains available. Selection omissions within that bound
+appear in the prompt and audit, and do not by themselves mark a successfully executed job partial.
+
 ## Supported topology
 
 One host, local filesystem, trusted operator. SQLite is not supported on NFS/SMB or a

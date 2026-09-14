@@ -31,6 +31,10 @@ Recorded results are in `docs/VALIDATION.md`.
 | Resource exhaustion | Request budget includes robots, body caps stop persistence, bounded gzip decompression rejects bombs |
 | Model costs | Budget reserved before provider request; insufficient budget emits no billable call |
 | Model fabrication / injection | Missing quote rejected; unknown fields cannot modify operator policy |
+| Long-document input coverage | Exact quotes at varied Unicode offsets, distant contradictions and multiple requested fields; prefix/uniform/ranked synthetic comparison |
+| Passage provenance | Model input equals pre-dispatch audit; original offsets/hash/normalizer retained; quotes cannot bridge omitted ranges |
+| Model attempt recovery | Crash before provider retains audit/reservation; reclaimed task completes without another source GET |
+| Honest omissions | HTML/text truncation warning; missing FTS5 fallback is explicit; gap detection does not depend on observation sample |
 | Autonomous research wiring | Objective-only search through real local HTTP and model endpoints creates follow-up queries and grounded observations |
 | API boundary | Bearer auth, idempotency conflict, cursor validation, export and inert capture downloads |
 | Backups | Restored backup preserves job state, observations and evidence bytes |
@@ -57,3 +61,8 @@ and Compose smoke test, chosen model/SearXNG provider integration, prolonged mix
 soak test, backup restore drill on target hardware, disk pressure behavior, dependency/image
 review, benchmarked extraction/identity/contradiction quality and workload-derived limits.
 The current suite does not substitute for those missing deployment checks.
+
+Run `uv run python scripts/benchmark_passages.py` for the ten-document, 16-quote synthetic
+coverage comparison. This requires no network or model. See `docs/validation/v04-workloads.md`
+for misses as well as successes. `tests/test_passages.py` also runs actual owned-source HTTP
+and scripted model requests for text/HTML, refresh, failure/restart, and quote rejection.

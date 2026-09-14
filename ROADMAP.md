@@ -19,13 +19,20 @@ register now yields 250/250 entities; both 5,000-row JSON/CSV probes yield all e
 [0.3 evidence](docs/validation/v03-workloads.md). These are owned-source results, not
 proof of coverage for arbitrary discovered populations.
 
+0.4 selects bounded passages across adapter text, preserves exact model input and original
+quote coordinates, and fixes sample-dependent gap tracking. The original long-report fact
+is now extracted with unchanged request/call counts. Synthetic input coverage is 12/16;
+see [ADR 0004](docs/adr/0004-bounded-document-evidence.md) and
+[0.4 validation](docs/validation/v04-workloads.md).
+
 ## Observed priorities, not a feature checklist
 
-1. **Document evidence selection.** Deep Research still misses an explicit accreditation fact
-   beyond character 14,000. Compare deterministic passage selection and bounded multi-pass
-   extraction against a labeled long-document corpus. Preserve exact supporting passages
-   and account for additional model cost. Test an actual configured provider before making
-   research-quality claims; current model fixtures test contracts, not intelligence.
+1. **Coverage after retrieval.** The 0.4 selector fixes prefix blindness but misses unfamiliar
+   vocabulary and three of six competing fields in the synthetic probe. Compare bounded,
+   durable multi-pass reading with semantic retrieval on a broader labeled corpus. Track
+   what remains unreviewed, revisit unresolved fields, and account for every additional call.
+   An actual configured provider evaluation is required before research-quality claims;
+   current scripted model fixtures verify contracts and input coverage only.
 2. **Target identity and contradiction usefulness.** Source-local IDs and model claims
    attached to documents do not form a resolved target dossier. Measure exact-identifier
    reconciliation and cross-source evidence recall before fuzzy merges or graph infrastructure.

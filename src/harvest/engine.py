@@ -96,11 +96,10 @@ class Engine:
             }
             for r in observations
         ]
-        present = {r["field"] for r in observations}
         return {
             "observations": values,
             "visited_or_queued": visited,
-            "missing_fields": [f for f in job["spec"]["fields"] if f not in present],
+            "missing_fields": job["missing_fields"],
             "previous_decisions": decisions[:2],
         }
 
@@ -258,11 +257,18 @@ class Engine:
             return
         if task["kind"] == "reason":
             cap = self.store.capture(task["payload"]["capture_id"])
+            if digest(cap["body"]) != cap["body_hash"]:
+                raise ValueError("capture body hash mismatch")
             extraction = self.extractors.extract(
                 cap["body"], cap["final_url"], json.loads(cap["headers"]).get("content-type", "")
             )
             result, decision, details = self.reasoner.decide(
-                task, cap["final_url"], extraction.text, self.context(task["job_id"])
+                task,
+                cap["final_url"],
+                extraction.text,
+                self.context(task["job_id"]),
+                normalizer=extraction.extractor,
+                body_hash=cap["body_hash"],
             )
             leads = self.select_leads(task, decision.leads)
             if self.settings.search_url and spec.mode == "deep_research":

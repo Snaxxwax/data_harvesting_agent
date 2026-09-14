@@ -1,5 +1,18 @@
 # Source audit and reuse decisions
 
+## 0.4 re-evaluation — 2026-09-14
+
+The reproduced long-report omission prompted a fresh review of
+[SQLite FTS5](https://www.sqlite.org/fts5.html),
+[Haystack DocumentSplitter](https://docs.haystack.deepset.ai/docs/documentsplitter), and
+[Sentence Transformers retrieval/reranking](https://sbert.net/examples/sentence_transformer/applications/retrieve_rerank/README.html).
+Reuse SQLite ranking and the overlapping-passage/source-coordinate pattern; defer a pipeline
+framework and learned retrieval until semantic-recall measurements justify them. No new package
+was added. [ADR 0004](docs/adr/0004-bounded-document-evidence.md) records the implementation,
+fallback behavior, input-coverage comparison, and remaining misses.
+
+## Initial ecosystem review
+
 Researched 2026-09-12 using repository source, official docs and installed package metadata.
 Statements labelled **verified** describe inspected material. **Decision** paragraphs are
 engineering judgments, not claims that alternatives are unsuitable in general. No broad

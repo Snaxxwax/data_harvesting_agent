@@ -3,8 +3,8 @@
 A self-hosted harvesting service that turns objectives or seed URLs into durable jobs,
 structured observations, raw evidence, and inspectable research decisions.
 
-**Status: tested 0.3 foundation, with resumable JSON/CSV extraction.** Durable acquisition,
-offline replay and bounded record batches are implemented. This is not yet a fully hardened general-purpose
+**Status: tested 0.4 foundation, with bounded document evidence selection.** Durable acquisition,
+offline replay, resumable record batches and audited model inputs are implemented. This is not yet a fully hardened general-purpose
 research product. Current capabilities and the limits of verification are explicit below.
 
 ## Quick start
@@ -141,7 +141,7 @@ check their actual results before deployment. Compose execution remains unverifi
 | Targeted jobs | Seed URLs or objective-based SearXNG discovery; scoped follow-up acquisition |
 | Enumeration | Resumable JSON/CSV record batches, processing quotas and progress; JSON-LD entities and body/HTTP Link pagination |
 | Continuous jobs | Persistent refresh schedules, no overlapping generations, new sightings and content-change events |
-| Deep Research | Recursive model-proposed leads and queries, diversity/relevance priorities, prior observations and gaps as context, quote checking, persisted reasoning and plateau stopping |
+| Deep Research | Recursive leads/queries, ranked source passages, original quote offsets, exact input audit, prior observations/gaps, diversity priorities and plateau stopping |
 | Evidence | Durable acquisition checkpoint, SHA-256 body, response metadata, retrieval history, locators and versioned extraction membership |
 | Replay | Offline deterministic re-extraction; original results preserved; revised interpretations are not fabricated retrievals |
 | Conflicts | Latest usable source analysis; differing source values remain visible; failed newer extraction attempts mark retained candidates stale |
@@ -162,8 +162,11 @@ check their actual results before deployment. Compose execution remains unverifi
   in memory within the response-size ceiling; arbitrarily large files are not supported.
 - The register probe now recovers 250/250 entities, and both 5,000-row JSON/CSV probes
   recover every fixture entity. This does not prove unknown population completeness.
-  Deep Research still misses evidence beyond its 14,000-character source window.
   See [the 0.3 measurements](docs/validation/v03-workloads.md).
+- Model input now selects passages throughout the adapter's bounded text. The long-report
+  fact is recovered, but a synthetic probe still misses unmatched vocabulary and some competing
+  fields (12/16 quotes exposed). Selection is not full-document review. HTML/plain text still
+  stops at 100,000 normalized characters, now with a warning. See [0.4 evidence](docs/validation/v04-workloads.md).
 - Internal extraction tasks count toward `limits.tasks`; allow roughly two tasks per
   acquired source before reasoning/discovery work. If the frontier is full, evidence is
   still retained and the job is partial; it can be replayed later.

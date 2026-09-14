@@ -220,9 +220,9 @@ def test_deep_research_mixed_primary_evidence(workload):
         engine, state, "deep_research", [], fields=["employees", "accreditation"], use_model=True
     )
     assert result["status"] == "partial"
-    assert "accreditation" in result["missing_fields"]
+    assert "accreditation" not in result["missing_fields"]
     assert len(state["model_inputs"]) == 3
-    assert not any(o["field"] == "accreditation" for o in observations)
+    assert any(o["field"] == "accreditation" for o in observations)
     assert result["captures"] == 5  # Search plus all four permitted source responses.
 
 
