@@ -115,29 +115,34 @@ def source():
             state["model_calls"] += 1
             data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             state["last_model_request"] = data
-            answer = state.get(
-                "model_answer",
-                {
-                    "claims": [
-                        {
-                            "field": "protocol",
-                            "value": "HTTP/2",
-                            "quote": "Alpha supports HTTP/2.",
-                            "confidence": 0.9,
-                        },
-                        {
-                            "field": "invented",
-                            "value": "HTTP/9",
-                            "quote": "Alpha supports HTTP/9.",
-                            "confidence": 1,
-                        },
-                    ],
-                    "leads": [],
-                    "queries": ["Alpha protocol primary evidence"],
-                    "gaps": ["independent verification"],
-                    "contradictions": [],
-                    "rationale": "Follow primary documentation and seek independent evidence.",
-                },
+            reader = state.get("model_reader")
+            answer = (
+                reader(data)
+                if reader
+                else state.get(
+                    "model_answer",
+                    {
+                        "claims": [
+                            {
+                                "field": "protocol",
+                                "value": "HTTP/2",
+                                "quote": "Alpha supports HTTP/2.",
+                                "confidence": 0.9,
+                            },
+                            {
+                                "field": "invented",
+                                "value": "HTTP/9",
+                                "quote": "Alpha supports HTTP/9.",
+                                "confidence": 1,
+                            },
+                        ],
+                        "leads": [],
+                        "queries": ["Alpha protocol primary evidence"],
+                        "gaps": ["independent verification"],
+                        "contradictions": [],
+                        "rationale": "Follow primary documentation and seek independent evidence.",
+                    },
+                )
             )
             self.reply(
                 200,

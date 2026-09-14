@@ -25,14 +25,21 @@ is now extracted with unchanged request/call counts. Synthetic input coverage is
 see [ADR 0004](docs/adr/0004-bounded-document-evidence.md) and
 [0.4 validation](docs/validation/v04-workloads.md).
 
+0.5 adds durable multi-pass reading. Six requested fields at six distant offsets reached
+3/6 in one pass (three ranked slots after introduction/conclusion) and 6/6 in two passes with
+the unchanged selector, no new dependency and no schema change. Semantic retrieval was
+measured only with static vectors, whose apparent gain was an anomaly-detection artifact on
+the synthetic corpus; it is deferred pending a representative corpus and a runnable
+transformer model, not rejected. See [0.5 validation](docs/validation/v05-reading-passes.md).
+
 ## Observed priorities, not a feature checklist
 
-1. **Coverage after retrieval.** The 0.4 selector fixes prefix blindness but misses unfamiliar
-   vocabulary and three of six competing fields in the synthetic probe. Compare bounded,
-   durable multi-pass reading with semantic retrieval on a broader labeled corpus. Track
-   what remains unreviewed, revisit unresolved fields, and account for every additional call.
-   An actual configured provider evaluation is required before research-quality claims;
-   current scripted model fixtures verify contracts and input coverage only.
+1. **Coverage after retrieval.** Multi-pass reading resolves the slot ceiling; unfamiliar
+   vocabulary remains unmeasured because the synthetic corpus cannot distinguish semantic
+   retrieval from anomaly detection. Build a labeled corpus of real documents with varied
+   distractor prose, then compare FTS5 against a transformer embedding model in an
+   environment with model access. Rereads add model calls per capture; an actual configured
+   provider evaluation is still required before research-quality claims.
 2. **Target identity and contradiction usefulness.** Source-local IDs and model claims
    attached to documents do not form a resolved target dossier. Measure exact-identifier
    reconciliation and cross-source evidence recall before fuzzy merges or graph infrastructure.
