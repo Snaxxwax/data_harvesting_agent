@@ -41,6 +41,7 @@ class Limits(StrictModel):
     domain_delay: float = Field(default=1, ge=0.1, le=120)
     records: int = Field(default=10_000, ge=1, le=1_000_000)
     claims: int = Field(default=100_000, ge=1, le=5_000_000)
+    reading_passes: int = Field(default=3, ge=1, le=10)
 
 
 class ReplaySpec(StrictModel):

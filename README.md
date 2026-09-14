@@ -95,6 +95,18 @@ For precise limits use a JSON job specification, e.g. `examples/deep-research.js
 `use_model` is explicit because it can incur cost. Without it, HTML yields deterministic
 page metadata and JSON-LD; it does not pretend to answer arbitrary factual questions.
 
+## Reread unresolved fields
+
+A bounded model pass shows at most five passages. When requested fields remain missing
+after a pass that produced novel observations, the worker schedules another pass on the
+same capture, querying only the unresolved fields and excluding passages already shown.
+Rereading stops at `limits.reading_passes` (default 3), after a pass with no novel
+observations, or when every candidate passage has been shown. Each pass is a normal task
+with its own reservation, persisted exact input and span map; no new GET is issued.
+Set `reading_passes` to 1 for single-pass 0.4 behavior. Missing fields are job-wide: a
+field supplied by any source ends rereading on every capture, including one that may hold
+a conflicting value.
+
 ## Long-running service
 
 Create a random token and start the API and worker in separate terminals:

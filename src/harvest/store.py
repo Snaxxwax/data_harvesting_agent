@@ -624,10 +624,21 @@ class Store:
             for lead in leads:
                 item = {**lead, "parent": task["id"]}
                 if item.get("kind") in {"extract", "reason"} and capture_id is not None:
+                    reading_pass = item.get("payload", {}).get("pass")
                     item["payload"] = {"capture_id": capture_id}
                     item["key"] = str(capture_id)
                     if item["kind"] == "reason":
                         item["payload"]["extraction_id"] = extraction_id
+                    if reading_pass:
+                        # A reread is justified only by a novel pass with fields still unresolved.
+                        unresolved = [
+                            f for f in spec.fields if f not in self._fields(db, job["id"])
+                        ]
+                        if not novel or not unresolved:
+                            continue
+                        item["key"] = f"{capture_id}:pass:{reading_pass}"
+                        item["payload"]["pass"] = reading_pass
+                        item["payload"]["unresolved_fields"] = unresolved
                 self.enqueue(db, job["id"], item, spec)
             if batch is not None and not batch.done:
                 # Keep the same lease and parser iterator. A crash reclaims this task at its cursor.
@@ -746,18 +757,44 @@ class Store:
                 ).fetchall()
             )
             result["cost_reserved_usd"] = result["cost_microusd"] / 1_000_000
-            fields = {
-                r[0]
-                for r in db.execute(
-                    "SELECT DISTINCT o.field FROM observations o JOIN assertions a ON a.observation_id=o.id JOIN extractions x ON x.id=a.extraction_id WHERE x.job_id=?",
-                    (job_id,),
-                )
-            }
+            fields = self._fields(db, job_id)
             result["missing_fields"] = [f for f in result["spec"]["fields"] if f not in fields]
             result["coverage"] = (
                 "unmeasured; completion describes work execution, not population completeness"
             )
             return result
+
+    @staticmethod
+    def _fields(db, job_id):
+        """Job-wide persisted field set; completeness is per job, not per entity or source."""
+        return {
+            r[0]
+            for r in db.execute(
+                "SELECT DISTINCT o.field FROM observations o JOIN assertions a ON a.observation_id=o.id JOIN extractions x ON x.id=a.extraction_id WHERE x.job_id=?",
+                (job_id,),
+            )
+        }
+
+    def shown_spans(self, job_id, capture_id, *, exclude_task_id):
+        """Adapter-text ranges already sent to the model for this capture, from persisted audits.
+
+        Omits records from exclude_task_id: a retry of that same durable task must see the
+        spans its own earlier (possibly failed) attempts already reserved, not treat them as
+        already shown, so it reproduces the identical prompt/selection on every attempt.
+        exclude_task_id is required (not defaulted) so callers cannot silently omit it and
+        reintroduce the retry-selection-drift bug this guards against.
+        """
+        spans = []
+        with self.connection() as db:
+            rows = db.execute(
+                "SELECT details FROM events WHERE job_id=? AND type='model_reserved' ORDER BY id",
+                (job_id,),
+            ).fetchall()
+        for row in rows:
+            details = json.loads(row[0])
+            if details.get("capture_id") == capture_id and details.get("task") != exclude_task_id:
+                spans.extend((s["start"], s["end"]) for s in details["selection"]["spans"])
+        return spans
 
     def jobs(self, limit=100):
         with self.connection() as db:

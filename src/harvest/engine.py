@@ -262,6 +262,7 @@ class Engine:
             extraction = self.extractors.extract(
                 cap["body"], cap["final_url"], json.loads(cap["headers"]).get("content-type", "")
             )
+            reading_pass = task["payload"].get("pass", 1)
             result, decision, details = self.reasoner.decide(
                 task,
                 cap["final_url"],
@@ -269,8 +270,30 @@ class Engine:
                 self.context(task["job_id"]),
                 normalizer=extraction.extractor,
                 body_hash=cap["body_hash"],
+                fields=task["payload"].get("unresolved_fields"),
+                exclude=self.store.shown_spans(
+                    task["job_id"], cap["id"], exclude_task_id=task["id"]
+                )
+                if reading_pass > 1
+                else (),
+                reading_pass=reading_pass,
             )
+            if decision is None:
+                self.store.finish(task, extraction=result, capture_id=cap["id"], details=details)
+                return
             leads = self.select_leads(task, decision.leads)
+            if reading_pass < spec.limits.reading_passes:
+                # Store.finish enqueues this only if the pass was novel and fields remain missing.
+                leads.append(
+                    {
+                        "kind": "reason",
+                        "key": "capture",
+                        "payload": {"pass": reading_pass + 1},
+                        "depth": task["depth"],
+                        "priority": 100,
+                        "reason": "reread unresolved fields",
+                    }
+                )
             if self.settings.search_url and spec.mode == "deep_research":
                 for query in decision.queries[:5]:
                     query = query.strip()[:1000]

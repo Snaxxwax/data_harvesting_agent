@@ -69,19 +69,44 @@ def rank_windows(windows, queries):
         ]
 
 
-def select_passages(text: str, objective: str, fields: list[str], context: dict) -> Selection:
+def shown_fraction(start: int, end: int, exclude) -> float:
+    covered = sum(max(0, min(end, e) - max(start, s)) for s, e in exclude)
+    return covered / max(1, end - start)
+
+
+def select_passages(
+    text: str,
+    objective: str,
+    fields: list[str],
+    context: dict,
+    *,
+    exclude=(),
+    reserve_ends: bool = True,
+) -> Selection:
+    """`exclude` holds (start, end) adapter-text ranges already shown in earlier passes."""
     queries = queries_for(objective, fields, context)
     backend = "whole-text"
+    excluded_count = 0
     if len(text) <= INPUT_LIMIT:
-        selected = [(0, text)]
+        selected = [] if exclude and shown_fraction(0, len(text), exclude) >= 0.5 else [(0, text)]
+        excluded_count = 1 - len(selected)
     else:
         starts = list(range(0, len(text) - WINDOW, WINDOW - OVERLAP)) + [len(text) - WINDOW]
         windows = [(i, text[i : i + WINDOW]) for i in starts]
+        # A window mostly shown in an earlier pass is not a candidate; the budget goes to unseen text.
+        available = [
+            i
+            for i, (start, part) in enumerate(windows)
+            if not exclude or shown_fraction(start, start + len(part), exclude) < 0.5
+        ]
+        excluded_count = len(windows) - len(available)
         # Keep introduction and conclusion even when their vocabulary differs from the query.
-        chosen = [0, len(windows) - 1]
+        chosen = [i for i in (0, len(windows) - 1) if reserve_ends and i in available]
+        chosen = list(dict.fromkeys(chosen))
         backend = "sqlite-fts5-bm25"
         try:
-            rankings = rank_windows(windows, queries)
+            allowed = set(available)
+            rankings = [[i for i in r if i in allowed] for r in rank_windows(windows, queries)]
         except sqlite3.OperationalError as exc:
             if "no such module: fts5" not in str(exc):
                 raise
@@ -99,7 +124,14 @@ def select_passages(text: str, objective: str, fields: list[str], context: dict)
         # No lexical matches: sample the interior deterministically instead of another prefix.
         for fraction in (0.5, 0.25, 0.75):
             index = round((len(windows) - 1) * fraction)
-            if index not in chosen and len(chosen) < MAX_PASSAGES:
+            if index in allowed and index not in chosen and len(chosen) < MAX_PASSAGES:
+                chosen.append(index)
+        # Later passes with spare slots read unseen text in document order. Pass 1 always
+        # fills its slots above, so this never alters single-pass selection.
+        for index in available:
+            if len(chosen) >= MAX_PASSAGES:
+                break
+            if index not in chosen:
                 chosen.append(index)
         selected = [windows[i] for i in sorted(chosen)]
 
@@ -136,6 +168,7 @@ def select_passages(text: str, objective: str, fields: list[str], context: dict)
             "normalized_chars": len(text),
             "selected_chars": selected_chars,
             "omitted_chars": len(text) - selected_chars,
+            "excluded_span_count": excluded_count,
             "spans": spans,
             "coordinate_unit": "unicode-code-point; end-exclusive; adapter text",
         },
