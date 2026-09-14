@@ -1,6 +1,6 @@
 # Architecture hypothesis and implementation
 
-Initial decision date: 2026-09-12. Revised 2026-09-14. Implemented version: 0.4.0.
+Initial decision date: 2026-09-12. Revised 2026-09-14. Implemented version: 0.5.0.
 
 ## Runtime boundary
 
@@ -125,6 +125,16 @@ The per-attempt search index is ephemeral; evidence stays in existing captures a
 No extra model call or persistent schema is needed. Missing fields use the complete stored
 field set, while reasoning observations remain a bounded sample. A missing FTS5 module uses
 an explicitly audited coverage fallback; it does not prevent deterministic harvesting.
+
+Multi-pass reading (0.5): a reason task carries a pass number and, after pass 1, the
+fields still unresolved job-wide. Later passes exclude adapter-text ranges recorded in earlier
+`model_reserved` events for the same capture and do not reserve introduction/conclusion.
+`Store.finish` enqueues the next pass inside the same transaction only when the finished pass
+committed novel observations and requested fields remain missing; task keys are
+`<capture>:pass:<n>`, so reruns and restarts are idempotent. A pass whose every candidate
+passage was already shown completes without a provider call. Rereads are bounded by
+`limits.reading_passes` and the ordinary call, token and cost budgets. Completeness is job-wide,
+so a value from another source ends rereading even where this capture may disagree.
 
 ## Scheduling and refresh
 

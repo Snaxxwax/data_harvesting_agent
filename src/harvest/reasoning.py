@@ -63,16 +63,50 @@ class Reasoner:
             and s.model_usd_per_million >= 0
         )
 
-    def decide(self, task, source_url, text, context, *, normalizer=None, body_hash=None):
+    def decide(
+        self,
+        task,
+        source_url,
+        text,
+        context,
+        *,
+        normalizer=None,
+        body_hash=None,
+        fields=None,
+        exclude=(),
+        reading_pass=1,
+    ):
         if not self.configured():
             raise ValueError("model URL, name and conservative token price must be configured")
         spec = json.loads(task["spec"])
-        selection = select_passages(text, spec["objective"], spec["fields"], context)
+        fields = list(fields) if fields is not None else spec["fields"]
+        selection = select_passages(
+            text,
+            spec["objective"],
+            fields,
+            context,
+            exclude=exclude,
+            reserve_ends=reading_pass == 1,
+        )
         source_text = selection.text
+        extractor = "model/2:" + self.settings.model_name
+        if not selection.spans:
+            # Every candidate passage was already shown in an earlier pass: no model call.
+            return (
+                Extraction(extractor=extractor),
+                None,
+                {
+                    "coverage_exhausted": True,
+                    "reading_pass": reading_pass,
+                    "unresolved_fields": fields,
+                    "attempt": task["attempts"],
+                    "selection": selection.metadata,
+                },
+            )
         prompt = packed(
             {
-                "objective": json.loads(task["spec"])["objective"],
-                "requested_fields": json.loads(task["spec"])["fields"],
+                "objective": spec["objective"],
+                "requested_fields": fields,
                 "source_url": source_url,
                 "SOURCE_TEXT": source_text,
                 "SOURCE_SPANS": selection.spans,
@@ -102,6 +136,9 @@ class Reasoner:
                     "extraction_id": task["payload"].get("extraction_id"),
                     "body_sha256": body_hash,
                     "normalizer": normalizer,
+                    "reading_pass": reading_pass,
+                    "unresolved_fields": fields,
+                    "excluded_span_count": selection.metadata["excluded_span_count"],
                     "selection": selection.metadata,
                     "system_prompt": SYSTEM,
                     "user_prompt": prompt,
@@ -169,13 +206,16 @@ class Reasoner:
             claims=supported,
             leads=decision.leads,
             text=source_text,
-            extractor="model/2:" + self.settings.model_name,
+            extractor=extractor,
         )
         return (
             result,
             decision,
             {
                 "rejected_unsupported_quotes": rejected,
+                "reading_pass": reading_pass,
+                "unresolved_fields": fields,
+                "excluded_span_count": selection.metadata["excluded_span_count"],
                 "attempt": task["attempts"],
                 "provider_usage": raw.get("usage", {}),
                 "decision": decision.model_dump(),
