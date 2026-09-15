@@ -37,6 +37,9 @@ from one contiguous passage in SOURCE_TEXT. Omission markers are not source evid
 SOURCE_SPANS maps selected passages to the original adapter text. Other portions may be omitted;
 absence from these passages does not establish absence from the document.
 Quotes establish extraction support, not truth. Do not infer identity merges.
+research_state.declared_targets, when present, lists operator-declared investigation subjects
+by key and label only. Reconciliation to these targets is deterministic and happens outside
+your output; you have no authority to bind evidence to them or perform identifier matching.
 Seek primary evidence, useful identifiers and relationships, alternative independent sources,
 contradictory evidence, and unresolved gaps. Avoid repetitive queries and irrelevant navigation.
 Use the objective, existing observations, prior gaps and visited sources to decide what to pursue.

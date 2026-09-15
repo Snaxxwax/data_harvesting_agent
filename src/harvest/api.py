@@ -92,6 +92,13 @@ def create_app(settings: Settings | None = None):
     def events(job_id: str, after: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=1000)):
         return engine.store.events(job_id, after, limit)
 
+    @app.get("/jobs/{job_id}/dossier")
+    def dossier(job_id: str):
+        try:
+            return engine.store.dossier(job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     @app.get("/jobs/{job_id}/tasks")
     def tasks(job_id: str, after: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=1000)):
         engine.store.job(job_id)

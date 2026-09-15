@@ -170,6 +170,7 @@ class Store:
                 dataset=captures[0]["dataset"],
                 fields=JobSpec.model_validate_json(captures[0]["spec"]).fields,
                 limits=request.limits,
+                investigation=request.investigation,
             )
             fingerprint = digest(packed({"spec": spec.model_dump(), "capture_ids": ids}))
             if key:
@@ -463,6 +464,7 @@ class Store:
             job = self.owned(db, task)
             spec = JobSpec.model_validate_json(job["spec"])
             novel = 0
+            job_novel = 0
             extraction_id = None
             changed = False
             if response is not None:
@@ -591,9 +593,13 @@ class Store:
                     db.execute(
                         "INSERT OR IGNORE INTO sightings VALUES(?,?)", (observation, capture_id)
                     )
-                    db.execute(
+                    # Scoped to this job's own extraction, unlike `novel` above: an observation
+                    # already known globally (e.g. from an earlier job re-extracting the same
+                    # evidence) is still a new assertion for this extraction the first time it
+                    # links here, and must count as this job's own progress.
+                    job_novel += db.execute(
                         "INSERT OR IGNORE INTO assertions VALUES(?,?)", (extraction_id, observation)
-                    )
+                    ).rowcount
                 if task["kind"] == "extract":
                     warnings = bool(extraction.warnings) or revision["had_warnings"]
                     complete = batch is None or batch.done
@@ -631,10 +637,14 @@ class Store:
                         item["payload"]["extraction_id"] = extraction_id
                     if reading_pass:
                         # A reread is justified only by a novel pass with fields still unresolved.
+                        # `job_novel`, not `novel`: whether this job's own extraction learned
+                        # something new, not whether the observation is new to the whole
+                        # dataset -- an earlier, unrelated job must never stop a fresh job's
+                        # reread just because it happened to see the same evidence first.
                         unresolved = [
                             f for f in spec.fields if f not in self._fields(db, job["id"])
                         ]
-                        if not novel or not unresolved:
+                        if not job_novel or not unresolved:
                             continue
                         item["key"] = f"{capture_id}:pass:{reading_pass}"
                         item["payload"]["pass"] = reading_pass
@@ -949,6 +959,92 @@ class Store:
                     }
                 )
             return results
+
+    def dossier(self, job_id):
+        """Job-scoped investigation view: exact-identifier reconciliation, never truth scoring.
+
+        Built entirely from this job's own assertion-scoped observations/captures/extractions
+        (`self.observations`/`self.captures`/`self.extractions`, already job-filtered), so a
+        later job, refresh or replay can never change an existing job's dossier or lend it
+        foreign identity evidence. Pages exhaustively: a job's own evidence is already bounded
+        by its own limits, so looping to completion here is not an unbounded scan.
+        """
+        from .dossier import reconcile
+
+        job = self.job(job_id)
+        spec = JobSpec.model_validate(job["spec"])
+        if spec.investigation is None:
+            raise ValueError("job has no investigation; submit a job with an investigation spec")
+        observations = []
+        after = ""
+        while rows := self.observations(job_id, after, 2000):
+            observations.extend(rows)
+            after = rows[-1]["id"]
+        captures = []
+        after_id = 0
+        while rows := self.captures(job_id, after_id, 2000):
+            captures.extend(rows)
+            after_id = rows[-1]["id"]
+        extractions = []
+        after_id = 0
+        while rows := self.extractions(job_id, after_id, 2000):
+            extractions.extend(rows)
+            after_id = rows[-1]["id"]
+        result = reconcile(spec.investigation, observations)
+        result["job_id"] = job_id
+        result["dataset"] = spec.dataset
+        result["sources"] = self._source_states(spec.investigation, captures, extractions)
+        return result
+
+    @staticmethod
+    def _source_states(investigation, captures, extractions):
+        """Expose every declared source, including ones never acquired in this job."""
+        by_url = {}
+        for cap in captures:
+            current = by_url.get(cap["url"])
+            if current is None or (cap["retrieved"], cap["id"]) > (
+                current["retrieved"],
+                current["id"],
+            ):
+                by_url[cap["url"]] = cap
+        extraction_by_capture = {}
+        for extraction in extractions:
+            current = extraction_by_capture.get(extraction["capture_id"])
+            if current is None or extraction["id"] > current["id"]:
+                extraction_by_capture[extraction["capture_id"]] = extraction
+        states = []
+        for rule in investigation.sources:
+            cap = by_url.get(rule.url)
+            if cap is None:
+                states.append(
+                    {
+                        "url": rule.url,
+                        "acquired": False,
+                        "final_url": None,
+                        "retrieved": None,
+                        "http_status": None,
+                        "extraction_state": "not_acquired",
+                        "warnings": False,
+                        "capture_id": None,
+                        "extraction_id": None,
+                    }
+                )
+                continue
+            extraction = extraction_by_capture.get(cap["id"])
+            states.append(
+                {
+                    "url": rule.url,
+                    "acquired": True,
+                    "final_url": cap["final_url"],
+                    "retrieved": cap["retrieved"],
+                    "http_status": cap["status"],
+                    "extraction_state": extraction["status"] if extraction else "not_scheduled",
+                    "warnings": bool(extraction["had_warnings"]) if extraction else False,
+                    "capture_id": cap["id"],
+                    "extraction_id": extraction["id"] if extraction else None,
+                }
+            )
+        return states
 
     def schedule_tick(self):
         with self.transaction() as db:

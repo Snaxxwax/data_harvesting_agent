@@ -1,0 +1,603 @@
+{
+  "scope": "Narrow three-RFC pilot, not broad research-quality evaluation; baseline multipass comparison exposed cross-job novelty contamination. Only affected RFC8259 multipass case rerun after fix. Strict aliases undercount valid paraphrases.",
+  "base_revision": "6469c86709a7aee7edb64d202407a94d4145230b",
+  "model": {
+    "name": "granite3.3:8b",
+    "model": "granite3.3:8b",
+    "modified_at": "2026-05-14T03:02:46.083386305-05:00",
+    "size": 4942891653,
+    "digest": "fd429f23b90980ed1bef53b990894e7b0199331f6ae90c5650240a7d5b70f1f7",
+    "details": {
+      "parent_model": "/Users/ollama/.ollama/models/blobs/sha256-77bcee066a76dcdd10d0d123c87e32c8ec2c74e31b6ffd87ebee49c9ac215dca",
+      "format": "gguf",
+      "family": "granite",
+      "families": [
+        "granite"
+      ],
+      "parameter_size": "8.2B",
+      "quantization_level": "Q4_K_M",
+      "context_length": 131072,
+      "embedding_length": 4096
+    },
+    "capabilities": [
+      "completion",
+      "tools"
+    ]
+  },
+  "ollama": {
+    "version": "0.32.14"
+  },
+  "baseline_summary": {
+    "1": {
+      "documents": 3,
+      "labels_total": 18,
+      "labels_by_status": {
+        "absent": 16,
+        "correct": 1,
+        "incorrect": 1
+      },
+      "labels_correct": 1,
+      "labels_incorrect": 1,
+      "labels_absent": 16,
+      "labels_not_comparable": 0,
+      "labels_exposed": 7,
+      "labels_exposed_not_recovered": 6
+    },
+    "3": {
+      "documents": 3,
+      "labels_total": 18,
+      "labels_by_status": {
+        "absent": 16,
+        "correct": 1,
+        "incorrect": 1
+      },
+      "labels_correct": 1,
+      "labels_incorrect": 1,
+      "labels_absent": 16,
+      "labels_not_comparable": 0,
+      "labels_exposed": 7,
+      "labels_exposed_not_recovered": 6
+    }
+  },
+  "baseline_runs": [
+    {
+      "rfc": 9309,
+      "job_id": "0aa153595fea494b8f6826e91e0ca331",
+      "reading_passes_setting": 1,
+      "job_status": "completed",
+      "source_url": "https://www.rfc-editor.org/rfc/rfc9309.txt",
+      "capture_id": 1,
+      "actual_body_sha256": "f633915daaa15b943cae56545d333bcf3ba4d156599e4555499686d6699fb207",
+      "model_calls": 1,
+      "source_get_count": 1,
+      "requests": 3,
+      "latency_seconds": 9.828848078963347,
+      "missing_fields": [
+        "robots_filename",
+        "robots_encoding",
+        "robots_media_type",
+        "redirects_minimum",
+        "cache_max_hours",
+        "parser_min_kib"
+      ],
+      "rejected_unsupported_quotes": 6,
+      "reading_passes_performed": [
+        1
+      ],
+      "labels": [
+        {
+          "field": "robots_filename",
+          "status": "absent",
+          "exposed": true,
+          "recovered": false
+        },
+        {
+          "field": "robots_encoding",
+          "status": "absent",
+          "exposed": true,
+          "recovered": false
+        },
+        {
+          "field": "robots_media_type",
+          "status": "absent",
+          "exposed": true,
+          "recovered": false
+        },
+        {
+          "field": "redirects_minimum",
+          "status": "absent",
+          "exposed": true,
+          "recovered": false
+        },
+        {
+          "field": "cache_max_hours",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "parser_min_kib",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        }
+      ],
+      "prompt_sha256_by_pass": [
+        {
+          "pass": 1,
+          "sha256": "8370a3375fe5b517a1c334052b3b4f1fad20cc7fa78621cc5cc1e983cef1394b"
+        }
+      ]
+    },
+    {
+      "rfc": 9309,
+      "job_id": "cacb775186f8498aa8566db84aa0c26a",
+      "reading_passes_setting": 3,
+      "job_status": "completed",
+      "source_url": "https://www.rfc-editor.org/rfc/rfc9309.txt",
+      "capture_id": 2,
+      "actual_body_sha256": "f633915daaa15b943cae56545d333bcf3ba4d156599e4555499686d6699fb207",
+      "model_calls": 1,
+      "source_get_count": 1,
+      "requests": 2,
+      "latency_seconds": 5.831472325953655,
+      "missing_fields": [
+        "robots_filename",
+        "robots_encoding",
+        "robots_media_type",
+        "redirects_minimum",
+        "cache_max_hours",
+        "parser_min_kib"
+      ],
+      "rejected_unsupported_quotes": 6,
+      "reading_passes_performed": [
+        1
+      ],
+      "labels": [
+        {
+          "field": "robots_filename",
+          "status": "absent",
+          "exposed": true,
+          "recovered": false
+        },
+        {
+          "field": "robots_encoding",
+          "status": "absent",
+          "exposed": true,
+          "recovered": false
+        },
+        {
+          "field": "robots_media_type",
+          "status": "absent",
+          "exposed": true,
+          "recovered": false
+        },
+        {
+          "field": "redirects_minimum",
+          "status": "absent",
+          "exposed": true,
+          "recovered": false
+        },
+        {
+          "field": "cache_max_hours",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "parser_min_kib",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        }
+      ],
+      "prompt_sha256_by_pass": [
+        {
+          "pass": 1,
+          "sha256": "8370a3375fe5b517a1c334052b3b4f1fad20cc7fa78621cc5cc1e983cef1394b"
+        }
+      ]
+    },
+    {
+      "rfc": 8259,
+      "job_id": "2bb1a8a632984245902f1a964eaca1b7",
+      "reading_passes_setting": 1,
+      "job_status": "completed",
+      "source_url": "https://www.rfc-editor.org/rfc/rfc8259.txt",
+      "capture_id": 3,
+      "actual_body_sha256": "61a5378f4255c720beb2a4b4a63b29540147c140f36988bf086291989b4cd2d7",
+      "model_calls": 1,
+      "source_get_count": 1,
+      "requests": 2,
+      "latency_seconds": 8.905717369983904,
+      "missing_fields": [
+        "encoding",
+        "interoperable_integer_min",
+        "interoperable_integer_max",
+        "object_ordering"
+      ],
+      "rejected_unsupported_quotes": 4,
+      "reading_passes_performed": [
+        1
+      ],
+      "labels": [
+        {
+          "field": "media_type",
+          "status": "correct",
+          "exposed": true,
+          "recovered": true
+        },
+        {
+          "field": "encoding",
+          "status": "absent",
+          "exposed": true,
+          "recovered": false
+        },
+        {
+          "field": "object_names_unique",
+          "status": "incorrect",
+          "exposed": true,
+          "recovered": false
+        },
+        {
+          "field": "interoperable_integer_min",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "interoperable_integer_max",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "object_ordering",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        }
+      ],
+      "prompt_sha256_by_pass": [
+        {
+          "pass": 1,
+          "sha256": "55a40d222a8651a3a97f510c071e9791507b8fd5f915c44763b812b30912f9eb"
+        }
+      ]
+    },
+    {
+      "rfc": 8259,
+      "job_id": "f8854b5805db4b48997a3c9f3ad6ee56",
+      "reading_passes_setting": 3,
+      "job_status": "completed",
+      "source_url": "https://www.rfc-editor.org/rfc/rfc8259.txt",
+      "capture_id": 4,
+      "actual_body_sha256": "61a5378f4255c720beb2a4b4a63b29540147c140f36988bf086291989b4cd2d7",
+      "model_calls": 1,
+      "source_get_count": 1,
+      "requests": 2,
+      "latency_seconds": 4.44602777203545,
+      "missing_fields": [
+        "encoding",
+        "interoperable_integer_min",
+        "interoperable_integer_max",
+        "object_ordering"
+      ],
+      "rejected_unsupported_quotes": 4,
+      "reading_passes_performed": [
+        1
+      ],
+      "labels": [
+        {
+          "field": "media_type",
+          "status": "correct",
+          "exposed": true,
+          "recovered": true
+        },
+        {
+          "field": "encoding",
+          "status": "absent",
+          "exposed": true,
+          "recovered": false
+        },
+        {
+          "field": "object_names_unique",
+          "status": "incorrect",
+          "exposed": true,
+          "recovered": false
+        },
+        {
+          "field": "interoperable_integer_min",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "interoperable_integer_max",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "object_ordering",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        }
+      ],
+      "prompt_sha256_by_pass": [
+        {
+          "pass": 1,
+          "sha256": "55a40d222a8651a3a97f510c071e9791507b8fd5f915c44763b812b30912f9eb"
+        }
+      ]
+    },
+    {
+      "rfc": 9457,
+      "job_id": "db0e9ecbbc404704af366a62270266b5",
+      "reading_passes_setting": 1,
+      "job_status": "partial",
+      "source_url": "https://www.rfc-editor.org/rfc/rfc9457.txt",
+      "capture_id": 5,
+      "actual_body_sha256": "f2b3db92fb0bf3489cb3841a0da0c0d88dff40797b64d40b6123085183886c7b",
+      "model_calls": 1,
+      "source_get_count": 1,
+      "requests": 2,
+      "latency_seconds": 5.7884236929239705,
+      "missing_fields": [
+        "media_type",
+        "xml_media_type",
+        "default_type",
+        "status_advisory",
+        "instance_identifier",
+        "detail_parse"
+      ],
+      "rejected_unsupported_quotes": 0,
+      "reading_passes_performed": [],
+      "labels": [
+        {
+          "field": "media_type",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "xml_media_type",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "default_type",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "status_advisory",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "instance_identifier",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "detail_parse",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        }
+      ],
+      "prompt_sha256_by_pass": [
+        {
+          "pass": 1,
+          "sha256": "d9ee7c46215818cb8ac51f12245e473eaf7d8307539fd8e9782b56150f419645"
+        }
+      ]
+    },
+    {
+      "rfc": 9457,
+      "job_id": "190738c2a4f6463f91b632065f27d61e",
+      "reading_passes_setting": 3,
+      "job_status": "partial",
+      "source_url": "https://www.rfc-editor.org/rfc/rfc9457.txt",
+      "capture_id": 6,
+      "actual_body_sha256": "f2b3db92fb0bf3489cb3841a0da0c0d88dff40797b64d40b6123085183886c7b",
+      "model_calls": 1,
+      "source_get_count": 1,
+      "requests": 2,
+      "latency_seconds": 4.578229013946839,
+      "missing_fields": [
+        "media_type",
+        "xml_media_type",
+        "default_type",
+        "status_advisory",
+        "instance_identifier",
+        "detail_parse"
+      ],
+      "rejected_unsupported_quotes": 0,
+      "reading_passes_performed": [],
+      "labels": [
+        {
+          "field": "media_type",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "xml_media_type",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "default_type",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "status_advisory",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "instance_identifier",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        },
+        {
+          "field": "detail_parse",
+          "status": "absent",
+          "exposed": false,
+          "recovered": false
+        }
+      ],
+      "prompt_sha256_by_pass": [
+        {
+          "pass": 1,
+          "sha256": "d9ee7c46215818cb8ac51f12245e473eaf7d8307539fd8e9782b56150f419645"
+        }
+      ]
+    }
+  ],
+  "baseline_diagnosis": {
+    "1": {
+      "jobs": 3,
+      "completed": 2,
+      "partial": 1,
+      "requests": 7,
+      "source_captures": 3,
+      "model_calls": 3,
+      "latency_seconds": 24.52298914187122,
+      "proposals_by_quote_class": {
+        "literal": 2,
+        "whitespace_only_mismatch": 5,
+        "not_in_selected_passages": 5
+      }
+    },
+    "3": {
+      "jobs": 3,
+      "completed": 2,
+      "partial": 1,
+      "requests": 6,
+      "source_captures": 3,
+      "model_calls": 3,
+      "latency_seconds": 14.855729111935943,
+      "proposals_by_quote_class": {
+        "literal": 2,
+        "whitespace_only_mismatch": 5,
+        "not_in_selected_passages": 5
+      }
+    }
+  },
+  "postfix_rfc8259": {
+    "rfc": 8259,
+    "job_id": "fbe543ed5bb74f6389599f2f5197abd4",
+    "reading_passes_setting": 3,
+    "job_status": "completed",
+    "source_url": "https://www.rfc-editor.org/rfc/rfc8259.txt",
+    "capture_id": 7,
+    "actual_body_sha256": "61a5378f4255c720beb2a4b4a63b29540147c140f36988bf086291989b4cd2d7",
+    "model_calls": 2,
+    "source_get_count": 1,
+    "requests": 3,
+    "latency_seconds": 17.472004643990658,
+    "missing_fields": [
+      "encoding",
+      "interoperable_integer_min",
+      "interoperable_integer_max",
+      "object_ordering"
+    ],
+    "rejected_unsupported_quotes": 10,
+    "reading_passes_performed": [
+      1,
+      2
+    ],
+    "labels": [
+      {
+        "field": "media_type",
+        "status": "correct",
+        "exposed": true,
+        "recovered": true
+      },
+      {
+        "field": "encoding",
+        "status": "absent",
+        "exposed": true,
+        "recovered": false
+      },
+      {
+        "field": "object_names_unique",
+        "status": "incorrect",
+        "exposed": true,
+        "recovered": false
+      },
+      {
+        "field": "interoperable_integer_min",
+        "status": "absent",
+        "exposed": false,
+        "recovered": false
+      },
+      {
+        "field": "interoperable_integer_max",
+        "status": "absent",
+        "exposed": false,
+        "recovered": false
+      },
+      {
+        "field": "object_ordering",
+        "status": "absent",
+        "exposed": true,
+        "recovered": false
+      }
+    ],
+    "prompt_sha256_by_pass": [
+      {
+        "pass": 1,
+        "sha256": "55a40d222a8651a3a97f510c071e9791507b8fd5f915c44763b812b30912f9eb"
+      },
+      {
+        "pass": 2,
+        "sha256": "8796dac16f2328dde9621b0833e32d875e6feefc27d93458f3a85cff5ed71f36"
+      }
+    ]
+  },
+  "public_validation": {
+    "integrity_check": "ok",
+    "runs": [
+      {
+        "label": "initial",
+        "status": "completed",
+        "observations": 84,
+        "requests": 2,
+        "bytes": 6170,
+        "model_calls": 0
+      },
+      {
+        "label": "refresh",
+        "status": "completed",
+        "observations": 84,
+        "requests": 1,
+        "bytes": 0,
+        "model_calls": 0
+      },
+      {
+        "label": "offline_replay",
+        "status": "completed",
+        "observations": 84,
+        "requests": 0,
+        "bytes": 0,
+        "model_calls": 0
+      }
+    ]
+  },
+  "full_local_evidence_dir": "/home/pop/.hermes/artifacts/harvest-real-validation/",
+  "native_schema_control": "A diagnostic replay reproduced missing confidence in six RFC9457 claims. Two native JSON-schema control requests returned HTTP 400: failed to initialize samplers / failed to parse grammar. These diagnostic requests are separate from Engine job budgets."
+}

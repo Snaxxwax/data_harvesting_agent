@@ -1,5 +1,13 @@
 # Validation record
 
+## 0.5 — real-document/live-model pilot
+
+The [live pilot and cross-job rereading fix](validation/v05-real-documents.md) exercise
+three official RFCs through the real Engine and local Granite model, with an immutable
+baseline and a targeted post-fix rerun. The scheduling defect is fixed; model-quality
+failures remain explicit. A fresh public HTTPX acquisition/304 refresh/offline replay
+also passed. See [machine-readable results](validation/v05-real-documents.json).
+
 ## 0.4 — 2026-09-14
 
 The [four-mode runs and document probes](validation/v04-workloads.md) reproduce the original

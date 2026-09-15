@@ -3,7 +3,7 @@
 A self-hosted harvesting service that turns objectives or seed URLs into durable jobs,
 structured observations, raw evidence, and inspectable research decisions.
 
-**Status: tested 0.4 foundation, with bounded document evidence selection.** Durable acquisition,
+**Status: tested 0.5 foundation, with bounded multi-pass document reading.** Durable acquisition,
 offline replay, resumable record batches and audited model inputs are implemented. This is not yet a fully hardened general-purpose
 research product. Current capabilities and the limits of verification are explicit below.
 
@@ -98,7 +98,7 @@ page metadata and JSON-LD; it does not pretend to answer arbitrary factual quest
 ## Reread unresolved fields
 
 A bounded model pass shows at most five passages. When requested fields remain missing
-after a pass that produced novel observations, the worker schedules another pass on the
+after a pass that produced new assertions in that job's extraction, the worker schedules another pass on the
 same capture, querying only the unresolved fields and excluding passages already shown.
 Rereading stops at `limits.reading_passes` (default 3), after a pass with no novel
 observations, or when every candidate passage has been shown. Each pass is a normal task
