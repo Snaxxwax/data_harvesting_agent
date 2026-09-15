@@ -34,12 +34,14 @@ transformer model, not rejected. See [0.5 validation](docs/validation/v05-readin
 
 ## Observed priorities, not a feature checklist
 
-1. **Coverage after retrieval.** Multi-pass reading resolves the slot ceiling; unfamiliar
-   vocabulary remains unmeasured because the synthetic corpus cannot distinguish semantic
-   retrieval from anomaly detection. Build a labeled corpus of real documents with varied
-   distractor prose, then compare FTS5 against a transformer embedding model in an
-   environment with model access. Rereads add model calls per capture; an actual configured
-   provider evaluation is still required before research-quality claims.
+1. **Model compliance before more retrieval infrastructure.** The [live three-RFC pilot](docs/validation/v05-real-documents.md)
+   exposed a cross-job novelty bug, now fixed and verified with real rereading over retained
+   evidence. It also exposed quote-formatting rejection, unsupported model claims and schema
+   failures; strict baseline recovery was only 1/18 per setting. Fix/evaluate provider output
+   compliance and faithful quotation without weakening evidence checks before adding retrieval
+   infrastructure. The existing provider's native JSON-schema control returned HTTP 400.
+   Expand beyond this narrow technical corpus before comparing FTS5 with transformer embeddings;
+   no semantic retrieval or broad research-quality claim is established.
 2. **Target identity and contradiction usefulness.** Source-local IDs and model claims
    attached to documents do not form a resolved target dossier. Measure exact-identifier
    reconciliation and cross-source evidence recall before fuzzy merges or graph infrastructure.
@@ -63,4 +65,5 @@ code execution is currently justified by these measurements.
 
 Canonical repository: [Snaxxwax/data_harvesting_agent](https://github.com/Snaxxwax/data_harvesting_agent).
 The earlier missing-repository blocker is resolved. The published 0.1 CI run passed tests
-and Docker build. Compose deployment and live model/SearXNG quality remain unverified.
+and Docker build. Compose deployment and live SearXNG remain unverified; the live model
+pilot above measures failures, not general research quality.

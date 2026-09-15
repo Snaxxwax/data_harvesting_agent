@@ -96,12 +96,20 @@ class Engine:
             }
             for r in observations
         ]
-        return {
+        result = {
             "observations": values,
             "visited_or_queued": visited,
             "missing_fields": job["missing_fields"],
             "previous_decisions": decisions[:2],
         }
+        spec = JobSpec.model_validate(job["spec"])
+        if spec.investigation and spec.investigation.targets:
+            # Bounded key/label only: identity reconciliation stays deterministic and
+            # out-of-band, never delegated to the model's own judgment.
+            result["declared_targets"] = [
+                {"key": t.key, "label": t.label} for t in spec.investigation.targets[:20]
+            ]
+        return result
 
     def replay(self, spec: ReplaySpec, key=None):
         return self.store.replay(spec, key)

@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "note": "Compact ground-truth manifest for scripts/benchmark_real_documents.py. expected_value/expected_quotes are scoring-only: never pass them to the model, only objective/questions/field names.",
+  "documents": [
+    {
+      "rfc": 9309,
+      "title": "RFC 9309: Robots Exclusion Protocol",
+      "url": "https://www.rfc-editor.org/rfc/rfc9309.txt",
+      "expected_body_sha256": "f633915daaa15b943cae56545d333bcf3ba4d156599e4555499686d6699fb207",
+      "objective": "Extract explicitly stated normative facts about the Robots Exclusion Protocol from the fetched RFC 9309 document text. Report only values the text directly states, each backed by an exact supporting quote from the document.",
+      "labels": [
+        {
+          "field": "robots_filename",
+          "question": "What filename must the rules be accessible at, per Section 2.3?",
+          "expected_value": "/robots.txt",
+          "value_aliases": ["/robots.txt", "robots.txt"],
+          "value_type": "string",
+          "expected_quotes": ["MUST be accessible in a file named \"/robots.txt\""]
+        },
+        {
+          "field": "robots_encoding",
+          "question": "What character encoding must the robots.txt file use, per Section 2.3?",
+          "expected_value": "UTF-8",
+          "value_aliases": ["UTF-8", "utf-8", "UTF8"],
+          "value_type": "string",
+          "expected_quotes": ["UTF-8 encoded (as defined in [RFC3629])"]
+        },
+        {
+          "field": "robots_media_type",
+          "question": "What Internet Media Type must the robots.txt file be, per Section 2.3?",
+          "expected_value": "text/plain",
+          "value_aliases": ["text/plain"],
+          "value_type": "string",
+          "expected_quotes": ["\"text/plain\" (as defined in [RFC2046])."]
+        },
+        {
+          "field": "redirects_minimum",
+          "question": "At least how many consecutive redirects should crawlers follow when fetching robots.txt, per Section 2.3.1.2?",
+          "expected_value": 5,
+          "value_aliases": [5, "5", "five"],
+          "value_type": "integer",
+          "expected_quotes": ["The crawlers SHOULD follow at least five consecutive redirects, even"]
+        },
+        {
+          "field": "cache_max_hours",
+          "question": "For at most how many hours should crawlers use a cached robots.txt without rechecking, per Section 2.4?",
+          "expected_value": 24,
+          "value_aliases": [24, "24"],
+          "value_type": "integer",
+          "expected_quotes": ["SHOULD NOT use the cached version for more than 24 hours, unless the"]
+        },
+        {
+          "field": "parser_min_kib",
+          "question": "What is the minimum parsing limit, in kibibytes, crawlers should support for robots.txt, per Section 2.5?",
+          "expected_value": 500,
+          "value_aliases": [500, "500"],
+          "value_type": "integer",
+          "expected_quotes": ["The parsing limit MUST be at least 500 kibibytes [KiB]."]
+        }
+      ]
+    },
+    {
+      "rfc": 8259,
+      "title": "RFC 8259: The JavaScript Object Notation (JSON) Data Interchange Format",
+      "url": "https://www.rfc-editor.org/rfc/rfc8259.txt",
+      "expected_body_sha256": "61a5378f4255c720beb2a4b4a63b29540147c140f36988bf086291989b4cd2d7",
+      "objective": "Extract explicitly stated normative facts about the JSON data interchange format from the fetched RFC 8259 document text. Report only values the text directly states, each backed by an exact supporting quote from the document.",
+      "labels": [
+        {
+          "field": "media_type",
+          "question": "What is the media type for JSON text, per Section 11?",
+          "expected_value": "application/json",
+          "value_aliases": ["application/json"],
+          "value_type": "string",
+          "expected_quotes": ["The media type for JSON text is application/json."]
+        },
+        {
+          "field": "encoding",
+          "question": "What text encoding must JSON text exchanged between systems not part of a closed ecosystem use, per Section 8.1?",
+          "expected_value": "UTF-8",
+          "value_aliases": ["UTF-8", "utf-8", "UTF8"],
+          "value_type": "string",
+          "expected_quotes": ["ecosystem MUST be encoded using UTF-8 [RFC3629]."]
+        },
+        {
+          "field": "object_names_unique",
+          "question": "Per Section 4, what does the specification say about whether the names within a JSON object should be unique?",
+          "expected_value": "SHOULD be unique",
+          "value_aliases": ["SHOULD be unique", "should be unique"],
+          "value_type": "string",
+          "expected_quotes": ["The names within an object SHOULD be unique."]
+        },
+        {
+          "field": "interoperable_integer_min",
+          "question": "Per Section 6, what is the minimum integer value guaranteed to be interoperable?",
+          "expected_value": -9007199254740991,
+          "value_aliases": [-9007199254740991, "-9007199254740991"],
+          "value_type": "integer",
+          "expected_quotes": ["are in the range [-(2**53)+1, (2**53)-1] are interoperable in the"]
+        },
+        {
+          "field": "interoperable_integer_max",
+          "question": "Per Section 6, what is the maximum integer value guaranteed to be interoperable?",
+          "expected_value": 9007199254740991,
+          "value_aliases": [9007199254740991, "9007199254740991"],
+          "value_type": "integer",
+          "expected_quotes": ["are in the range [-(2**53)+1, (2**53)-1] are interoperable in the"]
+        },
+        {
+          "field": "object_ordering",
+          "question": "Per Section 4, is the ordering of name/value pairs within a JSON object significant?",
+          "expected_value": "unordered",
+          "value_aliases": ["unordered", "not ordered", "no defined ordering"],
+          "value_type": "string",
+          "expected_quotes": ["An object is an unordered collection of zero or more name/value"]
+        }
+      ]
+    },
+    {
+      "rfc": 9457,
+      "title": "RFC 9457: Problem Details for HTTP APIs",
+      "url": "https://www.rfc-editor.org/rfc/rfc9457.txt",
+      "expected_body_sha256": "f2b3db92fb0bf3489cb3841a0da0c0d88dff40797b64d40b6123085183886c7b",
+      "objective": "Extract explicitly stated normative facts about the Problem Details format for HTTP APIs from the fetched RFC 9457 document text. Report only values the text directly states, each backed by an exact supporting quote from the document.",
+      "labels": [
+        {
+          "field": "media_type",
+          "question": "What media type is used when problem details are serialized as JSON, per Section 3?",
+          "expected_value": "application/problem+json",
+          "value_aliases": ["application/problem+json"],
+          "value_type": "string",
+          "expected_quotes": ["serialized as a JSON document, it uses the \"application/problem+json\""]
+        },
+        {
+          "field": "xml_media_type",
+          "question": "What media type is used for the equivalent XML format of problem details, per Section 3?",
+          "expected_value": "application/problem+xml",
+          "value_aliases": ["application/problem+xml"],
+          "value_type": "string",
+          "expected_quotes": ["the \"application/problem+xml\" media type."]
+        },
+        {
+          "field": "default_type",
+          "question": "What is the default value for the \"type\" member when a problem details object does not carry one, per Section 4.2.1?",
+          "expected_value": "about:blank",
+          "value_aliases": ["about:blank"],
+          "value_type": "string",
+          "expected_quotes": ["the \"about:blank\" URI is the default value for that"]
+        },
+        {
+          "field": "status_advisory",
+          "question": "Per Section 3.1.2, is the \"status\" member, if present, only advisory or authoritative?",
+          "expected_value": true,
+          "value_aliases": [true, "true"],
+          "value_type": "boolean",
+          "expected_quotes": ["The \"status\" member, if present, is only advisory; it conveys the"]
+        },
+        {
+          "field": "instance_identifier",
+          "question": "Per Section 3.1.5, what does the \"instance\" member identify?",
+          "expected_value": "URI reference that identifies the specific occurrence of the problem",
+          "value_aliases": [
+            "URI reference that identifies the specific occurrence of the problem",
+            "a URI reference identifying the specific occurrence of the problem"
+          ],
+          "value_type": "string",
+          "expected_quotes": ["The \"instance\" member is a JSON string containing a URI reference"]
+        },
+        {
+          "field": "detail_parse",
+          "question": "Per Section 3.1.4, should consumers parse the \"detail\" member for information?",
+          "expected_value": "SHOULD NOT",
+          "value_aliases": ["SHOULD NOT", "should not"],
+          "value_type": "string",
+          "expected_quotes": ["Consumers SHOULD NOT parse the \"detail\" member for information;"]
+        }
+      ]
+    }
+  ]
+}

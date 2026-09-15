@@ -44,9 +44,111 @@ class Limits(StrictModel):
     reading_passes: int = Field(default=3, ge=1, le=10)
 
 
+TARGET_KEY_PATTERN = r"^[a-zA-Z0-9_-]{1,80}$"
+
+
+class Target(StrictModel):
+    key: str = Field(pattern=TARGET_KEY_PATTERN)
+    label: str = Field(min_length=1, max_length=200)
+    identifiers: dict[str, list[str]] = Field(default_factory=dict, max_length=20)
+
+    @field_validator("identifiers")
+    @classmethod
+    def exact_identifiers(cls, values: dict[str, list[str]]) -> dict[str, list[str]]:
+        for namespace, ids in values.items():
+            if not namespace.strip() or len(namespace) > 100:
+                raise ValueError("identifier namespace must be 1-100 characters")
+            if not ids or len(ids) > 50:
+                raise ValueError("identifier namespace needs 1-50 exact values")
+            if any(not isinstance(v, str) or not v or len(v) > 500 for v in ids):
+                raise ValueError("identifier values must be exact nonempty strings")
+            if len(set(ids)) != len(ids):
+                raise ValueError("duplicate identifier value within one namespace")
+        return values
+
+
+class SourceRule(StrictModel):
+    url: str = Field(max_length=4096)
+    identifier_fields: dict[str, str] = Field(default_factory=dict, max_length=100)
+    field_map: dict[str, str] = Field(default_factory=dict, max_length=100)
+    document_target: str | None = Field(default=None, pattern=TARGET_KEY_PATTERN)
+    document_fields: list[str] = Field(default_factory=list, max_length=50)
+
+    @field_validator("url")
+    @classmethod
+    def canonical(cls, value: str) -> str:
+        return canonical_url(value)
+
+    @field_validator("identifier_fields")
+    @classmethod
+    def exact_identifier_fields(cls, values: dict[str, str]) -> dict[str, str]:
+        for field, namespace in values.items():
+            if not field.strip() or len(field) > 200:
+                raise ValueError("identifier_fields keys must be 1-200 characters")
+            if not namespace.strip() or len(namespace) > 100:
+                raise ValueError("identifier_fields values must be 1-100 characters")
+        return values
+
+    @field_validator("field_map")
+    @classmethod
+    def exact_field_map(cls, values: dict[str, str]) -> dict[str, str]:
+        for field, dossier_field in values.items():
+            if not field.strip() or len(field) > 200:
+                raise ValueError("field_map keys must be 1-200 characters")
+            if not dossier_field.strip() or len(dossier_field) > 120:
+                raise ValueError("field_map values must be 1-120 characters")
+        return values
+
+    @field_validator("document_fields")
+    @classmethod
+    def exact_document_fields(cls, values: list[str]) -> list[str]:
+        if any(not v.strip() or len(v) > 120 for v in values):
+            raise ValueError("document_fields entries must be 1-120 characters")
+        return list(dict.fromkeys(values))
+
+    @model_validator(mode="after")
+    def usable_rule(self) -> SourceRule:
+        if not self.identifier_fields and not self.field_map and not self.document_target:
+            raise ValueError("source rule needs identifier_fields, field_map, or document_target")
+        if bool(self.document_target) != bool(self.document_fields):
+            raise ValueError("document_target and document_fields must be set together")
+        return self
+
+
+class Investigation(StrictModel):
+    targets: list[Target] = Field(default_factory=list, max_length=50)
+    sources: list[SourceRule] = Field(default_factory=list, max_length=50)
+
+    @model_validator(mode="after")
+    def consistent(self) -> Investigation:
+        keys = [t.key for t in self.targets]
+        if len(keys) != len(set(keys)):
+            raise ValueError("duplicate target key")
+        seen: dict[tuple[str, str], str] = {}
+        for target in self.targets:
+            for namespace, values in target.identifiers.items():
+                for value in values:
+                    pair = (namespace, value)
+                    if pair in seen and seen[pair] != target.key:
+                        raise ValueError(
+                            f"identifier {namespace}:{value} is declared by multiple targets, "
+                            "which would silently choose a target"
+                        )
+                    seen[pair] = target.key
+        target_keys = set(keys)
+        urls = [s.url for s in self.sources]
+        if len(urls) != len(set(urls)):
+            raise ValueError("duplicate source rule url")
+        for source in self.sources:
+            if source.document_target and source.document_target not in target_keys:
+                raise ValueError(f"unknown document_target {source.document_target}")
+        return self
+
+
 class ReplaySpec(StrictModel):
     capture_ids: list[int] = Field(min_length=1, max_length=100)
     limits: Limits = Field(default_factory=Limits)
+    investigation: Investigation | None = Field(default=None)
 
     @field_validator("capture_ids", mode="before")
     @classmethod
@@ -66,6 +168,7 @@ class JobSpec(StrictModel):
     use_model: bool = False
     limits: Limits = Field(default_factory=Limits)
     refresh_seconds: int | None = Field(default=None, ge=60, le=31_536_000)
+    investigation: Investigation | None = Field(default=None)
 
     @field_validator("seeds")
     @classmethod

@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import signal
+import sys
 import threading
 from pathlib import Path
 
@@ -60,6 +61,10 @@ def main():
     command = commands.add_parser("export")
     command.add_argument("job_id")
     command.add_argument("path")
+    command = commands.add_parser("dossier")
+    command.add_argument("job_id")
+    command.add_argument("--format", choices=["json", "markdown"], default="json")
+    command.add_argument("--output")
     commands.add_parser("backup").add_argument("path")
     commands.add_parser("disable-schedule").add_argument("schedule_id")
     command = commands.add_parser("serve")
@@ -125,6 +130,26 @@ def main():
         print(json.dumps(getattr(engine.store, args.command)(args.job_id, limit=1000), indent=2))
     elif args.command == "export":
         export(engine, args.job_id, args.path)
+    elif args.command == "dossier":
+        try:
+            result = engine.store.dossier(args.job_id)
+        except (KeyError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            raise SystemExit(2) from exc
+        if args.format == "markdown":
+            from .dossier import render_markdown
+
+            text = render_markdown(result)
+        else:
+            text = json.dumps(result, indent=2)
+        if args.output:
+            output = Path(args.output)
+            temporary = output.with_suffix(output.suffix + ".tmp")
+            # Atomic replacement prevents an interrupted write from replacing the previous one.
+            temporary.write_text(text)
+            temporary.replace(output)
+        else:
+            print(text)
     elif args.command == "backup":
         engine.store.backup(args.path)
     elif args.command == "disable-schedule":
