@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harvest Platform</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Harvest Platform</div>
+  <nav class="topnav" id="topnav" hidden>
+    <a href="#/launch">Launch</a>
+    <a href="#/jobs">Jobs</a>
+    <a href="#/schedules">Schedules</a>
+  </nav>
+  <div class="topbar-right">
+    <span id="config-warning" class="warning" hidden></span>
+    <button id="logout" type="button" hidden>Log out</button>
+  </div>
+</header>
+
+<main id="main">
+
+  <section id="login-view" class="view">
+    <h1>Sign in</h1>
+    <p>Enter the operator API token configured on this deployment
+      (<code>HARVEST_API_TOKEN</code>). It is exchanged once for a session cookie and is
+      never stored or displayed after that.</p>
+    <form id="login-form">
+      <label for="login-token">API token</label>
+      <input id="login-token" name="token" type="password" autocomplete="current-password" required>
+      <button type="submit">Sign in</button>
+      <p id="login-error" class="error" role="alert" hidden></p>
+    </form>
+  </section>
+
+  <section id="launch-view" class="view" hidden>
+    <h1>Launch a job</h1>
+    <div class="tabs" id="launch-tabs">
+      <button type="button" class="tab active" data-tab="investigation">Investigation</button>
+      <button type="button" class="tab" data-tab="dataset">Build Dataset</button>
+      <button type="button" class="tab" data-tab="continuous">Refresh / Continuous</button>
+    </div>
+
+    <form id="investigation-form" class="tab-panel" data-panel="investigation">
+      <label for="inv-value">Email, phone, person name, username, organization, domain, URL, address, or known identifier</label>
+      <input id="inv-value" name="value" type="text" required placeholder="e.g. jane.doe@example.org or example.org">
+      <label for="inv-kind">Input type</label>
+      <select id="inv-kind" name="kind">
+        <option value="">Auto-detect</option>
+        <option value="email">Email</option>
+        <option value="phone">Phone</option>
+        <option value="person">Person name</option>
+        <option value="username">Username</option>
+        <option value="organization">Organization</option>
+        <option value="domain">Domain</option>
+        <option value="url">URL</option>
+        <option value="address">Address</option>
+        <option value="identifier">Known identifier</option>
+      </select>
+      <label for="inv-dataset">Dataset name</label>
+      <input id="inv-dataset" name="dataset" type="text" value="default" pattern="[a-zA-Z0-9_\-]{1,80}" required>
+      <label class="checkbox"><input id="inv-model" type="checkbox"> Use model reasoning (requires a configured model)</label>
+      <button type="button" id="inv-preview">Preview plan</button>
+      <div id="inv-preview-result" class="plan-preview" hidden></div>
+      <button type="submit" id="inv-submit" disabled>Create investigation job</button>
+      <p id="investigation-error" class="error" role="alert" hidden></p>
+    </form>
+
+    <form id="dataset-form" class="tab-panel" data-panel="dataset" hidden>
+      <label for="ds-description">Describe the dataset</label>
+      <textarea id="ds-description" name="description" required placeholder="e.g. used RTX 3090 marketplace listings"></textarea>
+      <label for="ds-dataset">Dataset name</label>
+      <input id="ds-dataset" name="dataset" type="text" value="default" pattern="[a-zA-Z0-9_\-]{1,80}" required>
+      <button type="button" id="ds-preview">Preview plan</button>
+      <div id="ds-preview-result" class="plan-preview" hidden></div>
+      <button type="submit" id="ds-submit" disabled>Create dataset job</button>
+      <p id="dataset-error" class="error" role="alert" hidden></p>
+    </form>
+
+    <div class="tab-panel" data-panel="continuous" hidden>
+      <section class="subsection">
+        <h2>Rerun or refresh an existing job</h2>
+        <form id="rerun-form">
+          <label for="rerun-job-id">Job ID</label>
+          <input id="rerun-job-id" name="job_id" type="text" required>
+          <button type="submit">Rerun as new job</button>
+          <p id="rerun-error" class="error" role="alert" hidden></p>
+          <p class="hint">Creates a new durable job from the same seeds/discovery objective.
+            Prior evidence and history are untouched. Continuous jobs refresh automatically
+            through their schedule and cannot be rerun here.</p>
+        </form>
+      </section>
+      <section class="subsection">
+        <h2>Start continuous monitoring</h2>
+        <form id="continuous-form">
+          <label for="cont-value">Email, phone, person name, username, organization, domain, URL, address, or known identifier</label>
+          <input id="cont-value" name="value" type="text" required>
+          <label for="cont-kind">Input type</label>
+          <select id="cont-kind" name="kind">
+            <option value="">Auto-detect</option>
+            <option value="email">Email</option>
+            <option value="phone">Phone</option>
+            <option value="person">Person name</option>
+            <option value="username">Username</option>
+            <option value="organization">Organization</option>
+            <option value="domain">Domain</option>
+            <option value="url">URL</option>
+            <option value="address">Address</option>
+            <option value="identifier">Known identifier</option>
+          </select>
+          <label for="cont-dataset">Dataset name</label>
+          <input id="cont-dataset" name="dataset" type="text" value="default" pattern="[a-zA-Z0-9_\-]{1,80}" required>
+          <label for="cont-interval">Refresh interval (seconds)</label>
+          <input id="cont-interval" name="interval" type="number" min="60" max="31536000" value="86400" required>
+          <button type="submit">Start continuous job</button>
+          <p id="continuous-error" class="error" role="alert" hidden></p>
+        </form>
+      </section>
+    </div>
+  </section>
+
+  <section id="jobs-view" class="view" hidden>
+    <h1>Jobs</h1>
+    <table id="jobs-table">
+      <thead><tr><th>ID</th><th>Status</th><th>Created</th><th>Reason</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section id="job-detail-view" class="view" hidden>
+    <a href="#/jobs">&larr; back to jobs</a>
+    <h1 id="job-detail-title"></h1>
+    <div id="job-summary"></div>
+    <div class="actions" id="job-actions"></div>
+    <h2>Progress</h2>
+    <p class="hint">An active job refreshes this page automatically until it reaches a
+      terminal status.</p>
+    <div id="job-progress"></div>
+    <h2>Sources</h2>
+    <p class="hint">Every acquired source, its HTTP status and its extraction state. Capture
+      links open the authenticated capture metadata or raw body.</p>
+    <div id="job-sources"></div>
+    <h2>Warnings &amp; failures</h2>
+    <ul id="job-warnings"></ul>
+    <h2>Records</h2>
+    <p class="hint">Every candidate value is shown with its source, evidence, locator,
+      capture and extraction metadata. A conflicting field shows no silently chosen value,
+      and a requested field with no observations anywhere in the job is shown as missing.</p>
+    <div id="job-records"></div>
+    <h2>Events</h2>
+    <ul id="job-events"></ul>
+  </section>
+
+  <section id="schedules-view" class="view" hidden>
+    <h1>Schedules</h1>
+    <table id="schedules-table">
+      <thead><tr><th>ID</th><th>Interval (s)</th><th>Next run</th><th>Last job</th><th>Enabled</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+</main>
+<script src="/assets/app.js" defer></script>
+</body>
+</html>

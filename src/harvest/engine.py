@@ -59,15 +59,37 @@ class Engine:
             if not in_scope(url, spec):
                 raise ValueError("seed is outside allowed domains")
             initial.append({"kind": "fetch", "key": url, "payload": {"url": url}})
-        if not initial:
+        # An explicit bounded query set feeds discovery when present; otherwise the whole
+        # objective is the one implicit query, exactly as before this field existed.
+        queries = list(spec.discovery_queries)
+        if not initial and not queries:
+            queries = [spec.objective]
+        if queries:
             if not self.settings.search_url:
-                raise ValueError(
-                    "provide a seed URL or configure HARVEST_SEARCH_URL for discovery from an objective"
-                )
-            initial.append(
-                {"kind": "search", "key": spec.objective, "payload": {"query": spec.objective}}
+                if not initial:
+                    raise ValueError(
+                        "provide a seed URL or configure HARVEST_SEARCH_URL for discovery from an objective"
+                    )
+                # Seeds alone are enough to proceed; discovery is silently skipped, not an error.
+            else:
+                for query in queries:
+                    initial.append({"kind": "search", "key": query, "payload": {"query": query}})
+        if not initial:
+            raise ValueError(
+                "provide a seed URL or configure HARVEST_SEARCH_URL for discovery from an objective"
             )
         return self.store.create(spec, initial, key)
+
+    def rerun(self, job_id):
+        """Resubmit a prior job's exact spec as a new durable job; never mutates old history."""
+        job = self.store.job(job_id)
+        spec = JobSpec.model_validate(job["spec"])
+        if spec.mode == "continuous":
+            raise ValueError(
+                "continuous jobs refresh automatically through their schedule; "
+                "disable the schedule instead of rerunning, to avoid a duplicate schedule"
+            )
+        return self.submit(spec)
 
     def context(self, job_id):
         observations = self.store.observations(job_id, limit=40)
