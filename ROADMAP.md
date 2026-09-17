@@ -31,6 +31,7 @@ the unchanged selector, no new dependency and no schema change. Semantic retriev
 measured only with static vectors, whose apparent gain was an anomaly-detection artifact on
 the synthetic corpus; it is deferred pending a representative corpus and a runnable
 transformer model, not rejected. See [0.5 validation](docs/validation/v05-reading-passes.md).
+A browser UI was added within 0.5: a deterministic intake/planning module (no LLM) turns investigation input or a dataset description into seeds/bounded discovery queries/default fields, and a static HTML/CSS/JS shell exposes job launch, job detail with evidence/conflicts, CSV/JSONL export, rerun/refresh and schedule management over the existing authenticated API.
 
 ## Observed priorities, not a feature checklist
 
@@ -65,5 +66,7 @@ code execution is currently justified by these measurements.
 
 Canonical repository: [Snaxxwax/data_harvesting_agent](https://github.com/Snaxxwax/data_harvesting_agent).
 The earlier missing-repository blocker is resolved. The published 0.1 CI run passed tests
-and Docker build. Compose deployment and live SearXNG remain unverified; the live model
-pilot above measures failures, not general research quality.
+and Docker build. The browser-UI milestone built the Compose image, started it with no
+`.env` present, and smoke-tested the API and UI in a real browser end to end; re-verify in
+your own environment and check current CI results before deploying. Live SearXNG remains
+unverified; the live model pilot above measures failures, not general research quality.

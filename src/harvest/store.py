@@ -320,8 +320,10 @@ class Store:
         return row
 
     def claim(self, job_id: str | None = None, lease_seconds: float = 120):
-        now = time.time()
         with self.transaction() as db:
+            # BEGIN IMMEDIATE may wait for another writer. Start all claim timing only after
+            # the transaction owns the write lock so lock contention cannot shorten the lease.
+            now = time.time()
             expired = db.execute(
                 """SELECT t.*,j.spec FROM tasks t JOIN jobs j ON j.id=t.job_id
                 WHERE t.status='running' AND t.lease_until<=? AND j.status='running'""",
@@ -348,13 +350,14 @@ class Store:
             if row is None:
                 return None
             token = uuid.uuid4().hex
+            claimed_at = time.time()
             db.execute(
                 "UPDATE tasks SET status='running',attempts=attempts+1,token=?,lease_until=? WHERE id=?",
-                (token, now + lease_seconds, row["id"]),
+                (token, claimed_at + lease_seconds, row["id"]),
             )
             db.execute(
                 "UPDATE jobs SET status='running',started=coalesce(started,?) WHERE id=?",
-                (now, row["job_id"]),
+                (claimed_at, row["job_id"]),
             )
             result = dict(row)
             result.update(
@@ -959,6 +962,60 @@ class Store:
                     }
                 )
             return results
+
+    def job_records(self, job_id):
+        """Job-scoped per-entity fields, mirroring `canonical`'s value/conflict rules.
+
+        Unlike `canonical`, which is dataset-wide and selects each source's latest usable
+        extraction, this uses only this job's own assertion-scoped observations (like
+        `dossier`), so a later job or replay can never change an existing job's record view.
+        Every field the job's spec requested is backfilled onto every entity, even one with
+        zero observations for it anywhere in the job: `missing` distinguishes "never
+        observed" from a genuine `conflict` (observed, but disagreeing), so a caller never
+        has to infer absence from a dict key that just isn't there.
+        """
+        job = self.job(job_id)
+        requested_fields = job["spec"]["fields"]
+        entities: dict[str, dict] = {}
+        after = ""
+        while rows := self.observations(job_id, after, 2000):
+            for r in rows:
+                entity = entities.setdefault(
+                    r["entity_id"],
+                    {"entity_id": r["entity_id"], "entity_key": r["entity_key"], "fields": {}},
+                )
+                field = entity["fields"].setdefault(
+                    r["field"],
+                    {"value": None, "conflict": False, "missing": False, "candidates": []},
+                )
+                field["candidates"].append(
+                    {
+                        "value": r["value"],
+                        "observation_id": r["id"],
+                        "source_url": r["source_url"],
+                        "evidence": r["evidence"],
+                        "locator": r["locator"],
+                        "method": r["method"],
+                        "extractor": r["extractor"],
+                        "confidence": r["confidence"],
+                        "capture_ids": r["capture_ids"],
+                        "extraction_ids": r["extraction_ids"],
+                        "last_seen": r["last_seen"],
+                    }
+                )
+            after = rows[-1]["id"]
+        results = []
+        for entity in entities.values():
+            for field in entity["fields"].values():
+                unique = {packed(c["value"]) for c in field["candidates"]}
+                field["conflict"] = len(unique) > 1
+                field["value"] = field["candidates"][0]["value"] if len(unique) == 1 else None
+            for name in requested_fields:
+                entity["fields"].setdefault(
+                    name, {"value": None, "conflict": False, "missing": True, "candidates": []}
+                )
+            results.append(entity)
+        return sorted(results, key=lambda e: e["entity_id"])
 
     def dossier(self, job_id):
         """Job-scoped investigation view: exact-identifier reconciliation, never truth scoring.

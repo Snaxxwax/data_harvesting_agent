@@ -4,9 +4,17 @@ x-common: &common
   image: harvest-platform:local
   restart: unless-stopped
   init: true
-  env_file: .env
+  env_file:
+    - path: .env
+      required: false
   environment:
     HARVEST_DB: /data/harvest.sqlite
+    # A fresh checkout must start with no .env present: this loopback-only default lets
+    # `docker compose up` work immediately. It is publicly visible in this repository, so it
+    # is not a secret and must be overridden (set HARVEST_API_TOKEN in .env) for any use
+    # beyond a single trusted operator on localhost. See README.md and .env.example.
+    HARVEST_API_TOKEN: ${HARVEST_API_TOKEN:-local-only-default-harvest-token-change-me-for-any-shared-use}
+    HARVEST_USER_AGENT: ${HARVEST_USER_AGENT:-HarvestPlatform/0.5 (local default; set HARVEST_USER_AGENT)}
   volumes:
     - harvest-data:/data
   read_only: true
