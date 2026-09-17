@@ -320,8 +320,10 @@ class Store:
         return row
 
     def claim(self, job_id: str | None = None, lease_seconds: float = 120):
-        now = time.time()
         with self.transaction() as db:
+            # BEGIN IMMEDIATE may wait for another writer. Start all claim timing only after
+            # the transaction owns the write lock so lock contention cannot shorten the lease.
+            now = time.time()
             expired = db.execute(
                 """SELECT t.*,j.spec FROM tasks t JOIN jobs j ON j.id=t.job_id
                 WHERE t.status='running' AND t.lease_until<=? AND j.status='running'""",
@@ -348,13 +350,14 @@ class Store:
             if row is None:
                 return None
             token = uuid.uuid4().hex
+            claimed_at = time.time()
             db.execute(
                 "UPDATE tasks SET status='running',attempts=attempts+1,token=?,lease_until=? WHERE id=?",
-                (token, now + lease_seconds, row["id"]),
+                (token, claimed_at + lease_seconds, row["id"]),
             )
             db.execute(
                 "UPDATE jobs SET status='running',started=coalesce(started,?) WHERE id=?",
-                (now, row["job_id"]),
+                (claimed_at, row["job_id"]),
             )
             result = dict(row)
             result.update(
