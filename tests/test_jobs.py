@@ -1,6 +1,7 @@
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 
 import pytest
 
@@ -127,6 +128,29 @@ def test_response_size_bound(engine, source):
     assert result["status"] == "failed"
     assert result["captures"] == 0
     assert table_count(engine.store, "blobs") == 0
+
+
+def test_claim_lease_starts_after_transaction_is_acquired(engine, source, monkeypatch):
+    job = engine.submit(spec(source))
+    clock = {"now": 100.0}
+    transaction = engine.store.transaction
+
+    @contextmanager
+    def delayed_transaction():
+        with transaction() as db:
+            # Simulate time spent waiting for BEGIN IMMEDIATE to acquire the write lock.
+            clock["now"] = 200.0
+            yield db
+
+    monkeypatch.setattr("harvest.store.time.time", lambda: clock["now"])
+    monkeypatch.setattr(engine.store, "transaction", delayed_transaction)
+    task = engine.store.claim(job, lease_seconds=30)
+
+    with engine.store.connection() as db:
+        lease_until = db.execute(
+            "SELECT lease_until FROM tasks WHERE id=?", (task["id"],)
+        ).fetchone()[0]
+    assert lease_until == 230.0
 
 
 def test_stale_worker_cannot_commit_after_reclaim(engine, source):

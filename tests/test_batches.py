@@ -2,7 +2,6 @@ import json
 import sqlite3
 import subprocess
 import sys
-import time
 from contextlib import contextmanager
 
 import pytest
@@ -372,13 +371,20 @@ def checkpoint(task, **kwargs):
   os._exit(27)
  return result
 engine.store.finish=checkpoint
-task=engine.store.claim(sys.argv[2],lease_seconds=0.2)
+# Keep the lease comfortably beyond the subprocess timeout. Recovery below expires it
+# explicitly, so scheduler latency cannot make the worker lose ownership before processing.
+task=engine.store.claim(sys.argv[2],lease_seconds=30)
 engine.process(task)
 """
     result = subprocess.run([sys.executable, "-c", code, engine.store.path, job], timeout=10)
     assert result.returncode == 27
     assert engine.store.extractions(job)[0]["records_processed"] == 50
-    time.sleep(0.21)
+    with engine.store.transaction() as db:
+        abandoned = db.execute(
+            "SELECT id FROM tasks WHERE job_id=? AND status='running'", (job,)
+        ).fetchone()
+        assert abandoned is not None
+        db.execute("UPDATE tasks SET lease_until=0 WHERE id=?", (abandoned["id"],))
     restarted = Engine(engine.settings)
     assert restarted.run(job)["status"] == "completed"
     assert restarted.store.job(job)["claims_processed"] == 750
