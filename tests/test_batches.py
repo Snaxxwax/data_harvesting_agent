@@ -387,6 +387,13 @@ engine.process(task)
         db.execute("UPDATE tasks SET lease_until=0 WHERE id=?", (abandoned["id"],))
     restarted = Engine(engine.settings)
     assert restarted.run(job)["status"] == "completed"
-    assert restarted.store.job(job)["claims_processed"] == 750
-    assert restarted.store.extractions(job)[0]["batches"] == 5
+    final_job = restarted.store.job(job)
+    assert (final_job["records_processed"], final_job["claims_processed"]) == (250, 750)
+    extraction = restarted.store.extractions(job)[0]
+    assert (
+        extraction["records_processed"],
+        extraction["records_total"],
+        extraction["records_remaining"],
+        extraction["batches"],
+    ) == (250, 250, 0, 5)
     assert source["counts"]["/population.json"] == 1
