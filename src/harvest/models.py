@@ -44,6 +44,8 @@ class Limits(StrictModel):
     reading_passes: int = Field(default=3, ge=1, le=10)
 
 
+MAX_DISCOVERY_QUERIES = 5
+
 TARGET_KEY_PATTERN = r"^[a-zA-Z0-9_-]{1,80}$"
 
 
@@ -164,6 +166,7 @@ class JobSpec(StrictModel):
     mode: Literal["targeted", "enumerative", "continuous", "deep_research"] = "targeted"
     seeds: list[str] = Field(default_factory=list, max_length=100)
     fields: list[str] = Field(default_factory=list, max_length=50)
+    discovery_queries: list[str] = Field(default_factory=list, max_length=50)
     allowed_domains: list[str] = Field(default_factory=list, max_length=100)
     use_model: bool = False
     limits: Limits = Field(default_factory=Limits)
@@ -181,6 +184,14 @@ class JobSpec(StrictModel):
         if any(not v.strip() or len(v) > 120 for v in values):
             raise ValueError("field names must be 1–120 characters")
         return list(dict.fromkeys(values))
+
+    @field_validator("discovery_queries")
+    @classmethod
+    def query_text(cls, values: list[str]) -> list[str]:
+        values = [v.strip() for v in values if v.strip()]
+        if any(len(v) > 500 for v in values):
+            raise ValueError("discovery_queries entries must be at most 500 characters")
+        return list(dict.fromkeys(values))[:MAX_DISCOVERY_QUERIES]
 
     @field_validator("allowed_domains")
     @classmethod

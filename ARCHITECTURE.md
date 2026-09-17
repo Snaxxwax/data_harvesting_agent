@@ -13,6 +13,10 @@ FastAPI serves requests. Independent worker processes execute persistent tasks. 
 uses the same Engine and Store. Each job permits one active task at a time; different jobs
 can run across workers. This bounds per-job budget and research-state races without a
 distributed scheduler. SQLite's short `BEGIN IMMEDIATE` transactions serialize writes.
+The same FastAPI app also serves a static, server-rendered browser UI (`src/harvest/web/`)
+over this Engine/Store through the existing authenticated JSON API, plus a small
+deterministic intake/planning module (`src/harvest/planning.py`); it is a second client of
+the same boundary, not a second runtime.
 
 ```mermaid
 flowchart TD

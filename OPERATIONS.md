@@ -30,9 +30,15 @@ appear in the prompt and audit, and do not by themselves mark a successfully exe
 One host, local filesystem, trusted operator. SQLite is not supported on NFS/SMB or a
 shared multi-host volume. The API and workers must use the same database. Docker Compose
 provides a loopback-bound API, worker, local named volume, restart policy and log rotation.
-Docker runtime validation remains a deployment gate; local Docker execution is unavailable.
-The published 0.1 Docker image build passed in GitHub CI, but Compose was not smoke-tested.
-The base image and GitHub Actions major tags are not digest-pinned.
+`compose.yaml` works from a fresh checkout with no `.env` present: it falls back to a
+clearly-labeled, publicly-visible default `HARVEST_API_TOKEN`/`HARVEST_USER_AGENT` via
+an optional `env_file` and `${VAR:-default}` substitution. Override both in `.env` for
+anything beyond a single trusted local operator. The browser-UI milestone built the image,
+started the stack with no `.env`, and smoke-tested the API and browser UI end to end
+(`docker compose config`, `up`, login, job create/cancel/rerun, JSONL/CSV export); the
+published 0.1 Docker image build separately passed in GitHub CI. Re-verify in your own
+deployment environment and check current CI results before relying on this. The base image
+and GitHub Actions major tags are not digest-pinned.
 
 ## Configuration
 
@@ -55,6 +61,15 @@ Service/model endpoints are administrator configuration, never model output. A c
 SearXNG host on the private network must also be in `HARVEST_PRIVATE_HOSTS`. In containers,
 `localhost` refers to that container; use your actual service DNS or explicitly configured
 host gateway. No model is silently downloaded or paid API account provisioned.
+
+The browser UI at `/` authenticates with a session cookie instead of a bearer header.
+`POST /session` checks the submitted value against `HARVEST_API_TOKEN` with a
+constant-time comparison, then issues an HMAC-signed, 12-hour, HttpOnly, `SameSite=Strict`
+cookie keyed on that token (`src/harvest/sessions.py`); the raw token itself is never put
+in a cookie, rendered HTML, JavaScript, or a log line. `POST /logout` clears it. Every
+existing bearer-authenticated request keeps working unchanged; the cookie is only a second,
+narrower way to satisfy the same `authenticate` dependency, and sessions do not survive an
+API token rotation (the signature no longer verifies).
 
 The remote-DNS proxy path permits only listed public hostnames. The proxy operator must
 enforce public destination addresses; this path cannot pin the proxy's resolved IP from
@@ -102,6 +117,25 @@ pages. Events use an integer `after` cursor; observations/entities use the last 
 `/captures/{id}` provides metadata and `/captures/{id}/body` downloads inert evidence bytes.
 `/jobs/{id}/export` streams JSONL. Export a terminal job for a stable complete snapshot;
 new observations created behind a cursor can otherwise be omitted from an in-flight export.
+
+`GET /jobs/{id}/records` projects that job's own observations into per-entity fields with
+`value`/`conflict`/`missing`/`candidates` (mirroring `/datasets/{name}/entities` but scoped
+to one job, like `/jobs/{id}/dossier`). Every field in the job's spec is backfilled onto
+every entity, `missing: true`, even one with zero observations anywhere in the job, so a
+caller never has to infer absence from a dict key that just isn't there. `GET
+/jobs/{id}/export.csv` renders the same projection as a record-oriented CSV: two identity
+columns, then `<field>`, `<field>__status` (`ok`/`conflict`/`missing`) and `<field>__sources`
+per field observed or requested anywhere in the job, with basic
+spreadsheet-formula-injection neutralization on both data cells and header cells (field
+names come from `JobSpec.fields`, which is caller-controlled, so the derived `<field>`,
+`<field>__status` and `<field>__sources` header names are neutralized exactly like a value).
+`POST /jobs/{id}/rerun` resubmits that job's exact stored spec as a new durable job (a new
+idempotency-free submission); it rejects `mode=continuous` jobs, which already refresh
+through their schedule, to avoid creating a second overlapping schedule. `GET /meta` reports
+whether search/model are configured, for UI/client-side feature gating. `POST
+/plan/investigation` and `POST /plan/dataset` expose the deterministic intake/planning
+module (`harvest.planning`) that the browser UI's launcher uses to turn free text into
+seeds, bounded discovery queries and default fields, without ever calling a model.
 
 `/jobs/{id}/extractions` additionally returns `records_processed`, `records_total`,
 `records_remaining` and `batches`. NULL means unknown, including legacy/custom-adapter

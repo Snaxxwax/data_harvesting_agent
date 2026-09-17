@@ -226,3 +226,58 @@ def test_failure_after_last_attempt_lease_expiry_settles(engine, source):
     engine.store.claim(job, lease_seconds=0.001)
     time.sleep(0.01)
     assert engine.run(job)["status"] == "failed"
+
+
+def test_job_records_reflects_entity_fields_and_conflicts(engine, source):
+    job_spec = spec(source)
+    job_spec.seeds.append(source["base"] + "/conflict")
+    job = engine.submit(job_spec)
+    engine.run(job)
+    records = engine.store.job_records(job)
+    alpha = next(r for r in records if "alpha" in r["entity_key"])
+    assert alpha["fields"]["name"]["conflict"] is True
+    assert alpha["fields"]["name"]["value"] is None
+    assert {c["value"] for c in alpha["fields"]["name"]["candidates"]} == {
+        "Alpha",
+        "Different Alpha",
+    }
+    assert all(
+        c["source_url"] and c["evidence"] and c["locator"]
+        for c in alpha["fields"]["name"]["candidates"]
+    )
+
+
+def test_rerun_creates_new_job_preserving_original_spec(engine, source):
+    job_spec = spec(source, "/page2")
+    original = engine.submit(job_spec)
+    engine.run(original)
+    rerun_id = engine.rerun(original)
+    assert rerun_id != original
+    assert engine.store.job(rerun_id)["spec"] == engine.store.job(original)["spec"]
+    result = engine.run(rerun_id)
+    assert result["status"] == "completed"
+    # Original job's own history is untouched by the new run.
+    assert engine.store.job(original)["status"] == "completed"
+
+
+def test_rerun_rejects_continuous_jobs_to_avoid_duplicate_schedule(engine, source):
+    job = engine.submit(spec(source, "/page2", mode="continuous", refresh_seconds=60))
+    with pytest.raises(ValueError, match="schedule"):
+        engine.rerun(job)
+
+
+def test_job_records_backfills_requested_field_absent_everywhere(engine, source):
+    job_spec = spec(source, fields=["name", "phantom_field"])
+    job = engine.submit(job_spec)
+    engine.run(job)
+    records = engine.store.job_records(job)
+    assert records
+    for record in records:
+        assert record["fields"]["phantom_field"] == {
+            "value": None,
+            "conflict": False,
+            "missing": True,
+            "candidates": [],
+        }
+        assert record["fields"]["name"]["missing"] is False
+        assert record["fields"]["name"]["candidates"]
