@@ -38,6 +38,12 @@ Recorded results are in `docs/VALIDATION.md`.
 | Autonomous research wiring | Objective-only search through real local HTTP and model endpoints creates follow-up queries and grounded observations |
 | API boundary | Bearer auth, idempotency conflict, cursor validation, export and inert capture downloads |
 | Backups | Restored backup preserves job state, observations and evidence bytes |
+| Intake/planning | Obvious types (URL/domain/email/phone/@handle) auto-detect; ambiguous text requires an explicit type; discovery queries are bounded and deduplicated; direct URL/domain seeds need no search |
+| Discovery query bounds | Search-only submission without `HARVEST_SEARCH_URL` fails clearly; seeds+queries together add search tasks only when search is configured |
+| Session auth | Wrong token issues no cookie; valid cookie authenticates the same protected routes as bearer; logout revokes it; tampered/expired signed cookies are rejected |
+| Rerun/refresh | Rerun creates a new job with the original stored spec unchanged; continuous-mode jobs are rejected to avoid a duplicate schedule |
+| Job-scoped records/CSV | Per-entity conflict/missing/source metadata matches `canonical`'s value rules but stays scoped to one job; CSV neutralizes spreadsheet formula injection |
+| Public UI surface | `/`, static assets and `/session` require no prior auth; every job/evidence route stays behind bearer-or-cookie auth; strict CSP with no inline script/style |
 
 The local fixtures are controlled test sources, not evidence of general web extraction or
 model reasoning quality. Separate public-network acquisition validates real TLS/robots/HTTP
@@ -56,11 +62,14 @@ For the larger reproducible owned-source probe, run
 references and SQLite integrity, and reports timings and whole-process peak RSS. Measurements
 are workspace-specific, not a throughput SLA. See `docs/validation/v03-workloads.md`.
 
-Before production deployment beyond a single trusted operator, require: actual Docker image
-and Compose smoke test, chosen model/SearXNG provider integration, prolonged mixed-workload
-soak test, backup restore drill on target hardware, disk pressure behavior, dependency/image
-review, benchmarked extraction/identity/contradiction quality and workload-derived limits.
-The current suite does not substitute for those missing deployment checks.
+Before production deployment beyond a single trusted operator, require: chosen model/SearXNG
+provider integration, prolonged mixed-workload soak test, backup restore drill on target
+hardware, disk pressure behavior, dependency/image review, benchmarked
+extraction/identity/contradiction quality and workload-derived limits. The current suite
+does not substitute for those missing deployment checks. An actual Docker image build,
+`docker compose config` with no `.env`, `up`, and a real-browser smoke test (login, launch,
+job detail, cancel, rerun, CSV/JSONL export) were run for the browser-UI milestone; re-run
+these for your own target environment before relying on them.
 
 Run `uv run python scripts/benchmark_passages.py` for the ten-document, 16-quote synthetic
 coverage comparison. This requires no network or model. See `docs/validation/v04-workloads.md`
