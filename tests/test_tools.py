@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -254,3 +255,49 @@ def test_job_submitted_with_a_disabled_tool_is_rejected(tmp_path):
     )
     assert response.status_code == 422
     assert "not enabled" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("maigret:janedoe", {"name": "maigret", "target": "janedoe"}),
+        ("MAIGRET:janedoe", {"name": "maigret", "target": "janedoe"}),
+        (" maigret : janedoe ", {"name": "maigret", "target": "janedoe"}),
+    ],
+)
+def test_cli_parses_tool_argument(value, expected):
+    from harvest.cli import parse_tool
+
+    assert parse_tool(value) == expected
+
+
+def test_cli_rejects_tool_argument_without_a_target():
+    from harvest.cli import parse_tool
+
+    with pytest.raises(SystemExit, match="NAME:TARGET"):
+        parse_tool("maigret")
+
+
+def test_cli_investigate_submits_declared_tools(tmp_path, monkeypatch):
+    """--tool reaches the spec, and the allowlist still gates it at submit."""
+    from harvest import cli
+
+    db = str(tmp_path / "h.sqlite")
+    argv = ["harvest", "--db", db, "investigate", "profile janedoe", "--tool", "maigret:janedoe"]
+    monkeypatch.setattr(sys, "argv", argv)
+
+    # Consistent with the rest of this CLI: a rejected spec surfaces the ValueError rather
+    # than a tidy exit, exactly as an unparseable --seed already does.
+    monkeypatch.delenv("HARVEST_TOOLS", raising=False)
+    with pytest.raises(ValueError, match="not enabled"):
+        cli.main()
+
+    monkeypatch.setenv("HARVEST_TOOLS", "maigret")
+    monkeypatch.setattr(cli.Engine, "run", lambda self, job_id: self.store.job(job_id))
+    with pytest.raises(SystemExit):
+        cli.main()
+    from harvest.store import Store
+
+    with Store(db).connection() as conn:
+        rows = [tuple(r) for r in conn.execute("SELECT kind,key FROM tasks")]
+    assert rows == [("tool", "maigret:janedoe")]
