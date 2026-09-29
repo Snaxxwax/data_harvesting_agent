@@ -27,6 +27,15 @@ def export(engine, job_id, path):
     temporary.replace(output)
 
 
+def parse_tool(value: str) -> dict:
+    """NAME:TARGET. A tool target can never contain ":" (see tools._TARGET_RE), so the
+    first colon always separates the two; ToolRun validates both halves."""
+    name, separator, target = value.partition(":")
+    if not separator:
+        raise SystemExit(f"--tool expects NAME:TARGET, got {value!r}")
+    return {"name": name.strip().lower(), "target": target.strip()}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Self-hosted harvesting with durable provenance")
     parser.add_argument("--db", help="database path, overrides HARVEST_DB")
@@ -47,6 +56,13 @@ def main():
     )
     command.add_argument("--dataset", default="default")
     command.add_argument("--model", action="store_true")
+    command.add_argument(
+        "--tool",
+        action="append",
+        default=[],
+        metavar="NAME:TARGET",
+        help="external OSINT CLI to run, repeatable; requires HARVEST_TOOLS to permit NAME",
+    )
     command.add_argument("--key")
     command = commands.add_parser("worker")
     command.add_argument("--once", action="store_true")
@@ -107,6 +123,7 @@ def main():
                 mode=args.mode,
                 dataset=args.dataset,
                 use_model=args.model,
+                tools=[parse_tool(value) for value in args.tool],
             )
         else:
             spec = JobSpec.model_validate_json(Path(args.spec).read_text())
