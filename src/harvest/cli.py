@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .config import Settings
 from .engine import Engine
-from .models import JobSpec, ReplaySpec
+from .models import Investigation, JobSpec, ReplaySpec
 
 
 def export(engine, job_id, path):
@@ -58,6 +58,7 @@ def main():
     command.add_argument("capture_ids", type=int, nargs="+")
     command.add_argument("--key")
     command.add_argument("--submit-only", action="store_true")
+    command.add_argument("--investigation", metavar="PATH", help="path to JSON Investigation")
     command = commands.add_parser("export")
     command.add_argument("job_id")
     command.add_argument("path")
@@ -84,7 +85,14 @@ def main():
         return
     engine = Engine(settings)
     if args.command == "replay":
-        job_id = engine.replay(ReplaySpec(capture_ids=args.capture_ids), args.key)
+        investigation = (
+            Investigation.model_validate_json(Path(args.investigation).read_text())
+            if args.investigation
+            else None
+        )
+        job_id = engine.replay(
+            ReplaySpec(capture_ids=args.capture_ids, investigation=investigation), args.key
+        )
         if args.submit_only:
             print(job_id)
             return

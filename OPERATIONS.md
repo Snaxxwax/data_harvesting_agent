@@ -159,7 +159,8 @@ with a failed extraction record. Rejected oversized bodies, failed HTTP requests
 search-service responses are not guaranteed captures. A budget stop retains prior checkpoints.
 
 Use `harvest replay CAPTURE_ID... --key KEY` after installing an improved adapter, or submit
-`POST /replays` with `capture_ids` and optional `limits`. Replay accepts up to 100 source
+`POST /replays` with `capture_ids` and optional `limits` or `investigation`. The CLI accepts
+`--investigation PATH` containing a JSON `Investigation`. Replay accepts up to 100 source
 captures from one dataset, not search responses. CLI `--submit-only` queues for workers.
 Replay has zero acquisition/model cost counters; task/time/attempt and processing limits still apply.
 Stored-body reads are not billed as network bytes. Internal extraction tasks also count
@@ -193,6 +194,37 @@ updates require rerunning the recovery and provider contract tests; a lockfile d
 replace supply-chain review.
 
 ## Source adapters
+
+The installed `socid-html/1` adapter adds profile fields from captured HTML to the built-in
+title, JSON-LD, text and links. It uses `socid-extractor` on the stored body; it does not
+fetch pages, follow the library's URL mutations, or use its optional AI fallback. Fields
+whose values cannot be found literally in the captured HTML are omitted with a warning.
+The capture and extraction revision remain available for review.
+The initial offline fixture results are in `docs/validation/v06-profile-identity.md`.
+
+Profile identifiers do not automatically join accounts or investigation targets. To use
+one in an exact-match dossier, inspect an HTTP profile capture's original `url` and
+observations, then declare the exact identifier and permitted source field mapping. For
+example, save this as `mal-investigation.json` for a captured profile whose original URL
+was `https://myanimelist.net/profile/Xinil`:
+
+```json
+{
+  "targets": [{"key": "mal_account", "label": "Declared MAL account",
+               "identifiers": {"myanimelist.uid": ["1"]}}],
+  "sources": [{"url": "https://myanimelist.net/profile/Xinil",
+               "identifier_fields": {"mal_uid": "myanimelist.uid"},
+               "field_map": {"mal_uid": "platform_id", "mal_username": "username"}}]
+}
+```
+
+Run `harvest replay CAPTURE_ID --investigation mal-investigation.json` and then
+`harvest dossier REPLAY_JOB_ID`. The API equivalent is `POST /replays` with
+`{"capture_ids":[CAPTURE_ID],"investigation":{...}}`, followed by
+`GET /jobs/{id}/dossier`. Replay reads stored bytes and creates a new job-scoped
+interpretation; the original job stays intact. Use the original capture `url` in the
+source rule, even if its `final_url` differs after redirects. A username shared across
+platforms is never treated as evidence that the accounts belong to one person.
 
 Install trusted packages exposing an entry point:
 
