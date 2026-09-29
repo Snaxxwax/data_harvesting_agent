@@ -50,6 +50,7 @@ and GitHub Actions major tags are not digest-pinned.
 | `HARVEST_SEARCH_URL` | Optional SearXNG base URL, JSON format enabled |
 | `HARVEST_PRIVATE_HOSTS` | Exact administrator-approved hosts allowed to resolve privately; default empty |
 | `HARVEST_TOOLS` | External OSINT CLIs permitted as acquisition tasks (e.g. `maigret`); default empty, meaning none |
+| `HARVEST_TOOL_PACKAGES` | Build-time only: pinned tool packages to install into the image; default empty |
 | `HARVEST_TOOL_TIMEOUT` | Wall-clock seconds one tool run may take before the task is deferred; default 300 |
 | `HARVEST_MODEL_URL` | Trusted Chat Completions base URL ending in `/v1` where appropriate |
 | `HARVEST_MODEL_NAME` | Model identifier accepted by that endpoint |
@@ -192,6 +193,36 @@ default processing limits apply to active legacy jobs too. Roll back by restorin
 there is no down-migration. Package
 updates require rerunning the recovery and provider contract tests; a lockfile does not
 replace supply-chain review.
+
+## External tools
+
+`HARVEST_TOOLS` names the CLIs a deployment permits, but the binary must also exist in the
+image. It is not a project dependency: harvest executes these by argv as a subprocess, so
+they are installed as isolated `uv` tools under `/opt/uv-tools` and never resolved against
+the project's own pins. maigret alone adds 28 transitive packages and roughly 240 MB, and
+depends on `socid-extractor<0.2.0`, which would otherwise couple the profile adapter's
+pinned version to maigret's range.
+
+Build the image with the tools you intend to enable, then enable them at runtime:
+
+```bash
+HARVEST_TOOL_PACKAGES="maigret==0.6.6" docker compose build
+HARVEST_TOOLS=maigret docker compose up -d
+```
+
+Both variables are required. Building without `HARVEST_TOOL_PACKAGES` keeps the default
+image lean; enabling `HARVEST_TOOLS` for a tool absent from the image fails that task with
+a clear "not installed in this worker image" error rather than silently skipping it.
+
+Tool runs are exempt from request, byte and per-origin pacing budgets, because the binary
+makes its own requests outside the fetcher. `limits.tool_runs` bounds how many a job may
+declare and `HARVEST_TOOL_TIMEOUT` bounds each one; nothing else throttles them. Treat the
+site coverage of a tool like maigret as authorization-relevant, not just a volume question.
+
+The container runs read-only as a non-root user with no home directory, so `HOME` is set to
+the `/tmp` tmpfs: maigret creates its site-database directory on startup and aborts with a
+read-only-filesystem error otherwise. That cache is expendable and is re-fetched per
+container, costing roughly 2.5 MB inside the default 64 MB tmpfs.
 
 ## Source adapters
 
