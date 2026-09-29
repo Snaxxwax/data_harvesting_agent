@@ -24,6 +24,7 @@ from .config import Settings
 from .engine import Engine
 from .export import render_csv
 from .models import JobSpec, ReplaySpec
+from .tools import TOOLS
 
 VERSION = "0.5.0"
 WEB_DIR = Path(__file__).parent / "web"
@@ -137,6 +138,10 @@ def create_app(settings: Settings | None = None):
             "version": VERSION,
             "search_configured": bool(settings.search_url),
             "model_configured": engine.reasoner.configured(),
+            # Which external tools this deployment actually permits. The UI offers only
+            # these, so a plan can suggest a tool without the operator being able to
+            # submit a job that submit() would reject.
+            "tools_enabled": sorted(settings.tools & set(TOOLS)),
         }
 
     @protected.post("/plan/investigation")

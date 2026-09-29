@@ -49,6 +49,8 @@ and GitHub Actions major tags are not digest-pinned.
 | `HARVEST_USER_AGENT` | Crawler identity; set a contact-bearing identifier for your deployment |
 | `HARVEST_SEARCH_URL` | Optional SearXNG base URL, JSON format enabled |
 | `HARVEST_PRIVATE_HOSTS` | Exact administrator-approved hosts allowed to resolve privately; default empty |
+| `HARVEST_TOOLS` | External OSINT CLIs permitted as acquisition tasks (e.g. `maigret`); default empty, meaning none |
+| `HARVEST_TOOL_TIMEOUT` | Wall-clock seconds one tool run may take before the task is deferred; default 300 |
 | `HARVEST_MODEL_URL` | Trusted Chat Completions base URL ending in `/v1` where appropriate |
 | `HARVEST_MODEL_NAME` | Model identifier accepted by that endpoint |
 | `HARVEST_MODEL_KEY` | Optional bearer secret; never stored in a job or capture |

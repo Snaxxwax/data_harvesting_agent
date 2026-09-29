@@ -77,6 +77,10 @@ class Plan:
     seeds: list[str] = field(default_factory=list)
     discovery_queries: list[str] = field(default_factory=list)
     fields: list[str] = field(default_factory=list)
+    # Suggestions only, as {"name", "target"} matching JobSpec.tools. A tool still has to be
+    # in the deployment's HARVEST_TOOLS allowlist before submit will accept it, so proposing
+    # one here can never cause an unconfigured job to run a binary.
+    tools: list[dict] = field(default_factory=list)
 
 
 def _bounded(queries: list[str], limit: int = MAX_DISCOVERY_QUERIES) -> list[str]:
@@ -118,6 +122,14 @@ def _normalize_domain(value: str) -> str:
     if _DOMAIN_RE.match(host) is None:
         raise ValueError(_DOMAIN_ERROR)
     return host
+
+
+def tools_for(kind: str) -> list[str]:
+    """External tools whose input is this investigation kind. Imported lazily so planning
+    stays I/O-free and importable without the tools module's subprocess machinery."""
+    from .tools import TOOLS
+
+    return sorted(name for name, tool in TOOLS.items() if kind in tool["kinds"])
 
 
 def detect_investigation_type(value: str) -> str:
@@ -207,6 +219,7 @@ def plan_investigation(value: str, kind: str | None = None) -> Plan:
             normalized=handle,
             discovery_queries=queries,
             fields=DEFAULT_FIELDS["username"],
+            tools=[{"name": name, "target": handle} for name in tools_for("username")],
         )
     if detected == "person":
         name = " ".join(value.split())

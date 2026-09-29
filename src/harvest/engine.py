@@ -25,6 +25,8 @@ from .models import (
 from .network import Fetcher, in_scope
 from .reasoning import Reasoner
 from .store import Store, digest
+from .tools import TOOLS
+from .tools import run as run_tool
 
 log = logging.getLogger("harvest")
 ACTIVE = {"queued", "running"}
@@ -53,7 +55,23 @@ class Engine:
         seeds = spec.seeds or [
             x.rstrip(".,;)") for x in re.findall(r"https?://[^\s<>]+", spec.objective)
         ]
+        if len(spec.tools) > spec.limits.tool_runs:
+            raise ValueError(
+                f"{len(spec.tools)} tool runs exceeds limits.tool_runs={spec.limits.tool_runs}"
+            )
         initial = []
+        for tool in spec.tools:
+            if tool.name not in TOOLS:
+                raise ValueError(f"unknown tool {tool.name!r}")
+            if tool.name not in self.settings.tools:
+                raise ValueError(f"tool {tool.name!r} is not enabled; add it to HARVEST_TOOLS")
+            initial.append(
+                {
+                    "kind": "tool",
+                    "key": f"{tool.name}:{tool.target}",
+                    "payload": {"tool": tool.name, "target": tool.target},
+                }
+            )
         for url in seeds:
             url = canonical_url(url)
             if not in_scope(url, spec):
@@ -98,7 +116,7 @@ class Engine:
             visited = [
                 r[0]
                 for r in db.execute(
-                    "SELECT key FROM tasks WHERE job_id=? AND kind IN ('fetch','search') ORDER BY id DESC LIMIT 50",
+                    "SELECT key FROM tasks WHERE job_id=? AND kind IN ('fetch','search','tool') ORDER BY id DESC LIMIT 50",
                     (job_id,),
                 )
             ]
@@ -340,6 +358,24 @@ class Engine:
                         )
             self.store.finish(
                 task, extraction=result, capture_id=cap["id"], leads=leads, details=details
+            )
+            return
+        if task["kind"] == "tool":
+            cap = run_tool(task["payload"]["tool"], task["payload"]["target"], self.settings)
+            self.store.finish(
+                task,
+                response=cap,
+                leads=[
+                    {
+                        "kind": "extract",
+                        "key": "capture",
+                        "payload": {},
+                        "depth": task["depth"],
+                        "priority": 100,
+                        "reason": "interpret tool output",
+                    }
+                ],
+                details={"tool": task["payload"]["tool"], "acquired": True},
             )
             return
         fetcher = self.fetcher_factory(self.store, self.settings, task)
