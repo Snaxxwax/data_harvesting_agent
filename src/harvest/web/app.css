@@ -107,6 +107,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   padding: 0.15rem 0.6rem;
   font-size: 0.85rem;
 }
+/* A chip that wraps a checkbox is a control, not a tag: keep the whole pill clickable. */
+label.chip { display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer; }
 
 table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; }
 th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }

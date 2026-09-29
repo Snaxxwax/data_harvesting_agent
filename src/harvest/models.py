@@ -42,6 +42,9 @@ class Limits(StrictModel):
     records: int = Field(default=10_000, ge=1, le=1_000_000)
     claims: int = Field(default=100_000, ge=1, le=5_000_000)
     reading_passes: int = Field(default=3, ge=1, le=10)
+    # Tool tasks are only ever enqueued at submit, never from a lead, so bounding the
+    # declared set at submit is the whole enforcement -- no runtime counter needed.
+    tool_runs: int = Field(default=3, ge=0, le=50)
 
 
 MAX_DISCOVERY_QUERIES = 5
@@ -67,6 +70,14 @@ class Target(StrictModel):
             if len(set(ids)) != len(ids):
                 raise ValueError("duplicate identifier value within one namespace")
         return values
+
+
+class ToolRun(StrictModel):
+    """One external OSINT CLI invocation. The target is explicit per tool because tools
+    consume different identifier types (Maigret a username, GHunt an email)."""
+
+    name: str = Field(pattern=r"^[a-z0-9_-]{1,40}$")
+    target: str = Field(min_length=1, max_length=254)
 
 
 class SourceRule(StrictModel):
@@ -172,6 +183,15 @@ class JobSpec(StrictModel):
     limits: Limits = Field(default_factory=Limits)
     refresh_seconds: int | None = Field(default=None, ge=60, le=31_536_000)
     investigation: Investigation | None = Field(default=None)
+    tools: list[ToolRun] = Field(default_factory=list, max_length=50)
+
+    @field_validator("tools")
+    @classmethod
+    def distinct_tools(cls, values: list[ToolRun]) -> list[ToolRun]:
+        seen = {(t.name, t.target) for t in values}
+        if len(seen) != len(values):
+            raise ValueError("duplicate tool and target")
+        return values
 
     @field_validator("seeds")
     @classmethod
