@@ -242,6 +242,7 @@ specs simply don't set.
 | Controls | Request, byte, response, time, depth, frontier, attempt, model-call, token and estimated cost limits |
 | Operations | CLI, authenticated API, cursor pagination, JSONL/CSV export, cancellation, rerun, event log, backup |
 | Extensions | Trusted `harvest.adapters` entry points; retrieval and reasoning are replaceable components |
+| Profile identity | Installed `socid-extractor` adapter adds source-backed identifiers from captured HTML; exact dossier matching requires declared targets and source mappings |
 
 ## Important limits
 
