@@ -161,8 +161,8 @@ search-service responses are not guaranteed captures. A budget stop retains prio
 
 Use `harvest replay CAPTURE_ID... --key KEY` after installing an improved adapter, or submit
 `POST /replays` with `capture_ids` and optional `limits` or `investigation`. The CLI accepts
-`--investigation PATH` containing a JSON `Investigation`. Replay accepts up to 100 source
-captures from one dataset, not search responses. CLI `--submit-only` queues for workers.
+`--investigation PATH` containing a JSON `Investigation`. Replay accepts up to 100 fetch or
+tool captures from one dataset, not search responses. CLI `--submit-only` queues for workers.
 Replay has zero acquisition/model cost counters; task/time/attempt and processing limits still apply.
 Stored-body reads are not billed as network bytes. Internal extraction tasks also count
 toward the ordinary task frontier. If that cap prevents extraction, find the retained body
@@ -219,11 +219,14 @@ makes its own requests outside the fetcher. `limits.tool_runs` bounds actual inv
 `HARVEST_TOOL_TIMEOUT` bounds each one; nothing else throttles them. Treat the site coverage
 of a tool like maigret as authorization-relevant, not just a volume question.
 
-A tool task is never retried. A timeout and a nonzero exit both fail the task permanently,
+A tool task is never retried, including after a worker lease expires. A timeout and a
+nonzero exit both fail the task permanently,
 because one attempt already costs hundreds to thousands of unbudgeted third-party requests
 and a scan that overran its wall clock is no likelier to fit on a second try. A nonzero exit
 is rejected even when a report file was left behind, so an aborted scan is never recorded as
 a completed capture. Resubmit the job to run the tool again.
+Cancelling a job revokes the tool task's lease; the worker checks ownership once per second
+and terminates the tool process group when it loses ownership.
 
 The container runs read-only as a non-root user with no home directory, so `HOME` is set to
 the `/tmp` tmpfs: maigret creates its site-database directory on startup and aborts with a

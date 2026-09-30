@@ -56,13 +56,21 @@ class SocidHtmlAdapter(HtmlAdapter):
             if start < 0:
                 _warn(result, "socid value without literal source evidence omitted")
                 continue
+            # A short ID may occur in unrelated markup before the parser's actual
+            # source. Without an offset from socid, do not pretend the first match
+            # identifies the supporting occurrence.
+            locator = (
+                f"socid:{scheme}:chars:{start}-{start + len(evidence)}"
+                if page.find(evidence, start + 1) < 0
+                else f"socid:{scheme}:ambiguous-value:{field}"
+            )
             result.claims.append(
                 Claim(
                     entity_key=page_key,
                     field=field,
                     value=value,
                     evidence=evidence,
-                    locator=f"socid:{scheme}:chars:{start}-{start + len(evidence)}",
+                    locator=locator,
                     method="html",
                 )
             )
