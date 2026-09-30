@@ -228,6 +228,13 @@ a completed capture. Resubmit the job to run the tool again.
 Cancelling a job revokes the tool task's lease; the worker checks ownership once per second
 and terminates the tool process group when it loses ownership.
 
+A scan fits the compose worker's `mem_limit: 512m`. Measured inside a read-only,
+`cap-drop ALL`, non-root container with swap disabled, counting the worker and the tool
+together: maigret's default site set peaks at 227 MiB and the whole 5203-site set (`-a`,
+which this integration does not pass) peaks at 309 MiB. Usage is flat across a scan rather
+than accumulating, so it is bounded by the tool's own concurrency and not by result volume.
+Measure again before lowering the limit or adding a tool that downloads media.
+
 The container runs read-only as a non-root user with no home directory, so `HOME` is set to
 the `/tmp` tmpfs: maigret creates its site-database directory on startup and aborts with a
 read-only-filesystem error otherwise. That cache is expendable and is re-fetched per
