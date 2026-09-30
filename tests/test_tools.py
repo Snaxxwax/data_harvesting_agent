@@ -139,6 +139,9 @@ def test_capture_flattens_one_record_per_claimed_account(fake_maigret):
     argv = fake_maigret[0]
     assert argv[0] == "maigret" and argv[1] == "janedoe"
     assert "--no-progressbar" in argv and "--json" in argv
+    # The full site set is the point of the integration; losing this flag silently cuts
+    # coverage by about ten times without any other visible change.
+    assert "--all-sites" in argv
 
 
 def test_clean_exit_without_a_report_is_an_error_not_an_empty_capture(monkeypatch):

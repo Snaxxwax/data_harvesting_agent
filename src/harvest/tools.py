@@ -123,6 +123,12 @@ def _maigret(
     argv = [
         "maigret",
         target,
+        # All known sites rather than the top-ranked default: roughly ten times the sites,
+        # so roughly ten times the outbound requests, none of which pass through the
+        # fetcher's budgets. Measured at 309 MiB peak against the worker's 512 MB limit.
+        # Some site definitions in the full set raise internally without changing the exit
+        # code, so a clean exit with a report remains the success signal.
+        "--all-sites",
         "--json",
         "simple",
         "--folderoutput",
