@@ -1,6 +1,8 @@
 import json
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -8,7 +10,7 @@ from pydantic import ValidationError
 
 from harvest import tools
 from harvest.config import Settings
-from harvest.models import JobSpec, PolicyDenied
+from harvest.models import JobSpec, PolicyDenied, ReplaySpec
 from harvest.planning import plan_investigation
 
 MAIGRET_SIMPLE_REPORT = {
@@ -31,7 +33,7 @@ def fake_maigret(monkeypatch):
     report_<username>_simple.json into --folderoutput and prints nothing useful to stdout."""
     calls = []
 
-    def fake_exec(argv, timeout, cwd):
+    def fake_exec(argv, timeout, cwd, cancelled=None):
         calls.append(argv)
         workdir = argv[argv.index("--folderoutput") + 1]
         target = argv[1]
@@ -42,6 +44,63 @@ def fake_maigret(monkeypatch):
 
     monkeypatch.setattr(tools, "_exec", fake_exec)
     return calls
+
+
+class _Created(list):
+    """A list that can also carry the signals the fake process group received."""
+
+    signalled: list
+
+
+class FakePopen:
+    """Stands in for subprocess.Popen so the tests drive the one real execution path.
+
+    Patching subprocess.run would silently test nothing: production always goes through
+    Popen so the tool can be terminated mid-scan.
+    """
+
+    def __init__(self, argv, returncode=0, on_start=None, hang=False, **kwargs):
+        self.args = argv
+        self.pid = -1
+        self.returncode = None
+        self._final = returncode
+        self._hang = hang
+        if on_start:
+            on_start(argv, kwargs.get("cwd"))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def poll(self):
+        return self.returncode
+
+    def communicate(self, timeout=None):
+        # A hanging process still returns once it has been signalled, which is what
+        # _stop_process relies on: it retries communicate() with no timeout after SIGKILL.
+        if self._hang and timeout is not None:
+            raise subprocess.TimeoutExpired(self.args, timeout)
+        self.returncode = self._final
+        return b"", b""
+
+
+def popen_factory(monkeypatch, **kwargs):
+    """Patch Popen and neutralise os.killpg. The fake has no real process group, and
+    killpg on a fake pid would signal something real; the genuine terminate-the-group
+    behaviour is covered by test_cancelling_job_terminates_running_tool instead."""
+    created = _Created()
+    signalled = []
+
+    def factory(argv, **popen_kwargs):
+        created.append(argv)
+        return FakePopen(argv, **kwargs, **popen_kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", factory)
+    monkeypatch.setattr(tools.os, "killpg", lambda pid, sig: signalled.append(sig))
+    created.signalled = signalled
+    return created
 
 
 def enabled(**kwargs):
@@ -85,7 +144,7 @@ def test_capture_flattens_one_record_per_claimed_account(fake_maigret):
 def test_clean_exit_without_a_report_is_an_error_not_an_empty_capture(monkeypatch):
     """Exit 0 and no report file is the only way this path is now reachable; a nonzero exit
     is rejected earlier, in _exec."""
-    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(argv, 0))
+    popen_factory(monkeypatch)
     with pytest.raises(ValueError, match="no JSON report"):
         tools.run("maigret", "janedoe", enabled())
 
@@ -94,25 +153,21 @@ def test_timeout_fails_permanently_rather_than_retrying(monkeypatch):
     """A retried scan would cost another few thousand unbudgeted third-party requests, so
     limits.tool_runs must bound invocations and not merely declarations."""
 
-    def timed_out(argv, **kwargs):
-        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
-
-    monkeypatch.setattr(subprocess, "run", timed_out)
+    popen_factory(monkeypatch, hang=True)
     with pytest.raises(ValueError, match="exceeded"):
-        tools.run("maigret", "janedoe", enabled())
+        tools.run("maigret", "janedoe", enabled(tool_timeout=0.3))
 
 
 def test_nonzero_exit_is_not_ingested_even_with_a_report(monkeypatch):
     """maigret only exits nonzero on startup/config failure or an interrupt, so a report
     left behind by an aborted run is partial and must not become a 200 capture."""
 
-    def aborted(argv, **kwargs):
+    def leave_report(argv, cwd):
         workdir = argv[argv.index("--folderoutput") + 1]
         report = Path(workdir) / "report_janedoe_simple.json"
         report.write_text(json.dumps(MAIGRET_SIMPLE_REPORT), encoding="utf-8")
-        return subprocess.CompletedProcess(argv, 2, b"", b"config error")
 
-    monkeypatch.setattr(subprocess, "run", aborted)
+    popen_factory(monkeypatch, returncode=2, on_start=leave_report)
     with pytest.raises(ValueError, match="exited 2"):
         tools.run("maigret", "janedoe", enabled())
 
@@ -121,14 +176,8 @@ def test_one_declared_run_invokes_the_binary_once(tmp_path, monkeypatch):
     """The end-to-end form of the same guarantee: a timing-out tool task is not retried."""
     from harvest.engine import Engine
 
-    calls = []
-
-    def timed_out(argv, **kwargs):
-        calls.append(argv)
-        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
-
-    monkeypatch.setattr(subprocess, "run", timed_out)
-    engine = Engine(enabled(database=str(tmp_path / "h.sqlite")))
+    calls = popen_factory(monkeypatch, hang=True)
+    engine = Engine(enabled(database=str(tmp_path / "h.sqlite"), tool_timeout=0.3))
     job = engine.submit(
         JobSpec(
             objective="profile janedoe",
@@ -156,7 +205,7 @@ def test_missing_binary_is_a_policy_denial(monkeypatch):
     def absent(*args, **kwargs):
         raise FileNotFoundError
 
-    monkeypatch.setattr(subprocess, "run", absent)
+    monkeypatch.setattr(subprocess, "Popen", absent)
     with pytest.raises(PolicyDenied, match="not installed"):
         tools.run("maigret", "janedoe", enabled())
 
@@ -222,6 +271,101 @@ def test_tool_output_becomes_observations_and_leads(tmp_path, fake_maigret):
         }
     assert "https://github.com/janedoe" in queued
     assert not any("reddit.com" in u for u in queued)
+
+
+def test_tool_capture_can_be_replayed_offline(tmp_path, fake_maigret):
+    from harvest.engine import Engine
+
+    engine = Engine(enabled(database=str(tmp_path / "h.sqlite")))
+    job = engine.submit(
+        JobSpec(objective="profile janedoe", tools=[{"name": "maigret", "target": "janedoe"}])
+    )
+    engine.step(job)
+    engine.step(job)
+    capture = engine.store.captures(job)[0]
+    replay = engine.replay(ReplaySpec(capture_ids=[capture["id"]]))
+    result = engine.run(replay)
+    assert result["status"] == "completed"
+    assert result["requests"] == 0
+    assert engine.store.observations(replay, limit=200)
+
+
+def test_expired_tool_lease_fails_without_another_invocation(tmp_path):
+    from harvest.engine import Engine
+
+    engine = Engine(enabled(database=str(tmp_path / "h.sqlite")))
+    job = engine.submit(
+        JobSpec(
+            objective="profile janedoe",
+            tools=[{"name": "maigret", "target": "janedoe"}],
+            limits={"attempts": 3, "tool_runs": 1},
+        )
+    )
+    task = engine.store.claim(job)
+    assert task["kind"] == "tool"
+    with engine.store.connection() as db:
+        db.execute("UPDATE tasks SET lease_until=0 WHERE id=?", (task["id"],))
+    assert engine.store.claim(job) is None
+    with engine.store.connection() as db:
+        status, attempts = db.execute(
+            "SELECT status,attempts FROM tasks WHERE id=?", (task["id"],)
+        ).fetchone()
+    assert (status, attempts) == ("failed", 1)
+
+
+def test_deferred_tool_attempt_fails_instead_of_relaunching(tmp_path):
+    from harvest.engine import Engine
+
+    engine = Engine(enabled(database=str(tmp_path / "h.sqlite")))
+    job = engine.submit(
+        JobSpec(
+            objective="profile janedoe",
+            tools=[{"name": "maigret", "target": "janedoe"}],
+            limits={"attempts": 3, "tool_runs": 1},
+        )
+    )
+    task = engine.store.claim(job)
+    engine.store.defer(task, OSError("storage failed after scan"), delay=0)
+    assert engine.store.claim(job) is None
+    with engine.store.connection() as db:
+        assert (
+            db.execute("SELECT status FROM tasks WHERE id=?", (task["id"],)).fetchone()[0]
+            == "failed"
+        )
+
+
+def test_cancelling_job_terminates_running_tool(tmp_path, monkeypatch):
+    from harvest.engine import Engine
+
+    engine = Engine(enabled(database=str(tmp_path / "h.sqlite"), tool_timeout=10))
+    job = engine.submit(
+        JobSpec(objective="profile janedoe", tools=[{"name": "maigret", "target": "janedoe"}])
+    )
+    started = tmp_path / "started"
+    finished = tmp_path / "finished"
+
+    def slow_tool(target, workdir, timeout, cancelled):
+        code = (
+            "from pathlib import Path; import time; "
+            f"Path({str(started)!r}).write_text('started'); "
+            "time.sleep(5); "
+            f"Path({str(finished)!r}).write_text('finished')"
+        )
+        tools._exec([sys.executable, "-c", code], timeout, workdir, cancelled)
+        return []
+
+    monkeypatch.setitem(tools.TOOLS["maigret"], "run", slow_tool)
+    worker = threading.Thread(target=engine.step, args=(job,))
+    worker.start()
+    deadline = time.monotonic() + 4
+    while not started.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert started.exists()
+    engine.store.stop(job)
+    worker.join(timeout=4)
+    assert not worker.is_alive()
+    assert engine.store.job(job)["status"] == "cancelled"
+    assert not finished.exists()
 
 
 def _ui_client(engine):

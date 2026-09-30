@@ -17,13 +17,16 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import signal
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 
-from .models import TOOL_TARGET_PATTERN, PolicyDenied
+from .models import TOOL_TARGET_PATTERN, LostLease, PolicyDenied
 from .network import Capture
 
 log = logging.getLogger("harvest")
@@ -34,33 +37,84 @@ log = logging.getLogger("harvest")
 _TARGET_RE = re.compile(TOOL_TARGET_PATTERN)
 
 
-def _exec(argv: list[str], timeout: float, cwd: str) -> subprocess.CompletedProcess:
+def _stop_process(proc: subprocess.Popen) -> None:
+    """Stop the entire tool process group, including any children it started."""
+    if proc.poll() is None:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
     try:
-        proc = subprocess.run(  # noqa: S603 - argv list, never a shell string
-            argv, capture_output=True, timeout=timeout, cwd=cwd, check=False
-        )
+        proc.communicate(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.communicate()
+
+
+def _exec(
+    argv: list[str], timeout: float, cwd: str, cancelled: threading.Event | None = None
+) -> subprocess.CompletedProcess:
+    """Run one tool to completion, or stop it.
+
+    `cancelled` is set by the worker's heartbeat when the task loses its lease, so a
+    cancelled job terminates the tool's whole process group instead of leaving a scan
+    running to completion. There is deliberately no second, simpler execution path: one
+    that skipped Popen would be the path production never takes, and the timeout and
+    exit-code rules below are exactly what needs test coverage.
+    """
+    cancelled = cancelled if cancelled is not None else threading.Event()
+    deadline = time.monotonic() + timeout
+    try:
+        with subprocess.Popen(  # noqa: S603 - argv list, never a shell string
+            argv,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=cwd,
+            start_new_session=True,
+        ) as proc:
+            while True:
+                if cancelled.is_set():
+                    _stop_process(proc)
+                    raise LostLease("tool task cancelled or lease lost")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    _stop_process(proc)
+                    # Deliberately not RetryLater. Each attempt is a full scan costing
+                    # hundreds to thousands of third-party requests outside every budget,
+                    # and a run that exceeded its wall clock is not more likely to fit on a
+                    # second try. Retrying would make limits.tool_runs bound declarations
+                    # rather than actual invocations.
+                    raise ValueError(f"{argv[0]} exceeded {timeout:g}s")
+                try:
+                    # Documented as safe to retry after a timeout without losing output.
+                    stdout, stderr = proc.communicate(timeout=min(1, remaining))
+                except subprocess.TimeoutExpired:
+                    continue
+                if proc.returncode != 0:
+                    # stderr may carry a tool's own credentials (GHunt cookies); log it for
+                    # the operator, never return it into a persisted task error.
+                    log.warning(
+                        "tool_failed argv0=%s rc=%s stderr=%.500s",
+                        argv[0],
+                        proc.returncode,
+                        stderr,
+                    )
+                    # A tool that aborted may still have left a partial report behind;
+                    # ingesting it would present an incomplete scan as a finished one. Every
+                    # nonzero exit in maigret is a startup/config failure or an interrupt,
+                    # never a per-site error.
+                    raise ValueError(f"{argv[0]} exited {proc.returncode}")
+                return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
     except FileNotFoundError as exc:
         raise PolicyDenied(f"{argv[0]} is not installed in this worker image") from exc
-    except subprocess.TimeoutExpired as exc:
-        # Deliberately not RetryLater. Each attempt is a full scan costing hundreds to
-        # thousands of third-party requests outside every budget, and a run that exceeded
-        # its wall clock is not more likely to fit on a second try. Retrying would make
-        # limits.tool_runs bound declarations rather than actual invocations.
-        raise ValueError(f"{argv[0]} exceeded {timeout:g}s") from exc
-    if proc.returncode != 0:
-        # stderr may carry a tool's own credentials (GHunt cookies); log it for the
-        # operator, never return it into a persisted task error.
-        log.warning(
-            "tool_failed argv0=%s rc=%s stderr=%.500s", argv[0], proc.returncode, proc.stderr
-        )
-        # A tool that aborted may still have left a partial report behind; ingesting it
-        # would present an incomplete scan as a finished one. Every nonzero exit in maigret
-        # is a startup/config failure or an interrupt, never a per-site error.
-        raise ValueError(f"{argv[0]} exited {proc.returncode}")
-    return proc
 
 
-def _maigret(target: str, workdir: str, timeout: float) -> list[dict]:
+def _maigret(
+    target: str, workdir: str, timeout: float, cancelled: threading.Event | None = None
+) -> list[dict]:
     """`--json simple` writes report_<username>_simple.json: an object keyed by sitename,
     holding only CLAIMED accounts. Flattened to a list so the JSON adapter yields one entity
     per account rather than one entity with 500 nested fields, and `url_user` is surfaced as
@@ -78,7 +132,7 @@ def _maigret(target: str, workdir: str, timeout: float) -> list[dict]:
         "--timeout",
         str(max(1, int(min(timeout, 30)))),
     ]
-    _exec(argv, timeout, workdir)
+    _exec(argv, timeout, workdir, cancelled)
     # maigret replaces "/" in the username when naming the report; _TARGET_RE already
     # rejects "/", so the name is the target verbatim.
     report = Path(workdir) / f"report_{target}_simple.json"
@@ -100,7 +154,7 @@ TOOLS: dict[str, dict] = {
 }
 
 
-def run(name: str, target: str, settings) -> Capture:
+def run(name: str, target: str, settings, cancelled: threading.Event | None = None) -> Capture:
     """Run one allowlisted tool and return its output as an immutable capture."""
     tool = TOOLS.get(name)
     if tool is None:
@@ -114,7 +168,7 @@ def run(name: str, target: str, settings) -> Capture:
         )
     started = time.time()
     with tempfile.TemporaryDirectory(prefix=f"harvest-{name}-") as workdir:
-        records = tool["run"](target, workdir, settings.tool_timeout)
+        records = tool["run"](target, workdir, settings.tool_timeout, cancelled)
     body = json.dumps({"tool": name, "target": target, "results": records}).encode()
     url = f"tool://{name}/{target}"
     return Capture(

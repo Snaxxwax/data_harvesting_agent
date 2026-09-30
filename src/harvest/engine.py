@@ -295,7 +295,7 @@ class Engine:
             )
         return sorted(result, key=lambda x: x["priority"], reverse=True)[: 30 if search else 50]
 
-    def process(self, task):
+    def process(self, task, cancelled: threading.Event | None = None):
         spec = JobSpec.model_validate_json(task["spec"])
         self.store.reserve(task)
         if task["execution"] == "offline_replay" and task["kind"] != "extract":
@@ -361,7 +361,9 @@ class Engine:
             )
             return
         if task["kind"] == "tool":
-            cap = run_tool(task["payload"]["tool"], task["payload"]["target"], self.settings)
+            cap = run_tool(
+                task["payload"]["tool"], task["payload"]["target"], self.settings, cancelled
+            )
             self.store.finish(
                 task,
                 response=cap,
@@ -440,21 +442,24 @@ class Engine:
             self.store.settle(job_id)
             return False
         stop_heartbeat = threading.Event()
+        cancelled = threading.Event()
 
         def heartbeat():
-            while not stop_heartbeat.wait(15):
+            while not stop_heartbeat.wait(1 if task["kind"] == "tool" else 15):
                 try:
                     self.store.heartbeat(task)
                 except LostLease:
+                    cancelled.set()
                     return
                 except Exception:
                     log.exception("heartbeat_failed", extra={"task_id": task["id"]})
+                    cancelled.set()
                     return
 
         thread = threading.Thread(target=heartbeat, daemon=True)
         thread.start()
         try:
-            self.process(task)
+            self.process(task, cancelled)
         except LostLease:
             log.info("lease_lost task=%s", task["id"])
         except BudgetExceeded as exc:

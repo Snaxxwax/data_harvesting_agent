@@ -70,9 +70,12 @@ def test_installed_adapter_extracts_literal_ids_and_keeps_html(body, url, expect
         assert claim.method == "html"
         assert claim.evidence == value
         assert claim.locator.startswith("socid:")
-        offset = claim.locator.rsplit(":chars:", 1)[1]
-        start, end = map(int, offset.split("-"))
-        assert page[start:end] == claim.evidence
+        if page.count(value) == 1:
+            offset = claim.locator.rsplit(":chars:", 1)[1]
+            start, end = map(int, offset.split("-"))
+            assert page[start:end] == claim.evidence
+        else:
+            assert claim.locator.endswith(f":ambiguous-value:{field}")
     assert not any(c.field == "_extractor" for c in result.claims)
     if body == MAL_HTML:
         assert any(c.field == "name" and c.method == "structured" for c in result.claims)
@@ -99,6 +102,21 @@ def test_unsupported_or_failed_socid_keeps_base_html(monkeypatch):
     assert result.extractor == "html-jsonld/1"
     assert [c.field for c in result.claims] == ["page_title"]
     assert "socid value without literal source evidence omitted" in result.warnings
+
+
+def test_repeated_identifier_value_has_no_false_exact_offset(monkeypatch):
+    import harvest.socid_adapter as adapter
+
+    monkeypatch.setattr(
+        adapter.socid_extractor, "extract", lambda _page: {"uid": "1", "_extractor": "fixture"}
+    )
+    result = Extractors().extract(
+        b"<title>1 unrelated</title><div data-uid='1'>profile</div>",
+        "https://example.org/profile",
+        "text/html",
+    )
+    claim = next(c for c in result.claims if c.field == "uid")
+    assert claim.locator == "socid:fixture:ambiguous-value:uid"
 
 
 def test_api_replay_matches_only_declared_profile(engine, source):
