@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from harvest import tools
 from harvest.config import Settings
@@ -81,23 +82,74 @@ def test_capture_flattens_one_record_per_claimed_account(fake_maigret):
     assert "--no-progressbar" in argv and "--json" in argv
 
 
-def test_missing_report_is_an_error_not_an_empty_capture(monkeypatch):
-    monkeypatch.setattr(
-        tools, "_exec", lambda argv, timeout, cwd: subprocess.CompletedProcess(argv, 2, b"", b"")
-    )
+def test_clean_exit_without_a_report_is_an_error_not_an_empty_capture(monkeypatch):
+    """Exit 0 and no report file is the only way this path is now reachable; a nonzero exit
+    is rejected earlier, in _exec."""
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(argv, 0))
     with pytest.raises(ValueError, match="no JSON report"):
         tools.run("maigret", "janedoe", enabled())
 
 
-def test_timeout_defers_instead_of_failing(monkeypatch):
+def test_timeout_fails_permanently_rather_than_retrying(monkeypatch):
+    """A retried scan would cost another few thousand unbudgeted third-party requests, so
+    limits.tool_runs must bound invocations and not merely declarations."""
+
     def timed_out(argv, **kwargs):
         raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
 
     monkeypatch.setattr(subprocess, "run", timed_out)
-    from harvest.models import RetryLater
-
-    with pytest.raises(RetryLater):
+    with pytest.raises(ValueError, match="exceeded"):
         tools.run("maigret", "janedoe", enabled())
+
+
+def test_nonzero_exit_is_not_ingested_even_with_a_report(monkeypatch):
+    """maigret only exits nonzero on startup/config failure or an interrupt, so a report
+    left behind by an aborted run is partial and must not become a 200 capture."""
+
+    def aborted(argv, **kwargs):
+        workdir = argv[argv.index("--folderoutput") + 1]
+        report = Path(workdir) / "report_janedoe_simple.json"
+        report.write_text(json.dumps(MAIGRET_SIMPLE_REPORT), encoding="utf-8")
+        return subprocess.CompletedProcess(argv, 2, b"", b"config error")
+
+    monkeypatch.setattr(subprocess, "run", aborted)
+    with pytest.raises(ValueError, match="exited 2"):
+        tools.run("maigret", "janedoe", enabled())
+
+
+def test_one_declared_run_invokes_the_binary_once(tmp_path, monkeypatch):
+    """The end-to-end form of the same guarantee: a timing-out tool task is not retried."""
+    from harvest.engine import Engine
+
+    calls = []
+
+    def timed_out(argv, **kwargs):
+        calls.append(argv)
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+    monkeypatch.setattr(subprocess, "run", timed_out)
+    engine = Engine(enabled(database=str(tmp_path / "h.sqlite")))
+    job = engine.submit(
+        JobSpec(
+            objective="profile janedoe",
+            tools=[{"name": "maigret", "target": "janedoe"}],
+            limits={"tool_runs": 1, "attempts": 3},
+        )
+    )
+    for _ in range(8):
+        with engine.store.connection() as db:
+            db.execute("UPDATE tasks SET ready=0 WHERE job_id=?", (job,))
+        if not engine.step(job):
+            break
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("target", ["janedoe\n", "bad target", "--all-sites", "jane/doe"])
+def test_invalid_target_is_rejected_at_submit_not_mid_job(target):
+    """A bad target used to be accepted as a job and fail later with a generic adapter
+    error; ToolRun now rejects it, so the API answers 422."""
+    with pytest.raises(ValidationError):
+        JobSpec(objective="profile janedoe", tools=[{"name": "maigret", "target": target}])
 
 
 def test_missing_binary_is_a_policy_denial(monkeypatch):

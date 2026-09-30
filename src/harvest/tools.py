@@ -23,15 +23,15 @@ import tempfile
 import time
 from pathlib import Path
 
-from .models import PolicyDenied, RetryLater
+from .models import TOOL_TARGET_PATTERN, PolicyDenied
 from .network import Capture
 
 log = logging.getLogger("harvest")
 
-# The target reaches an external argv. A leading "-" would be read as a flag by any
-# argparse-based tool, so the first character is restricted to alphanumerics: the value
-# can never become an option, and no shell is ever involved (never shell=True).
-_TARGET_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.@+-]{0,253}$")
+# ToolRun applies this at submit; re-checked here because tools.run is also called
+# directly. fullmatch, not match: "$" would otherwise accept a trailing newline, letting
+# "alice\n" through into an argv element, a report filename and a capture URL.
+_TARGET_RE = re.compile(TOOL_TARGET_PATTERN)
 
 
 def _exec(argv: list[str], timeout: float, cwd: str) -> subprocess.CompletedProcess:
@@ -42,13 +42,21 @@ def _exec(argv: list[str], timeout: float, cwd: str) -> subprocess.CompletedProc
     except FileNotFoundError as exc:
         raise PolicyDenied(f"{argv[0]} is not installed in this worker image") from exc
     except subprocess.TimeoutExpired as exc:
-        raise RetryLater(f"{argv[0]} exceeded {timeout:g}s", delay=30) from exc
+        # Deliberately not RetryLater. Each attempt is a full scan costing hundreds to
+        # thousands of third-party requests outside every budget, and a run that exceeded
+        # its wall clock is not more likely to fit on a second try. Retrying would make
+        # limits.tool_runs bound declarations rather than actual invocations.
+        raise ValueError(f"{argv[0]} exceeded {timeout:g}s") from exc
     if proc.returncode != 0:
         # stderr may carry a tool's own credentials (GHunt cookies); log it for the
         # operator, never return it into a persisted task error.
         log.warning(
             "tool_failed argv0=%s rc=%s stderr=%.500s", argv[0], proc.returncode, proc.stderr
         )
+        # A tool that aborted may still have left a partial report behind; ingesting it
+        # would present an incomplete scan as a finished one. Every nonzero exit in maigret
+        # is a startup/config failure or an interrupt, never a per-site error.
+        raise ValueError(f"{argv[0]} exited {proc.returncode}")
     return proc
 
 
@@ -70,12 +78,12 @@ def _maigret(target: str, workdir: str, timeout: float) -> list[dict]:
         "--timeout",
         str(max(1, int(min(timeout, 30)))),
     ]
-    proc = _exec(argv, timeout, workdir)
+    _exec(argv, timeout, workdir)
     # maigret replaces "/" in the username when naming the report; _TARGET_RE already
     # rejects "/", so the name is the target verbatim.
     report = Path(workdir) / f"report_{target}_simple.json"
     if not report.exists():
-        raise ValueError(f"maigret wrote no JSON report (exit {proc.returncode})")
+        raise ValueError("maigret exited cleanly but wrote no JSON report")
     data = json.loads(report.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("maigret JSON report was not an object keyed by sitename")
@@ -99,7 +107,7 @@ def run(name: str, target: str, settings) -> Capture:
         raise ValueError(f"unknown tool {name!r}")
     if name not in settings.tools:
         raise PolicyDenied(f"tool {name!r} is not enabled; add it to HARVEST_TOOLS")
-    if not _TARGET_RE.match(target):
+    if not _TARGET_RE.fullmatch(target):
         raise ValueError(
             "tool target must start with a letter, digit or underscore and contain only "
             "letters, digits and _ . @ + -"
