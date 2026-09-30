@@ -215,9 +215,15 @@ image lean; enabling `HARVEST_TOOLS` for a tool absent from the image fails that
 a clear "not installed in this worker image" error rather than silently skipping it.
 
 Tool runs are exempt from request, byte and per-origin pacing budgets, because the binary
-makes its own requests outside the fetcher. `limits.tool_runs` bounds how many a job may
-declare and `HARVEST_TOOL_TIMEOUT` bounds each one; nothing else throttles them. Treat the
-site coverage of a tool like maigret as authorization-relevant, not just a volume question.
+makes its own requests outside the fetcher. `limits.tool_runs` bounds actual invocations and
+`HARVEST_TOOL_TIMEOUT` bounds each one; nothing else throttles them. Treat the site coverage
+of a tool like maigret as authorization-relevant, not just a volume question.
+
+A tool task is never retried. A timeout and a nonzero exit both fail the task permanently,
+because one attempt already costs hundreds to thousands of unbudgeted third-party requests
+and a scan that overran its wall clock is no likelier to fit on a second try. A nonzero exit
+is rejected even when a report file was left behind, so an aborted scan is never recorded as
+a completed capture. Resubmit the job to run the tool again.
 
 The container runs read-only as a non-root user with no home directory, so `HOME` is set to
 the `/tmp` tmpfs: maigret creates its site-database directory on startup and aborts with a

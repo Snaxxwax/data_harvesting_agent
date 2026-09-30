@@ -42,14 +42,20 @@ class Limits(StrictModel):
     records: int = Field(default=10_000, ge=1, le=1_000_000)
     claims: int = Field(default=100_000, ge=1, le=5_000_000)
     reading_passes: int = Field(default=3, ge=1, le=10)
-    # Tool tasks are only ever enqueued at submit, never from a lead, so bounding the
-    # declared set at submit is the whole enforcement -- no runtime counter needed.
+    # Tool tasks are only ever enqueued at submit and never retried (a tool timeout is a
+    # permanent task failure, see tools._exec), so this bounds actual invocations, not just
+    # declarations. That matters because a tool's own requests bypass every budget above.
     tool_runs: int = Field(default=3, ge=0, le=50)
 
 
 MAX_DISCOVERY_QUERIES = 5
 
 TARGET_KEY_PATTERN = r"^[a-zA-Z0-9_-]{1,80}$"
+
+# A tool target reaches an external argv. The first character is restricted to alphanumerics
+# so the value can never be read as a flag by an argparse-based tool. Shared with tools.py so
+# a spec is rejected at submit instead of failing mid-job with a generic adapter error.
+TOOL_TARGET_PATTERN = r"^[A-Za-z0-9_][A-Za-z0-9_.@+-]{0,253}$"
 
 
 class Target(StrictModel):
@@ -77,7 +83,7 @@ class ToolRun(StrictModel):
     consume different identifier types (Maigret a username, GHunt an email)."""
 
     name: str = Field(pattern=r"^[a-z0-9_-]{1,40}$")
-    target: str = Field(min_length=1, max_length=254)
+    target: str = Field(pattern=TOOL_TARGET_PATTERN, min_length=1, max_length=254)
 
 
 class SourceRule(StrictModel):
