@@ -228,12 +228,22 @@ a completed capture. Resubmit the job to run the tool again.
 Cancelling a job revokes the tool task's lease; the worker checks ownership once per second
 and terminates the tool process group when it loses ownership.
 
+maigret runs with `--all-sites`: every known site rather than the top-ranked default. That
+is roughly ten times the sites and so roughly ten times the outbound requests, none of which
+pass through the fetcher's budgets or per-origin pacing. It also roughly doubles what a scan
+finds. Treat one run as conspicuous traffic from the deployment's address.
+
 A scan fits the compose worker's `mem_limit: 512m`. Measured inside a read-only,
 `cap-drop ALL`, non-root container with swap disabled, counting the worker and the tool
-together: maigret's default site set peaks at 227 MiB and the whole 5203-site set (`-a`,
-which this integration does not pass) peaks at 309 MiB. Usage is flat across a scan rather
-than accumulating, so it is bounded by the tool's own concurrency and not by result volume.
-Measure again before lowering the limit or adding a tool that downloads media.
+together: the full 5203-site set peaks at 309 MiB, against 227 MiB for the top-ranked
+default. Usage is flat across a scan rather than accumulating, so it is bounded by the
+tool's own concurrency and not by result volume. Measure again before lowering the limit or
+adding a tool that downloads media.
+
+A full run took 116 seconds against the default 300 second `HARVEST_TOOL_TIMEOUT`. That
+margin depends on the link: a slow or rate-limited network can overrun the timeout, and an
+overrun now fails the task permanently rather than retrying, so raise
+`HARVEST_TOOL_TIMEOUT` rather than letting scans fail.
 
 The container runs read-only as a non-root user with no home directory, so `HOME` is set to
 the `/tmp` tmpfs: maigret creates its site-database directory on startup and aborts with a
