@@ -36,6 +36,16 @@ class Settings:
     tool_timeout: float = field(
         default_factory=lambda: float(os.getenv("HARVEST_TOOL_TIMEOUT", "300"))
     )
+    # Maigret retries failed site checks inside one tool invocation. This is separate
+    # from retrying the entire durable task, which would rerun the full scan.
+    maigret_retries: int = field(
+        default_factory=lambda: int(os.getenv("HARVEST_MAIGRET_RETRIES", "0"))
+    )
+    maigret_cloudflare_bypass: bool = field(
+        default_factory=lambda: (
+            os.getenv("HARVEST_MAIGRET_CLOUDFLARE_BYPASS", "").lower() in {"1", "true", "yes"}
+        )
+    )
     model_url: str = field(default_factory=lambda: os.getenv("HARVEST_MODEL_URL", ""))
     model_name: str = field(default_factory=lambda: os.getenv("HARVEST_MODEL_NAME", ""))
     model_key: str = field(default_factory=lambda: os.getenv("HARVEST_MODEL_KEY", ""))
