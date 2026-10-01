@@ -51,7 +51,9 @@ and GitHub Actions major tags are not digest-pinned.
 | `HARVEST_PRIVATE_HOSTS` | Exact administrator-approved hosts allowed to resolve privately; default empty |
 | `HARVEST_TOOLS` | External OSINT CLIs permitted as acquisition tasks (e.g. `maigret`); default empty, meaning none |
 | `HARVEST_TOOL_PACKAGES` | Build-time only: pinned tool packages to install into the image; default empty |
-| `HARVEST_TOOL_TIMEOUT` | Wall-clock seconds one tool run may take before the task is deferred; default 300 |
+| `HARVEST_TOOL_TIMEOUT` | Wall-clock seconds one tool run may take before the task fails; default 300 |
+| `HARVEST_MAIGRET_RETRIES` | Retry transient failures for individual Maigret sites, 0–3; default 0 |
+| `HARVEST_MAIGRET_CLOUDFLARE_BYPASS` | Pass Maigret `--cloudflare-bypass` when true; default false; requires a separately configured local bypass service |
 | `HARVEST_MODEL_URL` | Trusted Chat Completions base URL ending in `/v1` where appropriate |
 | `HARVEST_MODEL_NAME` | Model identifier accepted by that endpoint |
 | `HARVEST_MODEL_KEY` | Optional bearer secret; never stored in a job or capture |
@@ -218,6 +220,26 @@ Tool runs are exempt from request, byte and per-origin pacing budgets, because t
 makes its own requests outside the fetcher. `limits.tool_runs` bounds actual invocations and
 `HARVEST_TOOL_TIMEOUT` bounds each one; nothing else throttles them. Treat the site coverage
 of a tool like maigret as authorization-relevant, not just a volume question.
+
+When `HARVEST_EGRESS_PROXY` is set, harvest passes it to Maigret as `--proxy` for the main
+site checks. It also disables Maigret's automatic site-database update: in pinned version
+0.6.6 that update ignores `--proxy` and otherwise contacts GitHub directly. Proxy mode
+therefore uses Maigret's bundled site database until a newer image is built. Maigret's
+auxiliary activation requests do not receive `--proxy` and may still use the direct route.
+Ambient proxy variables are cleared because they can interfere with Maigret's explicit
+proxy connector. `HARVEST_PROXY_PUBLIC_HOSTS` governs the fetcher, not Maigret's site list.
+For a strict no-direct-egress guarantee, run the worker on authorized infrastructure with
+network rules that permit outbound traffic only to the proxy.
+
+Maigret receives `--retries` from `HARVEST_MAIGRET_RETRIES` (default 0). These are
+retries of temporarily failed site checks inside one scan; they can increase requests
+but never restart the whole durable tool task. Values above 3 are rejected before the
+binary starts. `HARVEST_MAIGRET_CLOUDFLARE_BYPASS=true` passes
+`--cloudflare-bypass` only when explicitly enabled. Maigret 0.6.6 requires a separate
+local Cloudflare bypass service configured in Maigret's own `settings.json`; the bundled
+settings point at localhost ports 8191 and 8000, which are inside the worker container
+under Compose. The flag alone does not start those services or route their traffic
+through `HARVEST_EGRESS_PROXY`. Verify the bypass service's egress separately.
 
 A tool task is never retried, including after a worker lease expires. A timeout and a
 nonzero exit both fail the task permanently,
