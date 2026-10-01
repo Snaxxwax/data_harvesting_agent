@@ -26,6 +26,16 @@ class Settings:
         )
     )
     search_url: str = field(default_factory=lambda: os.getenv("HARVEST_SEARCH_URL", ""))
+    # External OSINT CLIs are opt-in per deployment: they make their own network requests
+    # outside Fetcher, so no allowlist entry means no tool may run.
+    tools: frozenset[str] = field(
+        default_factory=lambda: frozenset(
+            t.strip().lower() for t in os.getenv("HARVEST_TOOLS", "").split(",") if t.strip()
+        )
+    )
+    tool_timeout: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_TOOL_TIMEOUT", "300"))
+    )
     model_url: str = field(default_factory=lambda: os.getenv("HARVEST_MODEL_URL", ""))
     model_name: str = field(default_factory=lambda: os.getenv("HARVEST_MODEL_NAME", ""))
     model_key: str = field(default_factory=lambda: os.getenv("HARVEST_MODEL_KEY", ""))

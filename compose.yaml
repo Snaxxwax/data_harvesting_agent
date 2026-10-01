@@ -1,6 +1,11 @@
 name: harvest-platform
 x-common: &common
-  build: .
+  build:
+    context: .
+    args:
+      # Space-separated pinned specs, e.g. HARVEST_TOOL_PACKAGES="maigret==0.6.6" before
+      # `docker compose build`. Empty installs no external CLI, matching HARVEST_TOOLS.
+      HARVEST_TOOL_PACKAGES: ${HARVEST_TOOL_PACKAGES:-}
   image: harvest-platform:local
   restart: unless-stopped
   init: true

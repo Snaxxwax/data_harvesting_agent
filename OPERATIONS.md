@@ -49,6 +49,9 @@ and GitHub Actions major tags are not digest-pinned.
 | `HARVEST_USER_AGENT` | Crawler identity; set a contact-bearing identifier for your deployment |
 | `HARVEST_SEARCH_URL` | Optional SearXNG base URL, JSON format enabled |
 | `HARVEST_PRIVATE_HOSTS` | Exact administrator-approved hosts allowed to resolve privately; default empty |
+| `HARVEST_TOOLS` | External OSINT CLIs permitted as acquisition tasks (e.g. `maigret`); default empty, meaning none |
+| `HARVEST_TOOL_PACKAGES` | Build-time only: pinned tool packages to install into the image; default empty |
+| `HARVEST_TOOL_TIMEOUT` | Wall-clock seconds one tool run may take before the task is deferred; default 300 |
 | `HARVEST_MODEL_URL` | Trusted Chat Completions base URL ending in `/v1` where appropriate |
 | `HARVEST_MODEL_NAME` | Model identifier accepted by that endpoint |
 | `HARVEST_MODEL_KEY` | Optional bearer secret; never stored in a job or capture |
@@ -157,8 +160,9 @@ with a failed extraction record. Rejected oversized bodies, failed HTTP requests
 search-service responses are not guaranteed captures. A budget stop retains prior checkpoints.
 
 Use `harvest replay CAPTURE_ID... --key KEY` after installing an improved adapter, or submit
-`POST /replays` with `capture_ids` and optional `limits`. Replay accepts up to 100 source
-captures from one dataset, not search responses. CLI `--submit-only` queues for workers.
+`POST /replays` with `capture_ids` and optional `limits` or `investigation`. The CLI accepts
+`--investigation PATH` containing a JSON `Investigation`. Replay accepts up to 100 fetch or
+tool captures from one dataset, not search responses. CLI `--submit-only` queues for workers.
 Replay has zero acquisition/model cost counters; task/time/attempt and processing limits still apply.
 Stored-body reads are not billed as network bytes. Internal extraction tasks also count
 toward the ordinary task frontier. If that cap prevents extraction, find the retained body
@@ -190,7 +194,94 @@ there is no down-migration. Package
 updates require rerunning the recovery and provider contract tests; a lockfile does not
 replace supply-chain review.
 
+## External tools
+
+`HARVEST_TOOLS` names the CLIs a deployment permits, but the binary must also exist in the
+image. It is not a project dependency: harvest executes these by argv as a subprocess, so
+they are installed as isolated `uv` tools under `/opt/uv-tools` and never resolved against
+the project's own pins. maigret alone adds 28 transitive packages and roughly 240 MB, and
+depends on `socid-extractor<0.2.0`, which would otherwise couple the profile adapter's
+pinned version to maigret's range.
+
+Build the image with the tools you intend to enable, then enable them at runtime:
+
+```bash
+HARVEST_TOOL_PACKAGES="maigret==0.6.6" docker compose build
+HARVEST_TOOLS=maigret docker compose up -d
+```
+
+Both variables are required. Building without `HARVEST_TOOL_PACKAGES` keeps the default
+image lean; enabling `HARVEST_TOOLS` for a tool absent from the image fails that task with
+a clear "not installed in this worker image" error rather than silently skipping it.
+
+Tool runs are exempt from request, byte and per-origin pacing budgets, because the binary
+makes its own requests outside the fetcher. `limits.tool_runs` bounds actual invocations and
+`HARVEST_TOOL_TIMEOUT` bounds each one; nothing else throttles them. Treat the site coverage
+of a tool like maigret as authorization-relevant, not just a volume question.
+
+A tool task is never retried, including after a worker lease expires. A timeout and a
+nonzero exit both fail the task permanently,
+because one attempt already costs hundreds to thousands of unbudgeted third-party requests
+and a scan that overran its wall clock is no likelier to fit on a second try. A nonzero exit
+is rejected even when a report file was left behind, so an aborted scan is never recorded as
+a completed capture. Resubmit the job to run the tool again.
+Cancelling a job revokes the tool task's lease; the worker checks ownership once per second
+and terminates the tool process group when it loses ownership.
+
+maigret runs with `--all-sites`: every known site rather than the top-ranked default. That
+is roughly ten times the sites and so roughly ten times the outbound requests, none of which
+pass through the fetcher's budgets or per-origin pacing. It also roughly doubles what a scan
+finds. Treat one run as conspicuous traffic from the deployment's address.
+
+A scan fits the compose worker's `mem_limit: 512m`. Measured inside a read-only,
+`cap-drop ALL`, non-root container with swap disabled, counting the worker and the tool
+together: the full 5203-site set peaks at 309 MiB, against 227 MiB for the top-ranked
+default. Usage is flat across a scan rather than accumulating, so it is bounded by the
+tool's own concurrency and not by result volume. Measure again before lowering the limit or
+adding a tool that downloads media.
+
+A full run took 116 seconds against the default 300 second `HARVEST_TOOL_TIMEOUT`. That
+margin depends on the link: a slow or rate-limited network can overrun the timeout, and an
+overrun now fails the task permanently rather than retrying, so raise
+`HARVEST_TOOL_TIMEOUT` rather than letting scans fail.
+
+The container runs read-only as a non-root user with no home directory, so `HOME` is set to
+the `/tmp` tmpfs: maigret creates its site-database directory on startup and aborts with a
+read-only-filesystem error otherwise. That cache is expendable and is re-fetched per
+container, costing roughly 2.5 MB inside the default 64 MB tmpfs.
+
 ## Source adapters
+
+The installed `socid-html/1` adapter adds profile fields from captured HTML to the built-in
+title, JSON-LD, text and links. It uses `socid-extractor` on the stored body; it does not
+fetch pages, follow the library's URL mutations, or use its optional AI fallback. Fields
+whose values cannot be found literally in the captured HTML are omitted with a warning.
+The capture and extraction revision remain available for review.
+The initial offline fixture results are in `docs/validation/v06-profile-identity.md`.
+
+Profile identifiers do not automatically join accounts or investigation targets. To use
+one in an exact-match dossier, inspect an HTTP profile capture's original `url` and
+observations, then declare the exact identifier and permitted source field mapping. For
+example, save this as `mal-investigation.json` for a captured profile whose original URL
+was `https://myanimelist.net/profile/Xinil`:
+
+```json
+{
+  "targets": [{"key": "mal_account", "label": "Declared MAL account",
+               "identifiers": {"myanimelist.uid": ["1"]}}],
+  "sources": [{"url": "https://myanimelist.net/profile/Xinil",
+               "identifier_fields": {"mal_uid": "myanimelist.uid"},
+               "field_map": {"mal_uid": "platform_id", "mal_username": "username"}}]
+}
+```
+
+Run `harvest replay CAPTURE_ID --investigation mal-investigation.json` and then
+`harvest dossier REPLAY_JOB_ID`. The API equivalent is `POST /replays` with
+`{"capture_ids":[CAPTURE_ID],"investigation":{...}}`, followed by
+`GET /jobs/{id}/dossier`. Replay reads stored bytes and creates a new job-scoped
+interpretation; the original job stays intact. Use the original capture `url` in the
+source rule, even if its `final_url` differs after redirects. A username shared across
+platforms is never treated as evidence that the accounts belong to one person.
 
 Install trusted packages exposing an entry point:
 

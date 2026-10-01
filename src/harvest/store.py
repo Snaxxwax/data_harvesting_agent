@@ -158,7 +158,7 @@ class Store:
                 ).fetchone()
                 if not row:
                     raise KeyError(capture_id)
-                if row["kind"] != "fetch":
+                if row["kind"] not in {"fetch", "tool"}:
                     raise ValueError("replay accepts source captures, not search-service responses")
                 captures.append(row)
             if len({c["dataset"] for c in captures}) != 1:
@@ -331,7 +331,11 @@ class Store:
             ).fetchall()
             for task in expired:
                 limit = JobSpec.model_validate_json(task["spec"]).limits.attempts
-                status = "failed" if task["attempts"] >= limit else "pending"
+                # A tool attempt may have sent thousands of requests before its worker
+                # disappeared. Reclaiming it must never launch the scan again.
+                status = (
+                    "failed" if task["kind"] == "tool" or task["attempts"] >= limit else "pending"
+                )
                 db.execute(
                     "UPDATE tasks SET status=?,token=NULL,error='worker lease expired' WHERE id=?",
                     (status, task["id"]),
@@ -422,14 +426,16 @@ class Store:
         with self.transaction() as db:
             self.owned(db, task)
             limit = JobSpec.model_validate_json(task["spec"]).limits.attempts
-            failed = failure and task["attempts"] >= limit
+            # A tool may already have made unbudgeted requests before any failure,
+            # including a post-scan storage error. Never relaunch it through defer.
+            failed = task["kind"] == "tool" or (failure and task["attempts"] >= limit)
             db.execute(
                 "UPDATE tasks SET status=?,ready=?,token=NULL,lease_until=NULL,error=?,attempts=attempts-? WHERE id=?",
                 (
                     "failed" if failed else "pending",
                     time.time() + delay,
                     str(error)[:1000],
-                    0 if failure else 1,
+                    0 if failure or task["kind"] == "tool" else 1,
                     task["id"],
                 ),
             )

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .config import Settings
 from .engine import Engine
-from .models import JobSpec, ReplaySpec
+from .models import Investigation, JobSpec, ReplaySpec
 
 
 def export(engine, job_id, path):
@@ -25,6 +25,15 @@ def export(engine, job_id, path):
                 handle.write(json.dumps(row, ensure_ascii=False) + "\n")
             after = rows[-1]["id"]
     temporary.replace(output)
+
+
+def parse_tool(value: str) -> dict:
+    """NAME:TARGET. A tool target can never contain ":" (see tools._TARGET_RE), so the
+    first colon always separates the two; ToolRun validates both halves."""
+    name, separator, target = value.partition(":")
+    if not separator:
+        raise SystemExit(f"--tool expects NAME:TARGET, got {value!r}")
+    return {"name": name.strip().lower(), "target": target.strip()}
 
 
 def main():
@@ -47,6 +56,13 @@ def main():
     )
     command.add_argument("--dataset", default="default")
     command.add_argument("--model", action="store_true")
+    command.add_argument(
+        "--tool",
+        action="append",
+        default=[],
+        metavar="NAME:TARGET",
+        help="external OSINT CLI to run, repeatable; requires HARVEST_TOOLS to permit NAME",
+    )
     command.add_argument("--key")
     command = commands.add_parser("worker")
     command.add_argument("--once", action="store_true")
@@ -58,6 +74,7 @@ def main():
     command.add_argument("capture_ids", type=int, nargs="+")
     command.add_argument("--key")
     command.add_argument("--submit-only", action="store_true")
+    command.add_argument("--investigation", metavar="PATH", help="path to JSON Investigation")
     command = commands.add_parser("export")
     command.add_argument("job_id")
     command.add_argument("path")
@@ -84,7 +101,14 @@ def main():
         return
     engine = Engine(settings)
     if args.command == "replay":
-        job_id = engine.replay(ReplaySpec(capture_ids=args.capture_ids), args.key)
+        investigation = (
+            Investigation.model_validate_json(Path(args.investigation).read_text())
+            if args.investigation
+            else None
+        )
+        job_id = engine.replay(
+            ReplaySpec(capture_ids=args.capture_ids, investigation=investigation), args.key
+        )
         if args.submit_only:
             print(job_id)
             return
@@ -99,6 +123,7 @@ def main():
                 mode=args.mode,
                 dataset=args.dataset,
                 use_model=args.model,
+                tools=[parse_tool(value) for value in args.tool],
             )
         else:
             spec = JobSpec.model_validate_json(Path(args.spec).read_text())
