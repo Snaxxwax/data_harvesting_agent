@@ -85,9 +85,12 @@ function setNavActive(hash) {
   }
 }
 
+let toolsEnabled = [];
+
 async function checkAuthAndConfig() {
   try {
     const meta = await api("/meta");
+    toolsEnabled = Array.isArray(meta.tools_enabled) ? meta.tools_enabled : [];
     document.getElementById("topnav").hidden = false;
     document.getElementById("logout").hidden = false;
     const warning = document.getElementById("config-warning");
@@ -175,6 +178,22 @@ function renderPlanPreview(node, plan) {
       )
     );
   }
+  // Opt-in, and only for tools this deployment enabled: these run external binaries that
+  // make their own requests outside the fetcher's budget, so nothing is checked by default.
+  const offered = (plan.tools || []).filter((t) => toolsEnabled.includes(t.name));
+  const toolBoxes = offered.map((t) =>
+    el("input", { type: "checkbox", class: "tool-box", "data-tool": t.name, "data-target": t.target })
+  );
+  if (offered.length) {
+    node.appendChild(el("label", { text: "External tools (opt-in; each runs outside request budgets)" }));
+    node.appendChild(
+      el(
+        "div",
+        { class: "chip-list" },
+        offered.map((t, i) => el("label", { class: "chip" }, [toolBoxes[i], ` ${t.name}: ${t.target}`]))
+      )
+    );
+  }
   const seedsLabel = el("label", { text: "Seed URLs (editable, one per line; no search required)" });
   const seedsInput = el("textarea", { class: "plan-edit-seeds", rows: "3" });
   seedsInput.value = plan.seeds.join("\n");
@@ -188,6 +207,10 @@ function renderPlanPreview(node, plan) {
   return {
     seeds: () => parseList(seedsInput.value),
     fields: () => parseList(fieldsInput.value),
+    tools: () =>
+      toolBoxes
+        .filter((box) => box.checked)
+        .map((box) => ({ name: box.dataset.tool, target: box.dataset.target })),
   };
 }
 
@@ -241,6 +264,7 @@ function initInvestigationForm() {
       seeds: currentEditor.seeds(),
       discovery_queries: currentPlan.discovery_queries,
       fields: currentEditor.fields(),
+      tools: currentEditor.tools(),
       use_model: useModel,
     };
     try {
@@ -298,6 +322,7 @@ function initDatasetForm() {
       seeds: currentEditor.seeds(),
       discovery_queries: currentPlan.discovery_queries,
       fields: currentEditor.fields(),
+      tools: currentEditor.tools(),
     };
     try {
       const job = await api("/jobs", { method: "POST", body: spec });

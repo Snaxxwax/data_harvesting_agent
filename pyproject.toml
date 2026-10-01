@@ -17,10 +17,14 @@ dependencies = [
   "uvicorn==0.52.4",
   "beautifulsoup4==4.15.0",
   "protego==0.6.2",
+  "socid-extractor==0.1.1",
 ]
 
 [project.scripts]
 harvest = "harvest.cli:main"
+
+[project.entry-points."harvest.adapters"]
+socid = "harvest.socid_adapter:SocidHtmlAdapter"
 
 [dependency-groups]
 dev = ["pytest==9.1.1", "ruff==0.16.7"]
