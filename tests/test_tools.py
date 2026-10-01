@@ -31,10 +31,12 @@ MAIGRET_SIMPLE_REPORT = {
 def fake_maigret(monkeypatch):
     """Stand in for the binary, but exercise the real report-file contract: maigret writes
     report_<username>_simple.json into --folderoutput and prints nothing useful to stdout."""
-    calls = []
+    calls = _Created()
+    calls.envs = []
 
-    def fake_exec(argv, timeout, cwd, cancelled=None):
+    def fake_exec(argv, timeout, cwd, cancelled=None, env=None):
         calls.append(argv)
+        calls.envs.append(env)
         workdir = argv[argv.index("--folderoutput") + 1]
         target = argv[1]
         report = f"{workdir}/report_{target}_simple.json"
@@ -142,6 +144,84 @@ def test_capture_flattens_one_record_per_claimed_account(fake_maigret):
     # The full site set is the point of the integration; losing this flag silently cuts
     # coverage by about ten times without any other visible change.
     assert "--all-sites" in argv
+    assert argv[argv.index("--retries") + 1] == "0"
+    assert "--cloudflare-bypass" not in argv
+
+
+def test_maigret_optional_site_retries_and_bypass_are_explicit(fake_maigret):
+    tools.run(
+        "maigret",
+        "janedoe",
+        enabled(maigret_retries=2, maigret_cloudflare_bypass=True),
+    )
+    argv = fake_maigret[0]
+    assert argv[argv.index("--retries") + 1] == "2"
+    assert "--cloudflare-bypass" in argv
+
+
+@pytest.mark.parametrize("retries", [-1, 4])
+def test_invalid_maigret_retries_fail_before_launch(fake_maigret, retries):
+    with pytest.raises(PolicyDenied, match="HARVEST_MAIGRET_RETRIES"):
+        tools.run("maigret", "janedoe", enabled(maigret_retries=retries))
+    assert not fake_maigret
+
+
+def test_maigret_options_read_environment(monkeypatch):
+    monkeypatch.setenv("HARVEST_MAIGRET_RETRIES", "1")
+    monkeypatch.setenv("HARVEST_MAIGRET_CLOUDFLARE_BYPASS", "true")
+    settings = enabled()
+    assert settings.maigret_retries == 1
+    assert settings.maigret_cloudflare_bypass is True
+
+
+@pytest.mark.parametrize("proxy", ["http://proxy.example:8080", "http://proxy.example"])
+def test_maigret_uses_configured_http_proxy_for_main_requests(fake_maigret, monkeypatch, proxy):
+    monkeypatch.setenv("NO_PROXY", "*")
+    tools.run("maigret", "janedoe", enabled(proxy=proxy))
+    argv, env = fake_maigret[0], fake_maigret.envs[0]
+    assert argv[argv.index("--proxy") + 1] == proxy
+    assert "--no-autoupdate" in argv
+    assert "HTTP_PROXY" not in env and "HTTPS_PROXY" not in env
+    assert "NO_PROXY" not in env
+
+
+def test_maigret_socks_proxy_uses_explicit_flag_without_ambient_env(fake_maigret):
+    proxy = "socks5://127.0.0.1:9050"
+    tools.run("maigret", "janedoe", enabled(proxy=proxy))
+    argv, env = fake_maigret[0], fake_maigret.envs[0]
+    assert argv[argv.index("--proxy") + 1] == proxy
+    assert "--no-autoupdate" in argv
+    assert "HTTPS_PROXY" not in env
+
+
+def test_no_configured_proxy_does_not_inherit_ambient_proxy(fake_maigret, monkeypatch):
+    monkeypatch.setenv("HTTPS_PROXY", "http://ambient.example:8080")
+    tools.run("maigret", "janedoe", enabled(proxy=None))
+    assert "--proxy" not in fake_maigret[0]
+    assert "--no-autoupdate" not in fake_maigret[0]
+    assert "HTTPS_PROXY" not in fake_maigret.envs[0]
+
+
+def test_tool_environment_reaches_the_real_subprocess(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_PROXY", "*")
+    env = tools._tool_env("http://proxy.example:8080")
+    result = tools._exec(
+        [
+            sys.executable,
+            "-c",
+            "import os; print('NO_PROXY' in os.environ, 'HTTPS_PROXY' in os.environ)",
+        ],
+        5,
+        str(tmp_path),
+        env=env,
+    )
+    assert result.stdout.decode().strip() == "False False"
+
+
+def test_invalid_tool_proxy_fails_before_launch(fake_maigret):
+    with pytest.raises(PolicyDenied, match="HARVEST_EGRESS_PROXY"):
+        tools.run("maigret", "janedoe", enabled(proxy="not-a-proxy"))
+    assert not fake_maigret
 
 
 def test_clean_exit_without_a_report_is_an_error_not_an_empty_capture(monkeypatch):
@@ -347,7 +427,7 @@ def test_cancelling_job_terminates_running_tool(tmp_path, monkeypatch):
     started = tmp_path / "started"
     finished = tmp_path / "finished"
 
-    def slow_tool(target, workdir, timeout, cancelled):
+    def slow_tool(target, workdir, timeout, cancelled, proxy, retries, cloudflare_bypass):
         code = (
             "from pathlib import Path; import time; "
             f"Path({str(started)!r}).write_text('started'); "
