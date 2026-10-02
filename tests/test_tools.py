@@ -1,4 +1,5 @@
 import json
+import logging
 import subprocess
 import sys
 import threading
@@ -10,7 +11,7 @@ from pydantic import ValidationError
 
 from harvest import tools
 from harvest.config import Settings
-from harvest.models import JobSpec, PolicyDenied, ReplaySpec
+from harvest.models import JobSpec, LostLease, PolicyDenied, ReplaySpec
 from harvest.planning import plan_investigation
 
 MAIGRET_SIMPLE_REPORT = {
@@ -429,7 +430,7 @@ def test_cancelling_job_terminates_running_tool(tmp_path, monkeypatch):
     started = tmp_path / "started"
     finished = tmp_path / "finished"
 
-    def slow_tool(target, workdir, timeout, cancelled, proxy, retries, cloudflare_bypass):
+    def slow_tool(target, workdir, timeout, cancelled, settings):
         code = (
             "from pathlib import Path; import time; "
             f"Path({str(started)!r}).write_text('started'); "
@@ -582,3 +583,136 @@ def test_cli_investigate_submits_declared_tools(tmp_path, monkeypatch):
     with Store(db).connection() as conn:
         rows = [tuple(r) for r in conn.execute("SELECT kind,key FROM tasks")]
     assert rows == [("tool", "maigret:janedoe")]
+
+
+# --- SpiderFoot NG (HTTP tool) -------------------------------------------------
+
+
+def _sf_settings(**kw):
+    base = {
+        "spiderfoot_url": "http://spiderfoot.invalid",
+        "spiderfoot_api_key": "sf_test_key",
+        "spiderfoot_modules": ("sfp_dnsresolve",),
+    }
+    base.update(kw)
+    return Settings(tools=frozenset({"spiderfoot"}), **base)
+
+
+class _FakeSF:
+    """Minimal stand-in for the SpiderFoot REST API, exercising the real contract:
+    create returns an id, status must reach FINISHED, events paginate."""
+
+    def __init__(self, statuses, pages, create_status=201):
+        self.statuses = list(statuses)
+        self.pages = list(pages)
+        self.create_status = create_status
+        self.headers_seen = []
+        self.deleted = []
+        self.created = []
+
+    def handler(self, request):
+        import httpx
+
+        self.headers_seen.append(dict(request.headers))
+        path = request.url.path
+        if request.method == "POST" and path == "/api/v1/scans":
+            self.created.append(json.loads(request.content))
+            if self.create_status != 201:
+                return httpx.Response(self.create_status, json={"detail": "nope"})
+            return httpx.Response(201, json={"id": "ABC123"})
+        if request.method == "DELETE":
+            self.deleted.append(path)
+            return httpx.Response(200, json={})
+        if path.endswith("/events"):
+            page = int(request.url.params.get("page", 1))
+            events, has_next = self.pages[page - 1]
+            return httpx.Response(200, json={"events": events, "has_next": has_next})
+        return httpx.Response(200, json={"status": self.statuses.pop(0)})
+
+
+@pytest.fixture
+def fake_sf(monkeypatch):
+    import httpx
+
+    created = {}
+
+    def install(fake):
+        real_client = httpx.Client
+
+        def patched(*args, **kwargs):
+            kwargs["transport"] = httpx.MockTransport(fake.handler)
+            return real_client(*args, **kwargs)
+
+        monkeypatch.setattr(httpx, "Client", patched)
+        created["fake"] = fake
+        return fake
+
+    return install
+
+
+def test_spiderfoot_scan_returns_events_as_records(fake_sf, monkeypatch):
+    monkeypatch.setattr(tools.time, "sleep", lambda _s: None)
+    fake = fake_sf(
+        _FakeSF(
+            statuses=["RUNNING", "FINISHED"],
+            pages=[
+                ([{"type": "IP_ADDRESS", "data": "1.2.3.4"}], True),
+                ([{"type": "DOMAIN_NAME", "data": "example.com"}], False),
+            ],
+        )
+    )
+    capture = tools.run("spiderfoot", "example.com", _sf_settings())
+    body = json.loads(capture.body)
+    assert body["tool"] == "spiderfoot" and body["target"] == "example.com"
+    # Both pages are collected, so a multi-page scan is not silently truncated.
+    assert [r["data"] for r in body["results"]] == ["1.2.3.4", "example.com"]
+    assert fake.created[0]["modules"] == ["sfp_dnsresolve"]
+    assert fake.created[0]["target"] == "example.com"
+
+
+def test_spiderfoot_sends_api_key_and_never_logs_it(fake_sf, monkeypatch, caplog):
+    monkeypatch.setattr(tools.time, "sleep", lambda _s: None)
+    fake = fake_sf(_FakeSF(statuses=["FINISHED"], pages=[([], False)]))
+    with caplog.at_level(logging.DEBUG, logger="harvest"):
+        tools.run("spiderfoot", "example.com", _sf_settings())
+    assert fake.headers_seen[0]["x-api-key"] == "sf_test_key"
+    assert "sf_test_key" not in caplog.text
+
+
+def test_spiderfoot_rejected_key_is_policy_denied(fake_sf, monkeypatch):
+    monkeypatch.setattr(tools.time, "sleep", lambda _s: None)
+    fake_sf(_FakeSF(statuses=[], pages=[], create_status=401))
+    with pytest.raises(PolicyDenied, match="HARVEST_SPIDERFOOT_API_KEY"):
+        tools.run("spiderfoot", "example.com", _sf_settings())
+
+
+@pytest.mark.parametrize(
+    "missing,match",
+    [
+        ({"spiderfoot_url": ""}, "HARVEST_SPIDERFOOT_URL"),
+        ({"spiderfoot_api_key": ""}, "HARVEST_SPIDERFOOT_API_KEY"),
+        ({"spiderfoot_modules": ()}, "HARVEST_SPIDERFOOT_MODULES"),
+    ],
+)
+def test_spiderfoot_requires_configuration_before_any_request(fake_sf, missing, match):
+    fake = fake_sf(_FakeSF(statuses=["FINISHED"], pages=[([], False)]))
+    with pytest.raises(PolicyDenied, match=match):
+        tools.run("spiderfoot", "example.com", _sf_settings(**missing))
+    assert not fake.created
+
+
+def test_spiderfoot_failed_scan_is_an_error_not_a_partial_capture(fake_sf, monkeypatch):
+    monkeypatch.setattr(tools.time, "sleep", lambda _s: None)
+    fake_sf(_FakeSF(statuses=["RUNNING", "ERROR-FAILED"], pages=[([], False)]))
+    with pytest.raises(ValueError, match="ERROR-FAILED"):
+        tools.run("spiderfoot", "example.com", _sf_settings())
+
+
+def test_spiderfoot_cancellation_stops_the_scan(fake_sf, monkeypatch):
+    monkeypatch.setattr(tools.time, "sleep", lambda _s: None)
+    fake = fake_sf(_FakeSF(statuses=["RUNNING"] * 5, pages=[([], False)]))
+    cancelled = threading.Event()
+    cancelled.set()
+    with pytest.raises(LostLease):
+        tools.run("spiderfoot", "example.com", _sf_settings(), cancelled=cancelled)
+    assert fake.deleted == ["/api/v1/scans/ABC123"]
