@@ -25,6 +25,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .models import TOOL_TARGET_PATTERN, LostLease, PolicyDenied
 from .network import Capture
@@ -35,6 +36,28 @@ log = logging.getLogger("harvest")
 # directly. fullmatch, not match: "$" would otherwise accept a trailing newline, letting
 # "alice\n" through into an argv element, a report filename and a capture URL.
 _TARGET_RE = re.compile(TOOL_TARGET_PATTERN)
+
+
+def _tool_env(proxy: str | None) -> dict[str, str]:
+    """Remove ambient proxies; Maigret receives the configured route via --proxy."""
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k.lower() not in {"http_proxy", "https_proxy", "all_proxy", "no_proxy"}
+    }
+    if not proxy:
+        return env
+    try:
+        parsed = urlsplit(proxy)
+        _ = parsed.port  # Reject malformed explicit ports; HTTP proxies may use the default.
+        valid = parsed.scheme.lower() in {"http", "https", "socks5", "socks5h"} and bool(
+            parsed.hostname
+        )
+    except ValueError:
+        valid = False
+    if not valid:
+        raise PolicyDenied("HARVEST_EGRESS_PROXY is not a supported proxy URL")
+    return env
 
 
 def _stop_process(proc: subprocess.Popen) -> None:
@@ -55,7 +78,11 @@ def _stop_process(proc: subprocess.Popen) -> None:
 
 
 def _exec(
-    argv: list[str], timeout: float, cwd: str, cancelled: threading.Event | None = None
+    argv: list[str],
+    timeout: float,
+    cwd: str,
+    cancelled: threading.Event | None = None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
     """Run one tool to completion, or stop it.
 
@@ -73,6 +100,7 @@ def _exec(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=cwd,
+            env=env,
             start_new_session=True,
         ) as proc:
             while True:
@@ -90,30 +118,30 @@ def _exec(
                     raise ValueError(f"{argv[0]} exceeded {timeout:g}s")
                 try:
                     # Documented as safe to retry after a timeout without losing output.
-                    stdout, stderr = proc.communicate(timeout=min(1, remaining))
+                    stdout, _stderr = proc.communicate(timeout=min(1, remaining))
                 except subprocess.TimeoutExpired:
                     continue
                 if proc.returncode != 0:
-                    # stderr may carry a tool's own credentials (GHunt cookies); log it for
-                    # the operator, never return it into a persisted task error.
-                    log.warning(
-                        "tool_failed argv0=%s rc=%s stderr=%.500s",
-                        argv[0],
-                        proc.returncode,
-                        stderr,
-                    )
+                    # stderr can contain proxy credentials or tool cookies. Never log it.
+                    log.warning("tool_failed argv0=%s rc=%s", argv[0], proc.returncode)
                     # A tool that aborted may still have left a partial report behind;
                     # ingesting it would present an incomplete scan as a finished one. Every
                     # nonzero exit in maigret is a startup/config failure or an interrupt,
                     # never a per-site error.
                     raise ValueError(f"{argv[0]} exited {proc.returncode}")
-                return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+                return subprocess.CompletedProcess(argv, proc.returncode, stdout, _stderr)
     except FileNotFoundError as exc:
         raise PolicyDenied(f"{argv[0]} is not installed in this worker image") from exc
 
 
 def _maigret(
-    target: str, workdir: str, timeout: float, cancelled: threading.Event | None = None
+    target: str,
+    workdir: str,
+    timeout: float,
+    cancelled: threading.Event | None = None,
+    proxy: str | None = None,
+    retries: int = 0,
+    cloudflare_bypass: bool = False,
 ) -> list[dict]:
     """`--json simple` writes report_<username>_simple.json: an object keyed by sitename,
     holding only CLAIMED accounts. Flattened to a list so the JSON adapter yields one entity
@@ -138,7 +166,24 @@ def _maigret(
         "--timeout",
         str(max(1, int(min(timeout, 30)))),
     ]
-    _exec(argv, timeout, workdir, cancelled)
+    if not 0 <= retries <= 3:
+        raise PolicyDenied("HARVEST_MAIGRET_RETRIES must be between 0 and 3")
+    argv.extend(["--retries", str(retries)])
+    if cloudflare_bypass:
+        # This flag requires a separately configured local bypass service in
+        # Maigret's settings. It does not affect routing of ordinary site checks.
+        argv.append("--cloudflare-bypass")
+    env = _tool_env(proxy)
+    if proxy:
+        # The pinned Maigret's database auto-update ignores --proxy and makes a
+        # direct request before the site checks. Use the bundled database until
+        # upstream routes this path correctly.
+        argv.extend(["--proxy", proxy, "--no-autoupdate"])
+        # Maigret's activation helpers use separate ClientSession calls that do
+        # not receive --proxy. An egress firewall is required for a strict
+        # no-direct-traffic guarantee until upstream fixes those paths.
+        log.warning("maigret auxiliary activation requests may bypass --proxy")
+    _exec(argv, timeout, workdir, cancelled, env=env)
     # maigret replaces "/" in the username when naming the report; _TARGET_RE already
     # rejects "/", so the name is the target verbatim.
     report = Path(workdir) / f"report_{target}_simple.json"
@@ -174,7 +219,18 @@ def run(name: str, target: str, settings, cancelled: threading.Event | None = No
         )
     started = time.time()
     with tempfile.TemporaryDirectory(prefix=f"harvest-{name}-") as workdir:
-        records = tool["run"](target, workdir, settings.tool_timeout, cancelled)
+        if name == "maigret":
+            records = tool["run"](
+                target,
+                workdir,
+                settings.tool_timeout,
+                cancelled,
+                settings.proxy,
+                settings.maigret_retries,
+                settings.maigret_cloudflare_bypass,
+            )
+        else:
+            records = tool["run"](target, workdir, settings.tool_timeout, cancelled, settings.proxy)
     body = json.dumps({"tool": name, "target": target, "results": records}).encode()
     url = f"tool://{name}/{target}"
     return Capture(
