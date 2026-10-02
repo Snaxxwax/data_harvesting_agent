@@ -221,13 +221,25 @@ makes its own requests outside the fetcher. `limits.tool_runs` bounds actual inv
 `HARVEST_TOOL_TIMEOUT` bounds each one; nothing else throttles them. Treat the site coverage
 of a tool like maigret as authorization-relevant, not just a volume question.
 
-When `HARVEST_EGRESS_PROXY` is set, harvest passes it to Maigret as `--proxy` for the main
-site checks. It also disables Maigret's automatic site-database update: in pinned version
-0.6.6 that update ignores `--proxy` and otherwise contacts GitHub directly. Proxy mode
-therefore uses Maigret's bundled site database until a newer image is built. Maigret's
+Harvest always passes `--no-autoupdate`, so Maigret uses the site database bundled in the
+image. In pinned version 0.6.6 that auto-update ignores `--proxy` and contacts GitHub
+directly, so in proxy mode it would leak the one request the proxy exists to cover; with no
+proxy configured it is still an unbudgeted request outside the fetcher. Pinning the database
+to the image also keeps a scan's breadth reproducible: the site list is
+authorization-relevant, and it should not change under a deployment without the image
+changing. Refresh it by building a newer image, not at scan time.
+
+When `HARVEST_EGRESS_PROXY` is set, harvest additionally passes it to Maigret as `--proxy`
+for the main site checks. Maigret's
 auxiliary activation requests do not receive `--proxy` and may still use the direct route.
 Ambient proxy variables are cleared because they can interfere with Maigret's explicit
 proxy connector. `HARVEST_PROXY_PUBLIC_HOSTS` governs the fetcher, not Maigret's site list.
+
+With no `HARVEST_EGRESS_PROXY` configured at all -- the default -- Maigret reaches every site
+directly from the deployment's own public address. Combined with `--all-sites` that is
+roughly ten times a default scan's requests, all of it attributable to that address and none
+of it inside the fetcher's budgets or per-origin pacing. Treat that as an authorization
+question before an engagement, not only a volume one.
 For a strict no-direct-egress guarantee, run the worker on authorized infrastructure with
 network rules that permit outbound traffic only to the proxy.
 
