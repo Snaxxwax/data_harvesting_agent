@@ -7,9 +7,10 @@ repo under `deploy/ovh-vps/`).
 
 SpiderFoot NG: `/opt/harvest/spiderfoot-ng`, poppopjmp/spiderfoot **v6.1.0**, based on
 upstream `4b53ca68ea63548c25c4148a3a18bda8d9417c74`, **now patched**: deployed commit
-`3210d309`, branch `fix/auth-db-reconnect`, pushed to
-`https://github.com/Snaxxwax/spiderfoot` (the `patched` remote in that checkout). Two
-commits, both fixing connection recovery — see "Postgres restart recovery" below.
+`36de167e`, branch `fix/auth-db-reconnect`, pushed to
+`https://github.com/Snaxxwax/spiderfoot` (the `patched` remote in that checkout). Three
+commits: two fixing connection recovery (see "Postgres restart recovery" below) and one
+attaching `sf-api` to the `harvest-egress` network for proxy-only mode.
 
 Last verified: 2026-10-02.
 
@@ -332,7 +333,7 @@ verify the change is actually in the image before deploying:
 
 The checkout at `/opt/harvest/spiderfoot-ng` has two remotes: `origin`
 (poppopjmp/spiderfoot, upstream) and `patched` (Snaxxwax/spiderfoot). The deployed branch
-`fix/auth-db-reconnect` (`3210d309`) is pushed to `patched`, so the patches are
+`fix/auth-db-reconnect` (`36de167e`) is pushed to `patched`, so the patches are
 reproducible from GitHub rather than existing only on this host:
 
     git -C /opt/harvest/spiderfoot-ng log --oneline 4b53ca68..fix/auth-db-reconnect
