@@ -52,9 +52,11 @@ services:
       HARVEST_PROXY_PUBLIC_HOSTS: ${HARVEST_PROXY_PUBLIC_HOSTS:-}
 
 networks:
-  # Created once, outside both compose projects, so neither stack depends on the
-  # other's startup order (spiderfoot-ng/compose.core.yml attaches sf-api to it):
-  #   docker network create --internal harvest-egress
-  # "internal" is the enforcement: no gateway, so no route to the internet.
+  # Owned by this file, so it exists exactly when proxy-only mode is in use.
+  # `internal: true` IS the enforcement: no gateway, hence no route off-host.
+  # Nothing else declares it as a dependency -- SpiderFoot deliberately does not,
+  # so a missing network can never stop that core service from starting. sf-api is
+  # attached at enable time with `docker network connect harvest-egress sf-api`.
   harvest-egress:
-    external: true
+    name: harvest-egress
+    internal: true

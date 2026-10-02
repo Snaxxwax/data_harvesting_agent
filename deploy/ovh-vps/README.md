@@ -27,18 +27,16 @@ docker compose -f compose.yaml -f compose.override.yaml up -d
 
 ## Proxy-only egress
 
-Requires the internal network to exist first. It is created once, outside both
-compose projects, so neither stack depends on the other's startup order:
+`compose.egress-proxy.yaml` creates the `harvest-egress` network itself. SpiderFoot
+deliberately does **not** declare that network, so its absence can never stop sf-api
+from starting; the cost is that sf-api is attached manually when enabling the mode.
 
-```sh
-docker network create --internal harvest-egress
-```
-
-Then set the `Upstream` line in `egress-relay/tinyproxy.conf` and:
+Set the `Upstream` line in `egress-relay/tinyproxy.conf`, then:
 
 ```sh
 docker compose -f compose.yaml -f compose.override.yaml \
                -f compose.egress-proxy.yaml up -d
+docker network connect harvest-egress sf-api   # redo after recreating sf-api
 ```
 
 The worker then joins only `harvest-egress`, which has no gateway, so it has no
