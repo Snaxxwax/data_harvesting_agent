@@ -1,0 +1,81 @@
+# Minimal core only: redis, postgres, api, celery-worker, frontend.
+# The optional storage / ai / monitor / scan / sso / scheduler / proxy stacks
+# from the upstream docker-compose.yml are deliberately NOT included.
+name: spiderfoot-ng
+include:
+  - docker/compose/core.yml
+
+services:
+  # Published on the Tailscale address only. Docker's DOCKER-USER iptables rules
+  # bypass ufw, so the interface-bound publish is the real access control.
+  frontend:
+    ports: !override
+      - "100.118.181.47:3000:80"
+  api:
+    ports:
+      - "100.118.181.47:8001:8001"
+    # NOT attached to harvest-egress here on purpose. Harvest's proxy-only mode
+    # confines its worker to that internal network and needs sf-api reachable on
+    # it, but declaring it `external` here would make SpiderFoot refuse to start
+    # whenever the network is absent -- trading a working core service for an
+    # optional feature. Attach it at proxy-enable time instead:
+    #   docker network connect harvest-egress sf-api
+    # The attachment survives restarts but not a container recreate, so redo it
+    # after rebuilding sf-api. See /opt/harvest/DEPLOYMENT.md.
+    networks: [default, osint-net]
+    environment:
+      # core.yml does not pass this through. Without it the API key manager
+      # generates a RANDOM HMAC secret per process and cannot persist it (the
+      # filesystem is read-only), so a minted key dies on restart and the two
+      # uvicorn workers disagree about whether any key is valid.
+      SF_API_KEY_SECRET: ${SF_API_KEY_SECRET:?SF_API_KEY_SECRET must be set in .env}
+    # core.yml probes /api/docs, which does not touch Postgres at all. /health
+    # reports per-component status, so assert Postgres is genuinely reachable.
+    #
+    # Note what this probe does NOT catch: /health opens its own connection,
+    # while AuthService caches a separate one. A stale auth connection therefore
+    # left /health reporting postgresql "up" while every authenticated call
+    # answered 401. That is fixed in code (AuthService._get_conn pre-pings and
+    # reconnects, see the fix/auth-db-reconnect patch), not by this healthcheck
+    # -- no HTTP probe can observe another component's private connection.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; d=json.load(urllib.request.urlopen('http://localhost:8001/health',timeout=8)); raise SystemExit(0 if d['components']['postgresql']['status']=='up' else 1)"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 40s
+
+  # Upstream's probe is `celery -A spiderfoot.celery_app:celery_app inspect ping
+  # --timeout 5`. Importing spiderfoot.celery_app in a cold process costs ~5.0s
+  # here, and `inspect ping` always waits out the full reply window rather than
+  # returning on the first pong, so the probe needs ~10.1s against Docker's 10s
+  # timeout: it was killed every time and the worker sat "unhealthy" with a
+  # failing streak of 30 while answering "pong" perfectly.
+  #
+  # -b/--broker pings over the broker directly and skips the spiderfoot import
+  # entirely, which is the whole 5s. Measured on this host: ~4.4s when the worker
+  # is up (exit 0), ~4.3s with no worker and ~8.5s with the broker unreachable
+  # (exit 69 in both cases) -- so it still reports unhealthy for the real
+  # failures, which is the point of keeping a probe at all.
+  celery-worker:
+    healthcheck:
+      test: ["CMD-SHELL", "python -m celery -b \"$$SF_REDIS_URL\" inspect ping --timeout 2"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 40s
+
+  # core.yml leaves these unbounded, so on a shared host they would inherit all
+  # 11 GiB. Capped well above observed steady state (postgres ~65M, redis ~5M).
+  postgres:
+    deploy:
+      resources:
+        limits: {cpus: "1.0", memory: 768M}
+  redis:
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 256M}
+
+networks:
+  osint-net:
+    external: true

@@ -1,0 +1,62 @@
+# Proxy-only egress. OPT-IN: this file is not loaded unless you name it.
+#
+#   docker compose -f compose.yaml -f compose.override.yaml \
+#                  -f compose.egress-proxy.yaml up -d
+#
+# Why a relay instead of firewall rules: the worker joins only `harvest-egress`,
+# which is an internal Docker network with no gateway, so it has no route to the
+# internet at all. The single way out is the relay, which chains to the upstream
+# ISP proxy. A forgotten iptables rule silently restores direct egress; a missing
+# route cannot. Harvest additionally probes HARVEST_EGRESS_PROBE and refuses to
+# run Maigret if direct egress turns out to work, so a misconfiguration fails
+# closed instead of quietly leaking.
+services:
+  egress-relay:
+    image: vimagick/tinyproxy
+    container_name: harvest-egress-relay
+    restart: unless-stopped
+    init: true
+    volumes:
+      - /opt/harvest/egress-relay/tinyproxy.conf:/etc/tinyproxy/tinyproxy.conf:ro
+    # harvest-egress: where the worker reaches it. default: how it reaches the
+    # upstream proxy. Nothing is published; it is not reachable from outside.
+    networks: [harvest-egress, default]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  worker:
+    # !override replaces the list from compose.override.yaml rather than merging,
+    # which is the whole point: the worker must NOT keep an internet-capable
+    # network. sf-api joins harvest-egress (see spiderfoot-ng/compose.core.yml)
+    # so SpiderFoot stays reachable.
+    networks: !override [harvest-egress]
+    environment:
+      HARVEST_EGRESS_MODE: proxy
+      HARVEST_EGRESS_PROXY: http://egress-relay:8888
+      # Must be unreachable without the proxy. If this connects, tools refuse to run.
+      HARVEST_EGRESS_PROBE: ${HARVEST_EGRESS_PROBE:-1.1.1.1:443}
+      # The fetcher denies any proxied destination not listed here, so crawling
+      # leads in proxy mode requires naming the hosts explicitly.
+      HARVEST_PROXY_PUBLIC_HOSTS: ${HARVEST_PROXY_PUBLIC_HOSTS:-}
+
+  # The API serves requests and does not run tools, but it shares the job store
+  # and must agree about the mode so a job cannot be planned as direct.
+  api:
+    environment:
+      HARVEST_EGRESS_MODE: proxy
+      HARVEST_EGRESS_PROXY: http://egress-relay:8888
+      HARVEST_PROXY_PUBLIC_HOSTS: ${HARVEST_PROXY_PUBLIC_HOSTS:-}
+
+networks:
+  # Owned by this file, so it exists exactly when proxy-only mode is in use.
+  # `internal: true` IS the enforcement: no gateway, hence no route off-host.
+  # Nothing else declares it as a dependency -- SpiderFoot deliberately does not,
+  # so a missing network can never stop that core service from starting. sf-api is
+  # attached at enable time with `docker network connect harvest-egress sf-api`.
+  harvest-egress:
+    name: harvest-egress
+    internal: true
