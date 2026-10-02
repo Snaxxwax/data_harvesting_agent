@@ -106,6 +106,29 @@ class Capture:
     retrieved: float
 
 
+# Names that must never leave through the proxy. In proxy mode the proxy resolves the
+# destination, so the resolved address is unknowable here and the shape of the name is
+# all that can be checked.
+INTERNAL_SUFFIXES = (".localhost", ".local", ".internal", ".intranet", ".lan", ".corp", ".home.arpa")
+
+
+def require_public_host(hostname: str | None):
+    """Reject anything that is not a routable public destination, by name or by literal."""
+    if not hostname:
+        raise PolicyDenied("destination has no host")
+    host = hostname.lower().rstrip(".")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        if host.endswith(INTERNAL_SUFFIXES) or "." not in host:
+            raise PolicyDenied("proxy destination must be a public hostname") from None
+    else:
+        if not address.is_global or (
+            getattr(address, "ipv4_mapped", None) and not address.ipv4_mapped.is_global
+        ):
+            raise PolicyDenied("proxy destination must be public")
+
+
 def in_scope(url: str, spec: JobSpec):
     host = urlsplit(canonical_url(url)).hostname
     return not spec.allowed_domains or any(
@@ -166,23 +189,20 @@ class Fetcher:
         if not service and not in_scope(url, self.spec):
             raise PolicyDenied("destination is outside allowed domains")
         p = urlsplit(url)
-        # Remote-DNS egress is restricted to exact administrator-approved public hostnames.
-        # The trusted proxy must enforce destination-IP policy; arbitrary discovery hosts
-        # are deliberately unavailable through this path. No ambient proxy is ever used.
+        # Remote DNS: the proxy resolves the name, so the destination IP is never visible
+        # here and the resolved_addresses() check that guards direct mode cannot run.
+        # HARVEST_PROXY_PUBLIC_HOSTS is the operator's stand-in for it and is enforced
+        # exactly WHEN SET. When unset, policy is the job's own allowed_domains (checked
+        # above) plus the name-shape rules below, so leads discovered mid-job are crawlable
+        # without enumerating every host in advance. Reaching anything internal is prevented
+        # by routing, not by this list: the worker's network is `internal: true` with no
+        # gateway, so its only path off-host is the egress relay. No ambient proxy is ever
+        # used (trust_env=False), so an unreachable proxy fails closed instead of going direct.
         if self.settings.proxy:
-            if p.hostname not in self.settings.proxy_public_hosts:
-                raise PolicyDenied("proxy destination is not in HARVEST_PROXY_PUBLIC_HOSTS")
-            try:
-                address = ipaddress.ip_address(p.hostname)
-            except ValueError:
-                if (
-                    p.hostname.endswith((".localhost", ".local", ".internal"))
-                    or "." not in p.hostname
-                ):
-                    raise PolicyDenied("proxy destination must be a public hostname") from None
-            else:
-                if not address.is_global:
-                    raise PolicyDenied("proxy destination must be public")
+            if self.settings.proxy_public_hosts:
+                if p.hostname not in self.settings.proxy_public_hosts:
+                    raise PolicyDenied("proxy destination is not in HARVEST_PROXY_PUBLIC_HOSTS")
+            require_public_host(p.hostname)
             return url
         resolved_addresses(
             p.hostname, p.port or (443 if p.scheme == "https" else 80), self.settings.private_hosts
