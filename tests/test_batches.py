@@ -69,7 +69,11 @@ def interrupt_after_first_batch(engine, monkeypatch, exception):
 def test_restart_resumes_cursor_without_duplicate_claims_or_get(engine, source, monkeypatch, media):
     job, _ = submit(engine, source, media=media)
     engine.step(job)
-    task = engine.store.claim(job, lease_seconds=0.1)
+    # A short lease here would race the work itself: owned() raises LostLease as soon
+    # as lease_until passes, so on a loaded machine the first batch outlives a 0.1s
+    # lease and LostLease surfaces instead of the crash this test is about. The lease
+    # is expired explicitly below, once the crash has already happened.
+    task = engine.store.claim(job)
     interrupt_after_first_batch(engine, monkeypatch, SystemExit("crash after batch commit"))
     with pytest.raises(SystemExit):
         engine.process(task)
