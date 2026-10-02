@@ -46,6 +46,24 @@ class Settings:
             os.getenv("HARVEST_MAIGRET_CLOUDFLARE_BYPASS", "").lower() in {"1", "true", "yes"}
         )
     )
+    # SpiderFoot NG REST API. Reached over a private network (Tailscale/Docker), never
+    # the public internet: the key is a bearer credential sent on every call.
+    spiderfoot_url: str = field(
+        default_factory=lambda: os.getenv("HARVEST_SPIDERFOOT_URL", "").rstrip("/")
+    )
+    spiderfoot_api_key: str = field(
+        default_factory=lambda: os.getenv("HARVEST_SPIDERFOOT_API_KEY", "")
+    )
+    # Default to one passive resolver. SpiderFoot's full module set is active
+    # reconnaissance against the target, which is an authorization decision, so the
+    # deployment must opt into it explicitly.
+    spiderfoot_modules: tuple[str, ...] = field(
+        default_factory=lambda: tuple(
+            m.strip()
+            for m in os.getenv("HARVEST_SPIDERFOOT_MODULES", "sfp_dnsresolve").split(",")
+            if m.strip()
+        )
+    )
     model_url: str = field(default_factory=lambda: os.getenv("HARVEST_MODEL_URL", ""))
     model_name: str = field(default_factory=lambda: os.getenv("HARVEST_MODEL_NAME", ""))
     model_key: str = field(default_factory=lambda: os.getenv("HARVEST_MODEL_KEY", ""))
