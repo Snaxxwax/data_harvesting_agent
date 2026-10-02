@@ -64,6 +64,8 @@ and GitHub Actions major tags are not digest-pinned.
 | `HARVEST_CA_BUNDLE` | Optional CA file; otherwise the system TLS trust store is used |
 | `HARVEST_EGRESS_PROXY` | Optional administrator-controlled egress proxy; ambient proxy env is ignored |
 | `HARVEST_PROXY_PUBLIC_HOSTS` | Exact public hostnames permitted through that proxy; default empty |
+| `HARVEST_EGRESS_MODE` | `direct` (default) or `proxy`; `proxy` is fail-closed and refuses any path it cannot prove is proxied |
+| `HARVEST_EGRESS_PROBE` | Address proxy mode probes to confirm direct egress is blocked; default `1.1.1.1:443` |
 
 Service/model endpoints are administrator configuration, never model output. A configured
 SearXNG host on the private network must also be in `HARVEST_PRIVATE_HOSTS`. In containers,
@@ -84,6 +86,32 @@ enforce public destination addresses; this path cannot pin the proxy's resolved 
 inside the application. Direct acquisition validates every DNS result and connects to an
 approved numeric IP. Redirects are rechecked. Use direct mode for broad autonomous public
 discovery or configure a policy-enforcing proxy with an explicit host inventory.
+
+### Proxy-only egress
+
+`HARVEST_EGRESS_MODE=proxy` exists because setting a proxy is not the same as routing
+everything through it. Each tool reaches the network differently, so the mode treats
+"cannot be shown to use the proxy" as a refusal rather than a warning:
+
+| Path | Proxy support | Behaviour in `proxy` mode |
+| --- | --- | --- |
+| Fetcher (`httpx`) | Full. `trust_env=False`, so no ambient proxy is ever picked up | Proxied, restricted to `HARVEST_PROXY_PUBLIC_HOSTS` |
+| Maigret site checks | `--proxy` | Proxied |
+| Maigret site-database update | **None** — ignores `--proxy` | Disabled unconditionally (`--no-autoupdate`), database pinned into the image |
+| Maigret activation helpers | **None** — separate `ClientSession` calls upstream | Not fixable in-process, so the mode requires network-level egress blocking and verifies it |
+| SpiderFoot modules | Its own global `_socks*` config, in its own container | Scan refused unless SpiderFoot's proxy matches `HARVEST_EGRESS_PROXY` |
+| FlareSolverr / Cloudflare bypass | Its own container, not covered by `--proxy` | Refused outright |
+
+Because the Maigret gap cannot be closed in the application, `proxy` mode does not take
+an operator's word that a firewall exists. Before running Maigret it opens a plain TCP
+connection to `HARVEST_EGRESS_PROBE` with no proxy. If that connects, direct egress is
+available, the mode is not actually in force, and the tool refuses to run. A blocked
+probe is the pass condition. This checks the worker's own egress; SpiderFoot and
+FlareSolverr have their own containers and need their own policy.
+
+The probe tests one destination, not every possible route, so it detects an absent or
+ineffective egress policy rather than proving a correct one. Pair it with a default-deny
+egress rule that permits only the proxy endpoint.
 
 ## Job budgets
 

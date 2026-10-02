@@ -18,6 +18,20 @@ class Settings:
         )
     )
     proxy: str | None = field(default_factory=lambda: os.getenv("HARVEST_EGRESS_PROXY") or None)
+    # "direct" (the default) keeps the historical behaviour: no proxy unless one is
+    # configured, and tools reach the internet straight from the host. "proxy" is
+    # fail-closed -- every path that cannot be *shown* to route through
+    # HARVEST_EGRESS_PROXY is refused rather than quietly sent out directly.
+    egress_mode: str = field(
+        default_factory=lambda: os.getenv("HARVEST_EGRESS_MODE", "direct").strip().lower()
+    )
+    # Canary for proxy mode: a public address that must NOT be reachable directly.
+    # Maigret's activation helpers ignore --proxy upstream, so the application alone
+    # cannot promise proxy-only egress; this probe tests the host's egress policy
+    # instead of trusting an operator flag that says a firewall exists.
+    egress_probe: str = field(
+        default_factory=lambda: os.getenv("HARVEST_EGRESS_PROBE", "1.1.1.1:443").strip()
+    )
     proxy_public_hosts: frozenset[str] = field(
         default_factory=lambda: frozenset(
             h.strip().lower()
@@ -77,3 +91,18 @@ class Settings:
     )
     model_output_tokens: int = 2000
     request_timeout: float = 20
+
+    def __post_init__(self) -> None:
+        if self.egress_mode not in {"direct", "proxy"}:
+            raise ValueError("HARVEST_EGRESS_MODE must be 'direct' or 'proxy'")
+        if self.egress_mode == "proxy" and not self.proxy:
+            raise ValueError("HARVEST_EGRESS_MODE=proxy requires HARVEST_EGRESS_PROXY")
+        if self.proxy_only:
+            host, _, port = self.egress_probe.rpartition(":")
+            if not host or not port.isdigit() or not 0 < int(port) < 65536:
+                raise ValueError("HARVEST_EGRESS_PROBE must be host:port")
+
+    @property
+    def proxy_only(self) -> bool:
+        """True when no path may fall back to direct egress."""
+        return self.egress_mode == "proxy"
