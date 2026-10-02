@@ -109,11 +109,35 @@ class Capture:
 # Names that must never leave through the proxy. In proxy mode the proxy resolves the
 # destination, so the resolved address is unknowable here and the shape of the name is
 # all that can be checked.
-INTERNAL_SUFFIXES = (".localhost", ".local", ".internal", ".intranet", ".lan", ".corp", ".home.arpa")
+INTERNAL_SUFFIXES = (
+    ".localhost",
+    ".local",
+    ".internal",
+    ".intranet",
+    ".lan",
+    ".corp",
+    ".home.arpa",
+)
 
 
 def require_public_host(hostname: str | None):
-    """Reject anything that is not a routable public destination, by name or by literal."""
+    """Reject anything that is not a routable public destination, by name or by literal.
+
+    LIMITATION, by construction: this checks the *shape* of the name, never what it
+    resolves to. In proxy mode the proxy performs DNS, so the worker cannot see the
+    destination address -- it has no resolver at all (its network is `internal: true`),
+    so resolved_addresses(), which is what guards direct mode, cannot run here. A public
+    name that resolves to a private address (DNS rebinding, split-horizon DNS, or a
+    wildcard service such as `10.0.0.5.nip.io`) therefore PASSES this check.
+
+    What actually contains that case is the egress path, not this function:
+      * the worker has no route off-host except the relay (no gateway on its network);
+      * the relay, with a blanket `Upstream`, never connects to the destination itself --
+        it only opens a socket to the upstream proxy and forwards the request;
+      * the upstream proxy refuses private destinations (Webshare answers 403).
+    The last of those is a third party's policy, so it is a mitigation and not a
+    guarantee. See "Proxy-mode SSRF boundary" in deploy/ovh-vps/DEPLOYMENT.md.
+    """
     if not hostname:
         raise PolicyDenied("destination has no host")
     host = hostname.lower().rstrip(".")
