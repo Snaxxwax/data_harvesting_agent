@@ -213,13 +213,19 @@ claims.
 
 Measured on this host, not assumed:
 
-1. **DNS is not proxied, for anything.** An HTTP proxy cannot carry DNS. SpiderFoot's
-   default module is `sfp_dnsresolve`, which resolves through the system resolver: `sf-api`
-   resolved `example.org` directly in testing. DNS queries therefore still disclose the
-   target to the resolver and this VPS's address to authoritative servers. A SOCKS5 proxy
-   does not fix this either, because those modules do not route DNS through it. To avoid
-   DNS exposure you must restrict SpiderFoot to non-DNS modules, which removes most of its
-   value, or place a DNS forwarder behind the proxy. **Unresolved.**
+1. **DNS is not proxied, for anything — ACCEPTED RISK, decided 2026-10-02.** An HTTP
+   proxy cannot carry DNS. SpiderFoot's default module is `sfp_dnsresolve`, which resolves
+   through the system resolver: `sf-api` resolved `example.org` directly in testing. DNS
+   queries therefore still disclose the target to the resolver, and this VPS's address to
+   authoritative servers, **even with proxy-only mode fully enabled**. A SOCKS5 proxy does
+   not fix it either, because those modules do not route DNS through it.
+
+   The options were: accept it; put a DNS-over-TLS forwarder behind the proxy; restrict
+   SpiderFoot to non-DNS modules (which removes most of its value, `sfp_dnsresolve` being
+   the default); or drop SpiderFoot from proxy-only engagements. **Decision: accept and
+   document**, keeping SpiderFoot's full function. Treat DNS-level attribution as in scope
+   for any engagement run from this host, and revisit if an engagement makes it
+   disqualifying.
 2. **The SpiderFoot containers are not confined.** `sf-api` and `sf-celery-worker` keep
    internet-capable networks and *can* egress directly (verified reachable). The `_socks*`
    setting is honoured by its HTTP modules but nothing enforces it, and Harvest's gate
