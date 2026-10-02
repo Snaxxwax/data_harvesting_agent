@@ -127,6 +127,64 @@ def test_plan_dataset_endpoint(engine):
     assert "price" in response.json()["fields"]
 
 
+def test_meta_reports_model_configured_false_by_default(engine):
+    client = client_for(engine)
+    client.post("/session", json={"token": engine.settings.api_token})
+    meta = client.get("/meta")
+    assert meta.status_code == 200
+    assert meta.json()["model_configured"] is False
+
+
+def test_jobs_endpoint_rejects_use_model_when_not_configured_with_clear_message(engine):
+    """Regression for the UI bug where a direct-domain plan with "Use model" checked
+    previews at 200 but always 422s on submit: locks in the exact HTTP contract
+    (message content) the Investigation tab now depends on to disable/hide that option."""
+    client = client_for(engine)
+    client.post("/session", json={"token": engine.settings.api_token})
+    plan = client.post("/plan/investigation", json={"value": "example.org", "kind": "domain"})
+    assert plan.status_code == 200
+    body = plan.json()
+    response = client.post(
+        "/jobs",
+        json={
+            "objective": f"Investigate {body['normalized']}",
+            "dataset": "default",
+            "mode": "targeted",
+            "seeds": body["seeds"],
+            "discovery_queries": body["discovery_queries"],
+            "fields": body["fields"],
+            "use_model": True,
+        },
+    )
+    assert response.status_code == 422
+    assert "HARVEST_MODEL" in response.json()["detail"]
+
+
+def test_jobs_endpoint_rejects_seedless_plan_when_search_not_configured(engine):
+    """Regression for the UI bug where a seedless (e.g. person) plan previews at 200 but
+    always 422s on submit: locks in the exact HTTP contract the Investigation tab now
+    depends on to disable Create until a seed is added or search is configured."""
+    client = client_for(engine)
+    client.post("/session", json={"token": engine.settings.api_token})
+    plan = client.post("/plan/investigation", json={"value": "Jane Doe", "kind": "person"})
+    assert plan.status_code == 200
+    body = plan.json()
+    assert body["seeds"] == []
+    response = client.post(
+        "/jobs",
+        json={
+            "objective": f"Investigate {body['normalized']}",
+            "dataset": "default",
+            "mode": "targeted",
+            "seeds": body["seeds"],
+            "discovery_queries": body["discovery_queries"],
+            "fields": body["fields"],
+        },
+    )
+    assert response.status_code == 422
+    assert "HARVEST_SEARCH_URL" in response.json()["detail"]
+
+
 def test_records_and_csv_export_reflect_conflicts(engine, source):
     client = client_for(engine)
     headers = {"Authorization": "Bearer " + engine.settings.api_token}

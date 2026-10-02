@@ -63,8 +63,10 @@
       <label for="inv-dataset">Dataset name</label>
       <input id="inv-dataset" name="dataset" type="text" value="default" pattern="[a-zA-Z0-9_\-]{1,80}" required>
       <label class="checkbox"><input id="inv-model" type="checkbox"> Use model reasoning (requires a configured model)</label>
+      <p id="inv-model-hint" class="hint" hidden>Model reasoning is not configured on this deployment.</p>
       <button type="button" id="inv-preview">Preview plan</button>
       <div id="inv-preview-result" class="plan-preview" hidden></div>
+      <p id="inv-create-hint" class="warning" hidden></p>
       <button type="submit" id="inv-submit" disabled>Create investigation job</button>
       <p id="investigation-error" class="error" role="alert" hidden></p>
     </form>
