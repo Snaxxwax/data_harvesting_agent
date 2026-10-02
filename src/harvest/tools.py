@@ -20,6 +20,7 @@ import logging
 import os
 import re
 import signal
+import socket
 import subprocess
 import tempfile
 import threading
@@ -134,6 +135,77 @@ def _exec(
         raise PolicyDenied(f"{argv[0]} is not installed in this worker image") from exc
 
 
+def _assert_no_direct_egress(settings) -> None:
+    """Refuse to run if direct egress works while proxy-only mode is on.
+
+    Maigret's activation helpers issue their own ClientSession calls that never
+    receive ``--proxy`` (upstream), so the application cannot itself promise
+    proxy-only egress for every request a tool makes.  The guarantee has to come
+    from the host's egress policy.
+
+    Rather than trust an operator flag claiming a firewall exists, test it: open
+    a plain TCP connection to a public address with no proxy involved.  If it
+    connects, direct egress is available and proxy-only mode is a fiction, so the
+    run is refused instead of silently leaking.  A blocked probe is the pass.
+
+    This proves the worker's own egress only.  SpiderFoot and FlareSolverr run in
+    their own containers with their own policy; see _assert_spiderfoot_proxied.
+    """
+    host, _, port = settings.egress_probe.rpartition(":")
+    try:
+        with socket.create_connection((host, int(port)), timeout=5):
+            pass
+    except OSError:
+        return  # unreachable: the host blocks direct egress, which is the point
+    raise PolicyDenied(
+        "HARVEST_EGRESS_MODE=proxy but direct egress to "
+        f"{settings.egress_probe} succeeded; block outbound traffic except to the "
+        "proxy before running tools in proxy-only mode"
+    )
+
+
+def _assert_spiderfoot_proxied(client, settings) -> None:
+    """Confirm SpiderFoot's own egress is routed through the same proxy.
+
+    SpiderFoot scans from its own container, so neither ``--proxy`` nor this
+    host's egress policy covers it.  It has a global SOCKS/HTTP proxy setting
+    (the ``_socks*`` config keys); read it back and refuse the scan unless it
+    matches HARVEST_EGRESS_PROXY.  Without this check a proxy-only deployment
+    would still send every SpiderFoot module request out directly.
+    """
+    parsed = urlsplit(settings.proxy)
+    want_type = {"socks5": "5", "socks5h": "5", "http": "HTTP", "https": "HTTP"}.get(
+        parsed.scheme.lower()
+    )
+    if not want_type:
+        raise PolicyDenied("HARVEST_EGRESS_PROXY scheme is not supported by SpiderFoot")
+
+    got = client.get("/api/v1/config")
+    if got.status_code in (401, 403):
+        raise PolicyDenied("SpiderFoot rejected HARVEST_SPIDERFOOT_API_KEY")
+    got.raise_for_status()
+    config = got.json()
+    if isinstance(config, dict) and isinstance(config.get("config"), dict):
+        config = config["config"]
+
+    actual = (
+        str(config.get("_socks1type") or "").upper(),
+        str(config.get("_socks2addr") or ""),
+        str(config.get("_socks3port") or ""),
+    )
+    expected = (
+        want_type.upper(),
+        parsed.hostname or "",
+        str(parsed.port or (1080 if want_type == "5" else 8080)),
+    )
+    if actual != expected:
+        raise PolicyDenied(
+            "HARVEST_EGRESS_MODE=proxy but SpiderFoot's global proxy does not match "
+            "HARVEST_EGRESS_PROXY; set its _socks1type/_socks2addr/_socks3port "
+            "(PATCH /api/v1/config) so its modules do not egress directly"
+        )
+
+
 def _maigret(
     target: str,
     workdir: str,
@@ -170,7 +242,16 @@ def _maigret(
     if not 0 <= retries <= 3:
         raise PolicyDenied("HARVEST_MAIGRET_RETRIES must be between 0 and 3")
     argv.extend(["--retries", str(retries)])
+    proxy_only = bool(getattr(settings, "proxy_only", False))
     if cloudflare_bypass:
+        if proxy_only:
+            # The bypass service (FlareSolverr) fetches from its own container and
+            # is not covered by --proxy or by this host's egress policy, so in
+            # proxy-only mode it is an unproxied path by construction.
+            raise PolicyDenied(
+                "HARVEST_MAIGRET_CLOUDFLARE_BYPASS cannot be used with "
+                "HARVEST_EGRESS_MODE=proxy: the bypass service egresses directly"
+            )
         # This flag requires a separately configured local bypass service in
         # Maigret's settings. It does not affect routing of ordinary site checks.
         argv.append("--cloudflare-bypass")
@@ -186,9 +267,17 @@ def _maigret(
     if proxy:
         argv.extend(["--proxy", proxy])
         # Maigret's activation helpers use separate ClientSession calls that do
-        # not receive --proxy. An egress firewall is required for a strict
-        # no-direct-traffic guarantee until upstream fixes those paths.
-        log.warning("maigret auxiliary activation requests may bypass --proxy")
+        # not receive --proxy, so --proxy alone is not a no-direct-traffic
+        # guarantee until upstream fixes those paths. In proxy-only mode that gap
+        # is closed by requiring the host to block direct egress, and verified
+        # rather than assumed; otherwise it stays a warning and the operator
+        # keeps the historical behaviour.
+        if proxy_only:
+            _assert_no_direct_egress(settings)
+        else:
+            log.warning("maigret auxiliary activation requests may bypass --proxy")
+    elif proxy_only:  # pragma: no cover - Settings.__post_init__ rejects this
+        raise PolicyDenied("HARVEST_EGRESS_MODE=proxy requires HARVEST_EGRESS_PROXY")
     _exec(argv, timeout, workdir, cancelled, env=env)
     # maigret replaces "/" in the username when naming the report; _TARGET_RE already
     # rejects "/", so the name is the target verbatim.
@@ -235,6 +324,8 @@ def _spiderfoot(
     scan_id = None
     with httpx.Client(base_url=base, headers=headers, timeout=30.0) as client:
         try:
+            if getattr(settings, "proxy_only", False):
+                _assert_spiderfoot_proxied(client, settings)
             created = client.post(
                 "/api/v1/scans",
                 json={

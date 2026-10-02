@@ -716,3 +716,197 @@ def test_spiderfoot_cancellation_stops_the_scan(fake_sf, monkeypatch):
     with pytest.raises(LostLease):
         tools.run("spiderfoot", "example.com", _sf_settings(), cancelled=cancelled)
     assert fake.deleted == ["/api/v1/scans/ABC123"]
+
+
+# ---------------------------------------------------------------------------
+# Proxy-only egress (HARVEST_EGRESS_MODE=proxy)
+# ---------------------------------------------------------------------------
+# The point of these: in proxy-only mode no path may quietly fall back to
+# direct egress. Each test pins one path that previously could.
+
+
+def test_proxy_mode_requires_a_proxy_url():
+    import pytest
+
+    from harvest.config import Settings
+
+    with pytest.raises(ValueError, match="requires HARVEST_EGRESS_PROXY"):
+        Settings(egress_mode="proxy", proxy=None)
+
+
+def test_egress_mode_rejects_unknown_values():
+    import pytest
+
+    from harvest.config import Settings
+
+    with pytest.raises(ValueError, match="must be 'direct' or 'proxy'"):
+        Settings(egress_mode="sometimes")
+
+
+def test_direct_mode_is_the_default_and_not_proxy_only():
+    from harvest.config import Settings
+
+    assert Settings().egress_mode == "direct"
+    assert Settings().proxy_only is False
+
+
+def test_maigret_refuses_to_run_when_direct_egress_still_works(monkeypatch, tmp_path):
+    """The core guarantee: an open host must not be treated as proxy-only."""
+    import pytest
+
+    from harvest import tools
+    from harvest.config import Settings
+    from harvest.models import PolicyDenied
+
+    settings = Settings(
+        egress_mode="proxy", proxy="socks5://127.0.0.1:1080", egress_probe="1.1.1.1:443"
+    )
+
+    class OpenSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    # Direct egress succeeds => proxy-only mode is not actually enforced.
+    monkeypatch.setattr(tools.socket, "create_connection", lambda *a, **k: OpenSocket())
+    ran = []
+    monkeypatch.setattr(tools, "_exec", lambda *a, **k: ran.append(a))
+
+    with pytest.raises(PolicyDenied, match="direct egress"):
+        tools._maigret("someuser", str(tmp_path), 30.0, None, settings)
+    assert ran == [], "maigret must not run at all when egress is not locked down"
+
+
+def test_maigret_runs_when_direct_egress_is_blocked(monkeypatch, tmp_path):
+    import json as _json
+
+    from harvest import tools
+    from harvest.config import Settings
+
+    settings = Settings(egress_mode="proxy", proxy="socks5://127.0.0.1:1080")
+
+    def blocked(*a, **k):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(tools.socket, "create_connection", blocked)
+
+    captured = {}
+
+    def fake_exec(argv, *a, **k):
+        captured["argv"] = argv
+        (tmp_path / "report_someuser_simple.json").write_text(
+            _json.dumps({"GitHub": {"url_user": "https://github.com/someuser"}})
+        )
+
+    monkeypatch.setattr(tools, "_exec", fake_exec)
+    out = tools._maigret("someuser", str(tmp_path), 30.0, None, settings)
+
+    argv = captured["argv"]
+    assert "--proxy" in argv and argv[argv.index("--proxy") + 1] == "socks5://127.0.0.1:1080"
+    assert "--no-autoupdate" in argv, "the site-DB update ignores --proxy"
+    assert out[0]["url"] == "https://github.com/someuser"
+
+
+def test_cloudflare_bypass_is_refused_in_proxy_mode(monkeypatch, tmp_path):
+    """FlareSolverr fetches from its own container, so --proxy never covers it."""
+    import pytest
+
+    from harvest import tools
+    from harvest.config import Settings
+    from harvest.models import PolicyDenied
+
+    settings = Settings(
+        egress_mode="proxy",
+        proxy="socks5://127.0.0.1:1080",
+        maigret_cloudflare_bypass=True,
+    )
+    monkeypatch.setattr(tools, "_exec", lambda *a, **k: None)
+    with pytest.raises(PolicyDenied, match="CLOUDFLARE_BYPASS"):
+        tools._maigret("someuser", str(tmp_path), 30.0, None, settings)
+
+
+def _proxy_sf_settings(**kw):
+    from harvest.config import Settings
+
+    return Settings(
+        egress_mode="proxy",
+        proxy="socks5://10.0.0.9:1080",
+        spiderfoot_url="http://sf-api:8001",
+        spiderfoot_api_key="sf_test",
+        spiderfoot_modules=("sfp_dnsresolve",),
+        **kw,
+    )
+
+
+class _FakeResponse:
+    def __init__(self, payload, status_code=200):
+        self._payload = payload
+        self.status_code = status_code
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        return None
+
+
+def test_spiderfoot_is_refused_when_its_own_proxy_is_unset(monkeypatch):
+    """SpiderFoot egresses from its own container; an unset proxy there is a leak."""
+    import pytest
+
+    from harvest import tools
+    from harvest.models import PolicyDenied
+
+    client = type(
+        "C",
+        (),
+        {"get": lambda self, url, **k: _FakeResponse({"_socks1type": "", "_socks2addr": ""})},
+    )()
+    with pytest.raises(PolicyDenied, match="SpiderFoot's global proxy"):
+        tools._assert_spiderfoot_proxied(client, _proxy_sf_settings())
+
+
+def test_spiderfoot_is_refused_when_its_proxy_points_elsewhere(monkeypatch):
+    import pytest
+
+    from harvest import tools
+    from harvest.models import PolicyDenied
+
+    other = {"_socks1type": "5", "_socks2addr": "192.0.2.50", "_socks3port": "1080"}
+    client = type("C", (), {"get": lambda self, url, **k: _FakeResponse(other)})()
+    with pytest.raises(PolicyDenied, match="SpiderFoot's global proxy"):
+        tools._assert_spiderfoot_proxied(client, _proxy_sf_settings())
+
+
+def test_spiderfoot_accepts_a_matching_proxy():
+    from harvest import tools
+
+    match = {"_socks1type": "5", "_socks2addr": "10.0.0.9", "_socks3port": "1080"}
+    client = type("C", (), {"get": lambda self, url, **k: _FakeResponse(match)})()
+    tools._assert_spiderfoot_proxied(client, _proxy_sf_settings())  # must not raise
+
+
+def test_spiderfoot_accepts_nested_config_payload():
+    """The API wraps settings under "config" on some versions."""
+    from harvest import tools
+
+    nested = {"config": {"_socks1type": "5", "_socks2addr": "10.0.0.9", "_socks3port": "1080"}}
+    client = type("C", (), {"get": lambda self, url, **k: _FakeResponse(nested)})()
+    tools._assert_spiderfoot_proxied(client, _proxy_sf_settings())
+
+
+def test_spiderfoot_http_proxy_maps_to_sf_http_type():
+    from harvest import tools
+    from harvest.config import Settings
+
+    settings = Settings(
+        egress_mode="proxy",
+        proxy="http://user:pw@198.51.100.7:8080",
+        spiderfoot_url="http://sf-api:8001",
+        spiderfoot_api_key="sf_test",
+    )
+    match = {"_socks1type": "HTTP", "_socks2addr": "198.51.100.7", "_socks3port": "8080"}
+    client = type("C", (), {"get": lambda self, url, **k: _FakeResponse(match)})()
+    tools._assert_spiderfoot_proxied(client, settings)
