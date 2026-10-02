@@ -1,0 +1,56 @@
+# ovh-vps deployment overrides. NOT part of the upstream repo.
+#
+# Every published port is bound to the Tailscale address (100.118.181.47) rather
+# than 0.0.0.0. Docker publishes ports by writing its own iptables rules in
+# DOCKER-USER, which bypass ufw entirely, so an interface-bound publish -- not a
+# ufw rule -- is what actually keeps these services off the public internet.
+services:
+  api:
+    ports: !override
+      - "100.118.181.47:8000:8000"
+    networks: [default, osint-net]
+
+  # SpiderFoot v4 RETIRED 2026-10-02, superseded by SpiderFoot NG v6.1.0 at
+  # /opt/harvest/spiderfoot-ng (Harvest now drives it via HARVEST_SPIDERFOOT_URL).
+  # The service definition is removed so `up -d` does not bring it back, but the
+  # named volume below is intentionally kept: it still holds v4's spiderfoot.db,
+  # its scan history and its passwd file. Delete that volume only deliberately.
+  # To bring v4 back, restore this block from git history of this file and run
+  # `docker compose up -d spiderfoot`; the image spiderfoot:v4.0-local is retained.
+
+  # Cloudflare challenge solver. Deployed but deliberately NOT wired to maigret:
+  # HARVEST_MAIGRET_CLOUDFLARE_BYPASS stays false until its egress is verified.
+  # maigret 0.6.6 would look for this at localhost:8191 *inside the worker
+  # container*, which is not where this listens.
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:v3.3.21
+    restart: unless-stopped
+    init: true
+    environment:
+      LOG_LEVEL: info
+      TZ: UTC
+    # No published port: nothing outside Docker needs FlareSolverr. Harvest does not
+    # call it (Cloudflare bypass is off, and maigret would look for it inside the
+    # worker container regardless), and SpiderFoot does not integrate with it. It
+    # stays reachable on the compose network as http://flaresolverr:8191 if a client
+    # ever needs it; publish it to 100.118.181.47 again only then.
+    expose:
+      - "8191"
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  # The worker runs tool tasks, so it is what reaches SpiderFoot NG. Both it and the
+  # api join the shared external network; sf-api resolves by container name there.
+  worker:
+    networks: [default, osint-net]
+
+volumes:
+  spiderfoot-data:
+
+networks:
+  osint-net:
+    external: true
