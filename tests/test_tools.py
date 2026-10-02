@@ -892,9 +892,7 @@ def test_spiderfoot_accepts_nested_config_payload():
     """The API wraps settings under "config" on some versions."""
     from harvest import tools
 
-    nested = {
-        "config": {"_socks1type": "5", "_socks2addr": "10.0.0.9", "_socks3port": "1080"}
-    }
+    nested = {"config": {"_socks1type": "5", "_socks2addr": "10.0.0.9", "_socks3port": "1080"}}
     client = type("C", (), {"get": lambda self, url, **k: _FakeResponse(nested)})()
     tools._assert_spiderfoot_proxied(client, _proxy_sf_settings())
 

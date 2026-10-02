@@ -135,7 +135,6 @@ def _exec(
         raise PolicyDenied(f"{argv[0]} is not installed in this worker image") from exc
 
 
-
 def _assert_no_direct_egress(settings) -> None:
     """Refuse to run if direct egress works while proxy-only mode is on.
 
