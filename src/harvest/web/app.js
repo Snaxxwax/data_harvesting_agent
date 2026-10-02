@@ -84,6 +84,13 @@ function captureLinks(ids) {
   return span;
 }
 
+// The request budget is the fetcher's page allowance. Tools run outside it (see tools.py),
+// so a job can still spend proxy bandwidth after this is exhausted.
+function limitsFrom(inputId) {
+  const value = parseInt((document.getElementById(inputId) || {}).value, 10);
+  return Number.isFinite(value) && value > 0 ? { requests: value } : {};
+}
+
 function statusBadge(status) {
   return el("span", { class: `status status-${status}`, text: status });
 }
@@ -352,6 +359,7 @@ function initInvestigationForm() {
       fields: currentEditor.fields(),
       tools: currentEditor.tools(),
       use_model: useModel,
+      limits: limitsFrom("inv-requests"),
     };
     try {
       const job = await api("/jobs", { method: "POST", body: spec });
@@ -409,6 +417,7 @@ function initDatasetForm() {
       discovery_queries: currentPlan.discovery_queries,
       fields: currentEditor.fields(),
       tools: currentEditor.tools(),
+      limits: limitsFrom("ds-requests"),
     };
     try {
       const job = await api("/jobs", { method: "POST", body: spec });
@@ -455,6 +464,7 @@ function initContinuousForm() {
         seeds: plan.seeds,
         discovery_queries: plan.discovery_queries,
         fields: plan.fields,
+        limits: limitsFrom("cont-requests"),
       };
       const job = await api("/jobs", { method: "POST", body: spec });
       location.hash = `#/jobs/${job.id}`;
@@ -704,11 +714,23 @@ async function renderJobDetail(jobId) {
       active ? el("span", { class: "hint", text: " · auto-refreshing" }) : null,
     ])
   );
+  const requestLimit = job.spec && job.spec.limits ? job.spec.limits.requests : null;
   summary.appendChild(
     el("div", { class: "hint" }, [
-      `requests ${job.requests}, captures ${job.captures}, cost $${job.cost_reserved_usd.toFixed(4)}`,
+      `requests ${job.requests}${requestLimit ? `/${requestLimit}` : ""}, ` +
+        `captures ${job.captures}, cost $${job.cost_reserved_usd.toFixed(4)}`,
     ])
   );
+  // "budget_exhausted" is a stop reason, not a failure, and the distinction is invisible
+  // unless the exhausted budget is named: the crawl was truncated, not completed.
+  if (job.status === "budget_exhausted") {
+    summary.appendChild(
+      el("div", { class: "warning" }, [
+        `Stopped early: budget exhausted${job.reason ? ` (${job.reason})` : ""}. ` +
+          `Results are partial. Relaunch with a higher request budget to crawl further.`,
+      ])
+    );
+  }
   if (job.missing_fields && job.missing_fields.length) {
     summary.appendChild(
       el("div", { class: "warning", text: `Missing requested fields: ${job.missing_fields.join(", ")}` })
