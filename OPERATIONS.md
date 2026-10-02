@@ -54,6 +54,9 @@ and GitHub Actions major tags are not digest-pinned.
 | `HARVEST_TOOL_TIMEOUT` | Wall-clock seconds one tool run may take before the task fails; default 300 |
 | `HARVEST_MAIGRET_RETRIES` | Retry transient failures for individual Maigret sites, 0–3; default 0 |
 | `HARVEST_MAIGRET_CLOUDFLARE_BYPASS` | Pass Maigret `--cloudflare-bypass` when true; default false; requires a separately configured local bypass service |
+| `HARVEST_SPIDERFOOT_URL` | SpiderFoot NG REST base URL on a private network; empty disables the tool |
+| `HARVEST_SPIDERFOOT_API_KEY` | Bearer credential sent as `X-API-Key` on every SpiderFoot call |
+| `HARVEST_SPIDERFOOT_MODULES` | Modules one scan may run; default `sfp_dnsresolve` (passive) |
 | `HARVEST_MODEL_URL` | Trusted Chat Completions base URL ending in `/v1` where appropriate |
 | `HARVEST_MODEL_NAME` | Model identifier accepted by that endpoint |
 | `HARVEST_MODEL_KEY` | Optional bearer secret; never stored in a job or capture |
@@ -252,6 +255,15 @@ local Cloudflare bypass service configured in Maigret's own `settings.json`; the
 settings point at localhost ports 8191 and 8000, which are inside the worker container
 under Compose. The flag alone does not start those services or route their traffic
 through `HARVEST_EGRESS_PROXY`. Verify the bypass service's egress separately.
+
+The `spiderfoot` tool speaks HTTP rather than argv, so it does not go through the
+subprocess path. Harvest creates a scan, polls it to `FINISHED`, and stores the events as
+one capture. Those calls deliberately bypass the fetcher's budgets and robots handling:
+the SpiderFoot service is infrastructure on a private network, not a scan target. What the
+scan itself costs in outbound requests is bounded by SpiderFoot and by
+`HARVEST_SPIDERFOOT_MODULES`, which defaults to a single passive resolver because the full
+module set is active reconnaissance against the target. A scan that ends in any state other
+than `FINISHED` fails the task rather than storing a partial result set.
 
 A tool task is never retried, including after a worker lease expires. A timeout and a
 nonzero exit both fail the task permanently,
