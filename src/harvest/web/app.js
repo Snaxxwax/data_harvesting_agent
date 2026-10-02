@@ -3,6 +3,32 @@
 const ACTIVE_STATUSES = ["queued", "running"];
 const JOB_POLL_MS = 2000;
 
+// Populated from /meta on every route change; consulted by the Investigation tab to
+// avoid offering actions (seedless discovery, model reasoning) the deployment can't run.
+let capabilities = { search_configured: true, model_configured: true };
+
+// FastAPI's automatic validation errors return `detail` as an array of
+// {loc, msg, type} objects rather than a string. Left unhandled, `new Error(detail)`
+// stringifies the array to "[object Object]"; this renders it as readable text instead.
+function formatApiErrorDetail(detail) {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (item && typeof item === "object") {
+          const loc = Array.isArray(item.loc) ? item.loc.filter((p) => p !== "body" && p !== "query") : [];
+          const msg = item.msg || item.message || JSON.stringify(item);
+          return loc.length ? `${loc.join(".")}: ${msg}` : msg;
+        }
+        return String(item);
+      })
+      .filter(Boolean);
+    return messages.length ? messages.join("; ") : null;
+  }
+  if (detail && typeof detail === "object") return JSON.stringify(detail);
+  return detail || null;
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     method: options.method || "GET",
@@ -14,7 +40,8 @@ async function api(path, options = {}) {
   const isJson = (response.headers.get("content-type") || "").includes("application/json");
   const data = isJson ? await response.json() : await response.text();
   if (!response.ok) {
-    const detail = isJson && data && data.detail ? data.detail : response.statusText;
+    const rawDetail = isJson && data ? data.detail : null;
+    const detail = formatApiErrorDetail(rawDetail) || response.statusText;
     const error = new Error(detail || `request failed (${response.status})`);
     error.status = response.status;
     throw error;
@@ -87,6 +114,33 @@ function setNavActive(hash) {
 
 let toolsEnabled = [];
 
+// Pure decision: does the model deployment support "Use model reasoning"? Kept separate
+// from the DOM so the Investigation tab's checkbox/hint wiring is easy to test in isolation.
+function modelCapabilityState(caps) {
+  const configured = !!(caps && caps.model_configured);
+  return { disabled: !configured, hintVisible: !configured };
+}
+
+// Pure decision: can the Investigation tab submit right now? Engine.submit 422s with
+// "provide a seed URL or configure HARVEST_SEARCH_URL" whenever there are no seeds and
+// search isn't configured; mirroring that check client-side lets Create stay disabled
+// (with an actionable hint) instead of letting a predictable 422 reach the user.
+function canCreateInvestigationJob(seeds, caps) {
+  const hasSeeds = Array.isArray(seeds) && seeds.length > 0;
+  const searchConfigured = !!(caps && caps.search_configured);
+  return hasSeeds || searchConfigured;
+}
+
+function applyModelCapability() {
+  const checkbox = document.getElementById("inv-model");
+  const hint = document.getElementById("inv-model-hint");
+  if (!checkbox || !hint) return;
+  const state = modelCapabilityState(capabilities);
+  checkbox.disabled = state.disabled;
+  if (state.disabled) checkbox.checked = false;
+  hint.hidden = !state.hintVisible;
+}
+
 async function checkAuthAndConfig() {
   try {
     const meta = await api("/meta");
@@ -94,12 +148,17 @@ async function checkAuthAndConfig() {
     document.getElementById("topnav").hidden = false;
     document.getElementById("logout").hidden = false;
     const warning = document.getElementById("config-warning");
+    capabilities = {
+      search_configured: !!meta.search_configured,
+      model_configured: !!meta.model_configured,
+    };
     if (!meta.search_configured) {
       warning.textContent = "Search is not configured: only URL/domain seeds will work.";
       warning.hidden = false;
     } else {
       warning.hidden = true;
     }
+    applyModelCapability();
     return true;
   } catch (err) {
     if (err.status === 401) return false;
@@ -164,7 +223,7 @@ function parseList(text) {
   );
 }
 
-function renderPlanPreview(node, plan) {
+function renderPlanPreview(node, plan, onSeedsChange) {
   clear(node);
   node.hidden = false;
   node.appendChild(el("div", { text: `Detected type: ${plan.kind}` }));
@@ -197,6 +256,9 @@ function renderPlanPreview(node, plan) {
   const seedsLabel = el("label", { text: "Seed URLs (editable, one per line; no search required)" });
   const seedsInput = el("textarea", { class: "plan-edit-seeds", rows: "3" });
   seedsInput.value = plan.seeds.join("\n");
+  if (onSeedsChange) {
+    seedsInput.addEventListener("input", () => onSeedsChange(parseList(seedsInput.value)));
+  }
   const fieldsLabel = el("label", { text: "Fields (editable, comma-separated)" });
   const fieldsInput = el("textarea", { class: "plan-edit-fields", rows: "2" });
   fieldsInput.value = plan.fields.join(", ");
@@ -219,8 +281,24 @@ function initInvestigationForm() {
   const errorNode = document.getElementById("investigation-error");
   const previewNode = document.getElementById("inv-preview-result");
   const submitButton = document.getElementById("inv-submit");
+  const createHintNode = document.getElementById("inv-create-hint");
   let currentPlan = null;
   let currentEditor = null;
+
+  const SEEDLESS_HINT =
+    "Add a seed URL above — search is not configured on this deployment, so an objective alone cannot be used to discover pages.";
+
+  function updateCreateAvailability(seeds) {
+    if (canCreateInvestigationJob(seeds, capabilities)) {
+      submitButton.disabled = false;
+      createHintNode.hidden = true;
+      createHintNode.textContent = "";
+    } else {
+      submitButton.disabled = true;
+      createHintNode.textContent = SEEDLESS_HINT;
+      createHintNode.hidden = false;
+    }
+  }
 
   async function preview() {
     hideError(errorNode);
@@ -229,12 +307,13 @@ function initInvestigationForm() {
     if (!value) return;
     try {
       currentPlan = await api("/plan/investigation", { method: "POST", body: { value, kind } });
-      currentEditor = renderPlanPreview(previewNode, currentPlan);
-      submitButton.disabled = false;
+      currentEditor = renderPlanPreview(previewNode, currentPlan, updateCreateAvailability);
+      updateCreateAvailability(currentEditor.seeds());
     } catch (err) {
       currentPlan = null;
       currentEditor = null;
       submitButton.disabled = true;
+      createHintNode.hidden = true;
       showError(errorNode, err);
     }
   }
@@ -245,6 +324,7 @@ function initInvestigationForm() {
       submitButton.disabled = true;
       currentPlan = null;
       currentEditor = null;
+      createHintNode.hidden = true;
     });
   }
 
@@ -255,13 +335,19 @@ function initInvestigationForm() {
       await preview();
       if (!currentPlan) return;
     }
+    const seeds = currentEditor.seeds();
+    if (!canCreateInvestigationJob(seeds, capabilities)) {
+      updateCreateAvailability(seeds);
+      showError(errorNode, new Error(SEEDLESS_HINT));
+      return;
+    }
     const dataset = document.getElementById("inv-dataset").value.trim();
     const useModel = document.getElementById("inv-model").checked;
     const spec = {
       objective: `Investigate ${currentPlan.normalized}`.slice(0, 4000),
       dataset,
       mode: "targeted",
-      seeds: currentEditor.seeds(),
+      seeds,
       discovery_queries: currentPlan.discovery_queries,
       fields: currentEditor.fields(),
       tools: currentEditor.tools(),
@@ -751,4 +837,10 @@ function init() {
   route().catch((err) => console.error(err));
 }
 
-document.addEventListener("DOMContentLoaded", init);
+if (typeof document !== "undefined") {
+  document.addEventListener("DOMContentLoaded", init);
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { api, formatApiErrorDetail, canCreateInvestigationJob, modelCapabilityState };
+}
