@@ -163,3 +163,18 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 #job-warnings li.severity-failed { border-left-color: var(--danger); }
 #job-warnings li.severity-warn { border-left-color: var(--warn); }
 #job-warnings li.severity-stopped { border-left-color: var(--muted); }
+
+/* Narrow viewports: topbar wraps to two rows, wide tables scroll instead of clipping. */
+.topbar { flex-wrap: wrap; z-index: 10; }
+
+@media (max-width: 760px) {
+  main { padding: 1rem 0.75rem 3rem; }
+  .topbar { gap: 0.5rem 1rem; }
+  .brand { flex: 1 1 auto; }
+  .topbar-right { flex: 0 0 auto; }
+  .topnav { order: 3; flex: 1 1 100%; flex-wrap: wrap; gap: 0.9rem; }
+  form { max-width: none; }
+  .field-name { min-width: 0; }
+  main > section > table { display: block; overflow-x: auto; }
+  table { white-space: nowrap; }
+}

@@ -146,3 +146,133 @@ with s.transaction() as db:
         if child.poll() is None:
             child.kill()
             child.wait(timeout=5)
+
+
+def test_proxy_without_allowlist_permits_job_scope_and_still_blocks_internal(engine):
+    """An empty HARVEST_PROXY_PUBLIC_HOSTS means 'no operator allowlist', not 'deny all'.
+
+    Policy then falls back to the job's own scope plus name-shape rules, so leads found
+    mid-job are crawlable without enumerating hosts, while internal destinations stay denied.
+    """
+    import pytest
+
+    from harvest.models import PolicyDenied
+    from harvest.network import Fetcher
+
+    engine.settings.proxy = "http://127.0.0.1:9"
+    engine.settings.proxy_public_hosts = frozenset()
+    job = engine.submit(JobSpec(objective="Public metadata", seeds=["https://example.org"]))
+    task = engine.store.claim(job)
+    fetcher = Fetcher(engine.store, engine.settings, task)
+    try:
+        # A discovered lead on an unrelated public host is allowed without enumeration.
+        assert fetcher.guard("https://news.example.net/story") == "https://news.example.net/story"
+        for blocked in (
+            "http://169.254.169.254/latest/meta-data/",  # cloud metadata
+            "http://10.0.0.5/admin",
+            "http://127.0.0.1:8000/",
+            "http://[::1]/",
+            "http://db.internal/",
+            "http://wiki.corp/",
+            "http://printer.local/",
+            "http://localhost/",
+            "http://user/",  # single-label name
+        ):
+            with pytest.raises(PolicyDenied):
+                fetcher.guard(blocked)
+        # Non-HTTP schemes and embedded credentials never reach the proxy branch:
+        # canonical_url() rejects them first.
+        for rejected in ("file:///etc/passwd", "https://u:p@example.org/"):
+            with pytest.raises(ValueError):
+                fetcher.guard(rejected)
+    finally:
+        fetcher.close()
+
+
+def test_proxy_scope_still_honours_allowed_domains(engine):
+    """allowed_domains remains the job's own boundary even with no operator allowlist."""
+    import pytest
+
+    from harvest.models import PolicyDenied
+    from harvest.network import Fetcher
+
+    engine.settings.proxy = "http://127.0.0.1:9"
+    engine.settings.proxy_public_hosts = frozenset()
+    job = engine.submit(
+        JobSpec(
+            objective="Scoped",
+            seeds=["https://example.org"],
+            allowed_domains=["example.org"],
+        )
+    )
+    task = engine.store.claim(job)
+    fetcher = Fetcher(engine.store, engine.settings, task)
+    try:
+        assert fetcher.guard("https://sub.example.org/x")
+        with pytest.raises(PolicyDenied, match="outside allowed domains"):
+            fetcher.guard("https://elsewhere.net/x")
+    finally:
+        fetcher.close()
+
+
+def test_proxy_guard_runs_on_every_redirect_hop(engine):
+    """A redirect to a private address is denied, not followed.
+
+    raw_get() re-guards `current` at the top of each iteration, so the policy applies to
+    every hop rather than only to the URL the job named.
+    """
+    import httpx
+    import pytest
+
+    from harvest.models import PolicyDenied
+    from harvest.network import Fetcher
+
+    hops = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hops.append(str(request.url))
+        # content= must be an iterator: a Response built with no body is already
+        # stream-consumed, and raw_get() reads every response via iter_raw().
+        return httpx.Response(
+            302,
+            headers={"location": "http://169.254.169.254/latest/"},
+            content=iter([b""]),
+        )
+
+    engine.settings.proxy = "http://127.0.0.1:9"
+    engine.settings.proxy_public_hosts = frozenset()
+    job = engine.submit(JobSpec(objective="Redirect", seeds=["https://example.org"]))
+    task = engine.store.claim(job)
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    fetcher = Fetcher(engine.store, engine.settings, task, client=client)
+    try:
+        with pytest.raises(PolicyDenied, match="public"):
+            fetcher.raw_get("https://example.org/start")
+        # The redirect target was never fetched: only the first hop left the process.
+        assert hops == ["https://example.org/start"]
+    finally:
+        fetcher.close()
+
+
+def test_proxy_guard_cannot_see_through_dns_known_limitation(engine):
+    """Documents a real gap: name shape is checked, resolution is not.
+
+    In proxy mode the proxy resolves the name, so a public hostname pointing at a private
+    address passes the application guard. This test pins that behaviour deliberately -- if
+    it ever starts failing, resolution-time checking was added and the DEPLOYMENT.md
+    section "Proxy-mode SSRF boundary" should be updated to match.
+    """
+    from harvest.network import require_public_host
+
+    # nip.io and friends resolve <ip>.nip.io -> <ip>. Public name, private address.
+    for rebinding in ("10.0.0.5.nip.io", "127.0.0.1.nip.io", "169.254.169.254.nip.io"):
+        require_public_host(rebinding)  # no exception: the gap, asserted explicitly
+
+    # The literal forms of those same addresses are still rejected.
+    import pytest
+
+    from harvest.models import PolicyDenied
+
+    for literal in ("10.0.0.5", "127.0.0.1", "169.254.169.254"):
+        with pytest.raises(PolicyDenied):
+            require_public_host(literal)
