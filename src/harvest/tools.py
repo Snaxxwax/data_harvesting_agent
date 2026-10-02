@@ -174,11 +174,16 @@ def _maigret(
         # Maigret's settings. It does not affect routing of ordinary site checks.
         argv.append("--cloudflare-bypass")
     env = _tool_env(proxy)
+    # Always use the bundled site database. The pinned Maigret's auto-update makes a
+    # direct request to GitHub before the site checks, and it ignores --proxy, so in
+    # proxy mode it would leak the one request the proxy exists to cover. Without a
+    # proxy it is still an unbudgeted request outside the fetcher, and it would let
+    # the site list -- which is authorization-relevant, not just a volume question --
+    # change under a deployment without the image changing. Pinning the database to
+    # the image keeps a scan's breadth reproducible.
+    argv.append("--no-autoupdate")
     if proxy:
-        # The pinned Maigret's database auto-update ignores --proxy and makes a
-        # direct request before the site checks. Use the bundled database until
-        # upstream routes this path correctly.
-        argv.extend(["--proxy", proxy, "--no-autoupdate"])
+        argv.extend(["--proxy", proxy])
         # Maigret's activation helpers use separate ClientSession calls that do
         # not receive --proxy. An egress firewall is required for a strict
         # no-direct-traffic guarantee until upstream fixes those paths.

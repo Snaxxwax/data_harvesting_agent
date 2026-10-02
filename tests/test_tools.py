@@ -198,7 +198,9 @@ def test_no_configured_proxy_does_not_inherit_ambient_proxy(fake_maigret, monkey
     monkeypatch.setenv("HTTPS_PROXY", "http://ambient.example:8080")
     tools.run("maigret", "janedoe", enabled(proxy=None))
     assert "--proxy" not in fake_maigret[0]
-    assert "--no-autoupdate" not in fake_maigret[0]
+    # --no-autoupdate is unconditional: the site database is pinned to the image so a
+    # scan's breadth is reproducible and no unbudgeted GitHub request precedes it.
+    assert "--no-autoupdate" in fake_maigret[0]
     assert "HTTPS_PROXY" not in fake_maigret.envs[0]
 
 
