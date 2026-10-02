@@ -139,9 +139,7 @@ def _maigret(
     workdir: str,
     timeout: float,
     cancelled: threading.Event | None = None,
-    proxy: str | None = None,
-    retries: int = 0,
-    cloudflare_bypass: bool = False,
+    settings=None,
 ) -> list[dict]:
     """`--json simple` writes report_<username>_simple.json: an object keyed by sitename,
     holding only CLAIMED accounts. Flattened to a list so the JSON adapter yields one entity
@@ -166,6 +164,9 @@ def _maigret(
         "--timeout",
         str(max(1, int(min(timeout, 30)))),
     ]
+    proxy = getattr(settings, "proxy", None)
+    retries = getattr(settings, "maigret_retries", 0)
+    cloudflare_bypass = getattr(settings, "maigret_cloudflare_bypass", False)
     if not 0 <= retries <= 3:
         raise PolicyDenied("HARVEST_MAIGRET_RETRIES must be between 0 and 3")
     argv.extend(["--retries", str(retries)])
@@ -204,9 +205,97 @@ def _maigret(
     ]
 
 
+# SpiderFoot NG speaks HTTP rather than argv, so it does not go through _exec. The
+# service is infrastructure on a private network, not a scan target, so these calls
+# deliberately bypass the fetcher's budgets and robots handling -- the scan SpiderFoot
+# then runs is what costs outbound requests, and SpiderFoot bounds that itself.
+def _spiderfoot(
+    target: str,
+    workdir: str,
+    timeout: float,
+    cancelled: threading.Event | None = None,
+    settings=None,
+) -> list[dict]:
+    """Run one SpiderFoot scan to completion and return its events as records."""
+    import httpx
+
+    base = getattr(settings, "spiderfoot_url", "") or ""
+    key = getattr(settings, "spiderfoot_api_key", "") or ""
+    modules = list(getattr(settings, "spiderfoot_modules", ()) or ())
+    if not base:
+        raise PolicyDenied("HARVEST_SPIDERFOOT_URL is not configured")
+    if not key:
+        raise PolicyDenied("HARVEST_SPIDERFOOT_API_KEY is not configured")
+    if not modules:
+        raise PolicyDenied("HARVEST_SPIDERFOOT_MODULES is empty; no scan would run")
+
+    # The key authenticates every call; it must never reach a log or a persisted error.
+    headers = {"X-API-Key": key, "content-type": "application/json"}
+    deadline = time.time() + timeout
+    scan_id = None
+    with httpx.Client(base_url=base, headers=headers, timeout=30.0) as client:
+        try:
+            created = client.post(
+                "/api/v1/scans",
+                json={
+                    "name": f"harvest-{target}",
+                    "target": target,
+                    "modules": modules,
+                },
+            )
+            if created.status_code in (401, 403):
+                raise PolicyDenied("SpiderFoot rejected HARVEST_SPIDERFOOT_API_KEY")
+            created.raise_for_status()
+            scan_id = created.json().get("id")
+            if not scan_id:
+                raise ValueError("SpiderFoot did not return a scan id")
+
+            while True:
+                if cancelled is not None and cancelled.is_set():
+                    raise LostLease("spiderfoot scan cancelled or lease lost")
+                if time.time() > deadline:
+                    raise ValueError(f"spiderfoot exceeded {timeout:g}s")
+                status = client.get(f"/api/v1/scans/{scan_id}")
+                status.raise_for_status()
+                state = (status.json().get("status") or "").upper()
+                if state == "FINISHED":
+                    break
+                # Anything else terminal is a failed scan: a partial result set would
+                # present an incomplete scan as a finished one.
+                if state in {"ERROR-FAILED", "ABORTED", "ABORT-REQUESTED"}:
+                    raise ValueError(f"spiderfoot scan ended as {state}")
+                time.sleep(2)
+
+            records: list[dict] = []
+            page = 1
+            while True:
+                got = client.get(
+                    f"/api/v1/scans/{scan_id}/events",
+                    params={"page": page, "page_size": 500},
+                )
+                got.raise_for_status()
+                payload = got.json()
+                events = payload.get("events") or []
+                records.extend(events)
+                if not payload.get("has_next") or not events:
+                    break
+                page += 1
+            return records
+        except httpx.HTTPError as exc:
+            # Never surface the response body: it can echo the request headers.
+            raise ValueError(f"spiderfoot request failed: {type(exc).__name__}") from None
+        finally:
+            if scan_id and cancelled is not None and cancelled.is_set():
+                try:
+                    client.delete(f"/api/v1/scans/{scan_id}")
+                except httpx.HTTPError:
+                    log.warning("could not stop spiderfoot scan after cancellation")
+
+
 # kinds: the planning investigation types whose normalized value is a valid target.
 TOOLS: dict[str, dict] = {
     "maigret": {"kinds": ("username",), "run": _maigret},
+    "spiderfoot": {"kinds": ("domain", "organization"), "run": _spiderfoot},
 }
 
 
@@ -224,18 +313,9 @@ def run(name: str, target: str, settings, cancelled: threading.Event | None = No
         )
     started = time.time()
     with tempfile.TemporaryDirectory(prefix=f"harvest-{name}-") as workdir:
-        if name == "maigret":
-            records = tool["run"](
-                target,
-                workdir,
-                settings.tool_timeout,
-                cancelled,
-                settings.proxy,
-                settings.maigret_retries,
-                settings.maigret_cloudflare_bypass,
-            )
-        else:
-            records = tool["run"](target, workdir, settings.tool_timeout, cancelled, settings.proxy)
+        # Every tool takes the same arguments and reads what it needs off settings,
+        # so adding one does not mean another branch here.
+        records = tool["run"](target, workdir, settings.tool_timeout, cancelled, settings)
     body = json.dumps({"tool": name, "target": target, "results": records}).encode()
     url = f"tool://{name}/{target}"
     return Capture(
