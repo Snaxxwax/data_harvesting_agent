@@ -174,7 +174,7 @@ Each tool reaches the network differently, and two paths ignore `--proxy` outrig
 
 | Path | Proxy support | Behaviour in `proxy` mode |
 | --- | --- | --- |
-| Harvest fetcher (`httpx`) | Full; `trust_env=False`, so no ambient proxy is ever used | Proxied, restricted to `HARVEST_PROXY_PUBLIC_HOSTS` |
+| Harvest fetcher (`httpx`) | Full; `trust_env=False`, so no ambient proxy is ever used | Proxied, restricted to the job's `allowed_domains` + `require_public_host()`, and to `HARVEST_PROXY_PUBLIC_HOSTS` when that is non-empty |
 | maigret site checks | `--proxy` | Proxied (verified: 5,987 distinct destinations through the relay) |
 | maigret site-DB update | **none** — ignores `--proxy` | Disabled unconditionally (`--no-autoupdate`); DB pinned to the image |
 | maigret activation helpers | **none** — separate `ClientSession`s upstream | Unfixable in-process → mode requires *and verifies* network-level blocking |
@@ -182,7 +182,9 @@ Each tool reaches the network differently, and two paths ignore `--proxy` outrig
 | **SpiderFoot DNS modules** | **none — an HTTP proxy cannot carry DNS** | **Still direct. See the limitation below.** |
 | FlareSolverr / CF bypass | own container, not covered by `--proxy` | Refused outright |
 
-`HARVEST_PROXY_PUBLIC_HOSTS` governs the fetcher only, never maigret's site list.
+`HARVEST_PROXY_PUBLIC_HOSTS` governs the fetcher only, never maigret's site list. It is an
+*optional* operator restriction: exact hostnames, no wildcards, no subdomain matching.
+Empty (the default) means "no operator allowlist", not "deny everything".
 
 #### How proxy-only mode cannot silently fall back
 
@@ -233,10 +235,56 @@ Measured on this host, not assumed:
    would break DNS resolution and stop SpiderFoot working at all.
 3. **The probe covers the worker only.** It says nothing about the SpiderFoot or
    FlareSolverr containers, which have their own networks.
-4. **In proxy mode the fetcher denies any destination not in
-   `HARVEST_PROXY_PUBLIC_HOSTS`.** Crawling maigret's discovered leads therefore requires
-   naming those hosts explicitly; otherwise tool results are stored but leads are not
-   followed.
+4. **`HARVEST_PROXY_PUBLIC_HOSTS`, when set, is an exact-hostname allowlist.** It admits
+   no wildcards and does not match subdomains, so `example.gov` does not cover
+   `www.example.gov`. Setting it is incompatible with open-ended discovery: maigret's
+   leads land on hosts nobody can enumerate in advance. Leave it empty unless the
+   deployment genuinely crawls a fixed set of hosts.
+5. **The guard cannot see through DNS.** See "Proxy-mode SSRF boundary" below.
+
+#### Proxy-mode SSRF boundary
+
+`require_public_host()` checks the **shape** of a destination, never what it resolves to.
+It rejects non-global IP literals (`10.0.0.5`, `127.0.0.1`, `169.254.169.254`,
+IPv4-mapped v6), the suffixes `.localhost .local .internal .intranet .lan .corp
+.home.arpa`, and single-label names. `canonical_url()` has already rejected non-HTTP
+schemes and embedded credentials before the guard runs, and `raw_get()` re-guards every
+redirect hop, so a 302 into private space is denied rather than followed.
+
+**What it does not cover:** a *public* hostname that resolves to a *private* address —
+DNS rebinding, split-horizon DNS, or a wildcard service such as `10.0.0.5.nip.io`. This
+is structural, not an oversight. In proxy mode the proxy performs DNS; the worker has no
+resolver at all (its network is `internal: true`, so name lookups fail with `gaierror`),
+which is exactly why `resolved_addresses()` — the check that guards direct mode — cannot
+run. Verified: `require_public_host("10.0.0.5.nip.io")` returns cleanly.
+
+What contains it instead is the egress path, in three layers:
+
+1. The worker has no route off-host except the relay — its network has no gateway.
+2. The relay, with a blanket `Upstream`, never connects to the destination itself. It
+   opens a socket to the upstream proxy and forwards the request; the relay logs show
+   `Found upstream proxy ... for 10.0.0.5.nip.io` followed by a connection to the
+   upstream address only.
+3. The upstream proxy refuses private destinations. Webshare answers **403 Forbidden**
+   for all of `10.0.0.5.nip.io`, `172.18.0.1.nip.io`, `127.0.0.1.nip.io` and
+   `169.254.169.254.nip.io`.
+
+Layer 3 is a third party's policy, so treat it as a mitigation, not a guarantee.
+
+**Residual risk, precisely.** If the `Upstream` line is removed or mistyped, tinyproxy
+resolves and connects directly, and layers 2 and 3 are both gone. Measured from the relay
+in that position: the VPS host (`172.18.0.1:8000`, `:80`) and the Tailscale address
+(`100.118.181.47:8000`) are **unreachable** — the host firewall denies the Docker subnet —
+but a **sibling container on `harvest-platform_default` is reachable** (`172.18.0.2:8000`,
+the Harvest API). So a rebinding name aimed at a sibling container's address would resolve
+and connect in that misconfigured state. After any change to `tinyproxy.conf`, confirm the
+relay still egresses through the upstream:
+
+    docker exec harvest-platform-worker-1 python -c "import urllib.request as u; \
+      print(u.build_opener(u.ProxyHandler({'https':'http://egress-relay:8888'})) \
+      .open('https://ipv4.webshare.io/',timeout=30).read().decode())"
+
+That must print the upstream proxy's address, never the VPS public address.
 
 #### Enabling proxy-only egress
 
@@ -332,7 +380,18 @@ maigret's `settings.json`, then flip the flag.
 Rebuild Harvest after a repo update:
 
     git -C /opt/harvest/app fetch origin && git -C /opt/harvest/app checkout <commit>
-    cd /opt/harvest/app && HARVEST_TOOL_PACKAGES="maigret==0.6.6" docker compose up -d --build
+    cd /opt/harvest/app
+    set -a; . ./.env.build; set +a      # HARVEST_TOOL_PACKAGES, tracked in the repo
+    docker compose -f compose.yaml -f compose.override.yaml \
+                   -f compose.egress-proxy.yaml build api worker
+    docker compose -f compose.yaml -f compose.override.yaml \
+                   -f compose.egress-proxy.yaml up -d
+    # confirm, do not assume -- the build prints "Built" either way:
+    docker exec harvest-platform-worker-1 maigret --version
+
+`HARVEST_TOOL_PACKAGES` is a Dockerfile `ARG` defaulting to empty. Building without it
+produces an image with **no maigret**, and jobs then fail with "maigret is not installed
+in this worker image". `.env.build` is tracked so an ordinary rebuild preserves it.
 
 Rebuild SpiderFoot NG. **The base image is not optional.** All the Python source lives
 in `spiderfoot-base`; `Dockerfile.api` and `Dockerfile.scanner` only add configuration on

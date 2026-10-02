@@ -39,8 +39,12 @@ services:
       HARVEST_EGRESS_PROXY: http://egress-relay:8888
       # Must be unreachable without the proxy. If this connects, tools refuse to run.
       HARVEST_EGRESS_PROBE: ${HARVEST_EGRESS_PROBE:-1.1.1.1:443}
-      # The fetcher denies any proxied destination not listed here, so crawling
-      # leads in proxy mode requires naming the hosts explicitly.
+      # OPTIONAL extra restriction, empty by default. When set, the fetcher allows
+      # only these exact hostnames (no wildcards, no subdomain matching). When empty,
+      # the job's own allowed_domains plus require_public_host() are the policy, so
+      # leads discovered mid-job are crawlable without enumerating hosts in advance.
+      # Setting it to a non-empty list is what the old "deny everything unlisted"
+      # behaviour now requires.
       HARVEST_PROXY_PUBLIC_HOSTS: ${HARVEST_PROXY_PUBLIC_HOSTS:-}
 
   # The API serves requests and does not run tools, but it shares the job store
@@ -49,6 +53,7 @@ services:
     environment:
       HARVEST_EGRESS_MODE: proxy
       HARVEST_EGRESS_PROXY: http://egress-relay:8888
+      # Must match the worker's value: the api plans jobs and has to agree about policy.
       HARVEST_PROXY_PUBLIC_HOSTS: ${HARVEST_PROXY_PUBLIC_HOSTS:-}
 
 networks:
