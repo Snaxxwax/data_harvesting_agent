@@ -1,9 +1,9 @@
 # Harvest OSINT stack — ovh-vps
 
-Deployed commit: `4fc1c2b` (data_harvesting_agent main, "Merge pull request #9 from
-Snaxxwax/feat/proxy-only-egress"). Checkout `/opt/harvest/app`, overrides in
-`compose.override.yaml` and the opt-in `compose.egress-proxy.yaml` (both tracked in the
-repo under `deploy/ovh-vps/`).
+Deployed commit: `8865e48` (data_harvesting_agent main). The application change is PR #9
+(`feat/proxy-only-egress`); PR #10 is documentation and deployment config only. Checkout
+`/opt/harvest/app`, overrides in `compose.override.yaml` and the opt-in
+`compose.egress-proxy.yaml` — both tracked in the repo under `deploy/ovh-vps/`.
 
 SpiderFoot NG: `/opt/harvest/spiderfoot-ng`, poppopjmp/spiderfoot **v6.1.0**, based on
 upstream `4b53ca68ea63548c25c4148a3a18bda8d9417c74`, **now patched**: deployed commit
