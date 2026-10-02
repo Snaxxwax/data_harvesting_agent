@@ -14,10 +14,15 @@ services:
   api:
     ports:
       - "100.118.181.47:8001:8001"
-    # harvest-egress is the internal network Harvest's worker is confined to in
-    # proxy-only mode; without this the locked-down worker could not reach the
-    # SpiderFoot API at all. The network is internal, so joining it grants no egress.
-    networks: [default, osint-net, harvest-egress]
+    # NOT attached to harvest-egress here on purpose. Harvest's proxy-only mode
+    # confines its worker to that internal network and needs sf-api reachable on
+    # it, but declaring it `external` here would make SpiderFoot refuse to start
+    # whenever the network is absent -- trading a working core service for an
+    # optional feature. Attach it at proxy-enable time instead:
+    #   docker network connect harvest-egress sf-api
+    # The attachment survives restarts but not a container recreate, so redo it
+    # after rebuilding sf-api. See /opt/harvest/DEPLOYMENT.md.
+    networks: [default, osint-net]
     environment:
       # core.yml does not pass this through. Without it the API key manager
       # generates a RANDOM HMAC secret per process and cannot persist it (the
@@ -73,8 +78,4 @@ services:
 
 networks:
   osint-net:
-    external: true
-  # Created by the harvest-platform compose project (compose.egress-proxy.yaml).
-  # Declared external here so this stack attaches to it rather than making its own.
-  harvest-egress:
     external: true

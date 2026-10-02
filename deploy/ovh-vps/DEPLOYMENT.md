@@ -7,10 +7,10 @@ repo under `deploy/ovh-vps/`).
 
 SpiderFoot NG: `/opt/harvest/spiderfoot-ng`, poppopjmp/spiderfoot **v6.1.0**, based on
 upstream `4b53ca68ea63548c25c4148a3a18bda8d9417c74`, **now patched**: deployed commit
-`36de167e`, branch `fix/auth-db-reconnect`, pushed to
-`https://github.com/Snaxxwax/spiderfoot` (the `patched` remote in that checkout). Three
-commits: two fixing connection recovery (see "Postgres restart recovery" below) and one
-attaching `sf-api` to the `harvest-egress` network for proxy-only mode.
+`daee4b5f`, branch `fix/auth-db-reconnect`, pushed to
+`https://github.com/Snaxxwax/spiderfoot` (the `patched` remote in that checkout). Four
+commits: two fixing connection recovery (see "Postgres restart recovery" below) and two
+on the `harvest-egress` network wiring for proxy-only mode.
 
 Last verified: 2026-10-02.
 
@@ -236,10 +236,13 @@ Measured on this host, not assumed:
 
 Needs the upstream proxy credentials (Webshare US static ISP — HTTP with
 `user:password@host:port`, which `HARVEST_EGRESS_PROXY` and the relay both already
-support). Create the internal network once — outside both compose projects, so neither
-stack depends on the other's startup order:
+support).
 
-    docker network create --internal harvest-egress
+`compose.egress-proxy.yaml` creates the `harvest-egress` network itself, so it exists
+exactly when proxy mode is in use. **SpiderFoot deliberately does not declare that
+network**, so its absence can never stop sf-api from starting — verified by removing the
+network entirely and recreating sf-api, which came up healthy. The trade-off is that
+sf-api must be attached manually at enable time (step 3 below).
 
 Set the `Upstream` line in `/opt/harvest/egress-relay/tinyproxy.conf`:
 
@@ -251,6 +254,11 @@ Then bring the stack up with the opt-in file:
     set -a; . .env.build; set +a
     docker compose -f compose.yaml -f compose.override.yaml \
                    -f compose.egress-proxy.yaml up -d
+
+Attach sf-api to the internal network so the confined worker can still reach it. This
+survives restarts but **not** a container recreate, so redo it after rebuilding sf-api:
+
+    docker network connect harvest-egress sf-api
 
 And point SpiderFoot at the same relay (note the `options` wrapper — a bare body is
 rejected with `422 Field required: body → options`):
@@ -272,7 +280,12 @@ Then confirm, rather than assume:
 
 **Reverting:** bring the stack up without `-f compose.egress-proxy.yaml`, and reset
 SpiderFoot's `_socks*` to empty strings — otherwise its modules point at a relay that no
-longer exists.
+longer exists:
+
+    curl -X PATCH -H "X-API-Key: $SPIDERFOOT_NG_SERVICE_KEY" \
+      -H 'content-type: application/json' \
+      http://100.118.181.47:8001/api/v1/config \
+      -d '{"options":{"_socks1type":"","_socks2addr":"","_socks3port":""}}'
 
 #### Verification performed 2026-10-02
 
@@ -333,7 +346,7 @@ verify the change is actually in the image before deploying:
 
 The checkout at `/opt/harvest/spiderfoot-ng` has two remotes: `origin`
 (poppopjmp/spiderfoot, upstream) and `patched` (Snaxxwax/spiderfoot). The deployed branch
-`fix/auth-db-reconnect` (`36de167e`) is pushed to `patched`, so the patches are
+`fix/auth-db-reconnect` (`daee4b5f`) is pushed to `patched`, so the patches are
 reproducible from GitHub rather than existing only on this host:
 
     git -C /opt/harvest/spiderfoot-ng log --oneline 4b53ca68..fix/auth-db-reconnect
