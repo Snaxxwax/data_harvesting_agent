@@ -436,6 +436,16 @@ def _maigret(
 # status.ids had. Mapped to flat names on the record instead. Values are promoted only when
 # they are the expected scalar type, so a schema change degrades to "field absent", which is
 # today's behaviour, rather than to a wrong claim.
+#
+# THE THREE `names` FIELDS BELOW CAN NEVER POPULATE, and that is upstream's doing, not a
+# bug here. As of 2.3.4 `PersonName._scrape` is a bare `pass` whose comment reads "Google
+# patched the names :/ very sad" -- the displayName/givenName/familyName reads are commented
+# out -- so `fullname`, `firstName` and `lastName` keep their `""` initialisers for every
+# account. The exact-type-plus-nonempty check below correctly degrades them to "field
+# absent" rather than asserting an empty name, so a dossier that maps them will list them in
+# its per-target `missing_fields` on every single run. That is the accurate report, not a
+# regression to chase. They are kept here, not deleted, so that a GHunt release which
+# restores name scraping starts populating them with no change on this side.
 _GHUNT_PROFILE_FIELDS = (
     ("names", "fullname", "fullname", str),
     ("names", "firstName", "first_name", str),

@@ -414,6 +414,91 @@ before launching the binary, so while it is absent an enabled ghunt reports
 (task status `blocked`) rather than a failed scan. `verify-deployment.sh` reports the
 credential as present or absent and never reads it.
 
+### Two upstream crashes, patched at build time
+
+`ghunt email --json` — the exact invocation in `tools._ghunt` — **crashed every time on a
+stock 2.3.4**, so ghunt could never complete a lookup before 2026-10-03. Two independent
+bugs, both fixed on upstream `master` but not in any release; 2.3.4 is the newest on PyPI,
+so there is no version to bump to. The `Dockerfile` patches both after `uv tool install`.
+
+| # | File | Error | Scope |
+|---|---|---|---|
+| 1 | `ghunt/parsers/people.py` | `KeyError: 'container'` | any account with a cover photo |
+| 2 | `ghunt/modules/email.py` | `NameError: name 'photos' is not defined` | **every** lookup |
+
+**(1)** Google stopped returning `metadata.container` for `coverPhoto` entries. `photo` and
+`readOnlyProfileInfo` still carry it, which is why only cover photos trip it — confirmed
+against a live response, where `coverPhoto[0].metadata` holds `primary`, `visibility`,
+`encodedContainerId` and `containerType`, but no `container`. The parser indexed it
+unguarded and raised **before GHunt wrote any JSON**, so Harvest saw `ghunt exited 1` with
+no report.
+
+Upstream master fixes this with `.get("container", "unknown")`. **This deployment
+deliberately does not copy that.** `tools._GHUNT_PROFILE_FIELDS` addresses the `PROFILE`
+container, so keying cover photos under the literal `"unknown"` would turn a loud crash
+into a silent mismapping — `cover_image_url` would stop erroring and simply never populate,
+which is the worse outcome because nothing reports it. The same metadata object still
+carries `containerType`, whose value *is* the real container name (`PROFILE`), so the patch
+prefers `container`, then `containerType`, then `"unknown"`. That fixes the crash and keeps
+the field addressable by the mapping that already exists. Verified in the resulting record:
+`profile.coverPhotos.PROFILE.url` is present and `cover_image` reaches the dossier.
+
+**(2)** The `--json` block references `photos` and `reviews`, but `gmaps.get_reviews`
+returns only `(err, stats)` and neither name is ever assigned in `hunt()` — the four-value
+returns that once supplied them are commented out a hundred lines up. This fires for every
+`PROFILE` container regardless of the account, which is why `--json` never worked at all.
+Upstream's fix (literal `None` for both) is copied verbatim; Harvest reads only the
+`profile` container, so a null `maps.photos` is inert for every mapping.
+
+Each patch sits behind a `grep` guard, so a ghunt release that rewrites either line **fails
+the build** rather than shipping a binary that dies at run time on the first real target.
+Because the patches live in a tracked `Dockerfile`, a redeploy that checks out an older
+commit reverts them *and* their guards together — so `verify-deployment.sh` additionally
+asserts that the patches are present in the **running image**, which is the only check that
+survives that mistake.
+
+### Name fields are permanently unavailable
+
+**`fullname`, `first_name` and `last_name` can never populate, and that is upstream's
+doing.** In 2.3.4 `PersonName._scrape` is a bare `pass`, with the comment *"Google patched
+the names :/ very sad"*; the `displayName` / `givenName` / `familyName` reads are commented
+out, so all three attributes keep their `""` initialisers for every account. GHunt's JSON
+therefore contains `"names": {}`.
+
+Three of the seven entries in `_GHUNT_PROFILE_FIELDS` are consequently dead. Harvest's
+exact-type-plus-nonempty check degrades them to **field absent** rather than asserting an
+empty name, which is the correct behaviour, so:
+
+* a dossier mapping them lists `full_name` / `first_name` / `last_name` in its per-target
+  `missing_fields` on **every** run — that is an accurate report, not a regression;
+* they are kept in the mapping rather than deleted, so a GHunt release that restores name
+  scraping begins populating them with no change on this side.
+
+Do not treat a GHunt lookup as broken because it returned no name. Judge it on `gaia_id`,
+`email`, `account_type`, `profile_image` and `cover_image`.
+
+### Declaring `fields` on a job that uses `field_map`
+
+`JobSpec.fields` names the fields **as the source produces them**, not as the dossier
+renames them. For a tool source that is the record-side name the adapter emits — for ghunt:
+`id`, `user_types`, `image_url`, `cover_image_url`, `profile_photo_is_default`, `email` —
+and `field_map` then translates each one into its dossier name (`gaia_id`, `account_type`,
+`profile_image`, `cover_image`, `default_photo`).
+
+That is load-bearing, not cosmetic: reread gating in `Store.enqueue`, reasoning gating in
+the engine, and the field list handed to the model all ask "has extraction produced this
+field yet", so they must see the name extraction actually stores.
+
+Declaring the dossier-side names instead used to make `GET /jobs/{id}` report every one of
+them in `missing_fields` *while the dossier held values for all of them*. `Store.job` now
+credits a declared field when an observation exists under either the record-side name or a
+`field_map` entry that renames it, so the reported value matches what the dossier shows.
+The widening is report-only — the gating consumers above still use the narrow comparison,
+because a reread is justified precisely by a field the extractor has not produced yet.
+
+It stays job-wide: it reports that the job produced a field somewhere, not that a given
+target bound it. Per-target truth is the dossier's own `missing_fields`.
+
 ### Interactive login (one time)
 
     cd /opt/harvest/app

@@ -783,12 +783,43 @@ class Store:
                 ).fetchall()
             )
             result["cost_reserved_usd"] = result["cost_microusd"] / 1_000_000
-            fields = self._fields(db, job_id)
+            fields = self._satisfied_fields(result["spec"], self._fields(db, job_id))
             result["missing_fields"] = [f for f in result["spec"]["fields"] if f not in fields]
             result["coverage"] = (
                 "unmeasured; completion describes work execution, not population completeness"
             )
             return result
+
+    @staticmethod
+    def _satisfied_fields(spec, observed):
+        """`observed`, plus the dossier names a source rule's field_map renames those into.
+
+        A field_map entry means "the record calls this `id`, the dossier calls it `gaia_id`".
+        So a job that declares the dossier-side name in `fields` has that field genuinely
+        populated by an observation stored under the SOURCE-side name. Comparing `fields`
+        against observation names alone therefore reported every mapped field as missing
+        while the dossier held a value for it -- which is precisely what this value is read
+        for, in `GET /jobs/{id}` and the job detail page.
+
+        Report-only, and deliberately not applied to the other `fields` consumers. Reread
+        gating in `enqueue()`, reasoning gating in the engine, and the model's own field list
+        must keep asking the narrower question "did extraction name this field", because a
+        reread is justified by a field the extractor still has not produced; crediting a
+        rename there would cancel a pass that is in fact still needed.
+
+        Job-wide, like `_fields`: it reports that the job produced the field somewhere, not
+        that any particular target bound it. Per-target truth is the dossier's own
+        `missing_fields`, which reconciles against `field_map` values directly.
+        """
+        # Tested against `observed`, never against the set being built: a field_map is one
+        # hop from record name to dossier name, so chaining a->b with b->c must NOT credit
+        # c, and membership must not depend on rule or key iteration order.
+        satisfied = set(observed)
+        for rule in (spec.get("investigation") or {}).get("sources") or []:
+            for source_field, dossier_field in (rule.get("field_map") or {}).items():
+                if source_field in observed:
+                    satisfied.add(dossier_field)
+        return satisfied
 
     @staticmethod
     def _fields(db, job_id):

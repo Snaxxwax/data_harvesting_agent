@@ -174,6 +174,21 @@ if [[ " ${ALLOWED} " == *ghunt* ]]; then
     else
         bad "its directory is not writable -- a session refresh would fail"
     fi
+
+    # ghunt 2.3.4 cannot complete `ghunt email --json` unpatched: parsers/people.py raises
+    # KeyError 'container' on any account with a cover photo, and modules/email.py raises
+    # NameError on `photos` for every PROFILE container. Both fixes are applied in the
+    # Dockerfile -- a TRACKED file -- so a redeploy that checks out a commit predating them
+    # reverts both silently, and the Dockerfile's own grep guards cannot catch that because
+    # removing the patch removes the guard with it. This asserts the DEPLOYED IMAGE instead
+    # of the build that produced it, which is the only check that survives that mistake.
+    P=/opt/uv-tools/ghunt/lib/python3.12/site-packages/ghunt/parsers/people.py
+    E=/opt/uv-tools/ghunt/lib/python3.12/site-packages/ghunt/modules/email.py
+    if dc exec -T worker sh -c "grep -q containerType $P && ! grep -q '\"photos\": photos,' $E" 2>/dev/null; then
+        ok "ghunt crash patches are in the running image (people.py + email.py)"
+    else
+        bad "ghunt in the running image is UNPATCHED -- \`ghunt email --json\` will fail on the first target; re-apply the Dockerfile patch and rebuild"
+    fi
 else
     note "ghunt is not allowlisted; skipping"
 fi
