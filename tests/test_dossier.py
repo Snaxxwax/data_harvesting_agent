@@ -175,6 +175,37 @@ class TestReconcilePure:
         r = reconcile(_inv(targets=t, sources=s), obs)
         assert "email" in r["targets"][0]["missing_fields"]
 
+    def test_job_missing_fields_credit_field_map_renames(self):
+        """A job-level `missing_fields` must not report a mapped field the dossier holds.
+
+        The observation is stored under the record-side name (`id`), while the job declares
+        the dossier-side name it wants to read (`gaia_id`). Comparing declarations against
+        observation names alone called `gaia_id` missing on a job whose dossier had it.
+        """
+        from harvest.store import Store
+
+        spec = {
+            "fields": ["gaia_id", "account_type", "absent_field"],
+            "investigation": {
+                "sources": [{"field_map": {"id": "gaia_id", "user_types": "account_type"}}]
+            },
+        }
+        satisfied = Store._satisfied_fields(spec, {"id", "user_types"})
+        assert {"gaia_id", "account_type"} <= satisfied
+        assert [f for f in spec["fields"] if f not in satisfied] == ["absent_field"]
+
+    def test_satisfied_fields_does_not_chain_renames_or_invent_fields(self):
+        """One hop only, and an unobserved source field credits nothing."""
+        from harvest.store import Store
+
+        spec = {"investigation": {"sources": [{"field_map": {"a": "b", "b": "c"}}]}}
+        # `a` observed credits `b`; it must NOT then credit `c` through the b->c entry.
+        assert Store._satisfied_fields(spec, {"a"}) == {"a", "b"}
+        # Nothing observed credits nothing, whatever the map says.
+        assert Store._satisfied_fields(spec, set()) == set()
+        # A spec with no investigation at all is unchanged.
+        assert Store._satisfied_fields({}, {"x"}) == {"x"}
+
     def test_multi_source_reconcile(self):
         from harvest.dossier import reconcile
 
