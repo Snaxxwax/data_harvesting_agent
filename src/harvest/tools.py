@@ -617,6 +617,28 @@ _SF_CANDIDATE_MODULES = frozenset({"sfp_names"})
 _SF_NOISE_TYPES = frozenset({"ROOT"})
 
 
+# SpiderFoot does not put a bare URL in `data`. Its highest-value identity events wrap one
+# in an <SFURL> tag on a second line, with a human label on the first:
+#
+#   ACCOUNT_EXTERNAL_OWNED  "Pinterest (Category: social)\n<SFURL>https://pinterest.com/x/</SFURL>"
+#
+# Treating that whole string as the value cost two things at once: `http_url()` rejected it,
+# so the account produced NO follow-up lead, and with no `url` the record fell back to a
+# content fingerprint for its entity key -- minting a new entity whenever the label changed.
+_SFURL_RE = re.compile(r"<SFURL>\s*(.*?)\s*</SFURL>", re.DOTALL | re.IGNORECASE)
+
+
+def _spiderfoot_split_data(data: str) -> tuple[str, str | None]:
+    """Split one event's `data` into its label and its URL, if it carries one."""
+    match = _SFURL_RE.search(data)
+    if not match:
+        return data, http_url(data)
+    link = http_url(match.group(1))
+    label = _SFURL_RE.sub("", data).strip()
+    # A bare <SFURL> with no label is the URL itself; never return an empty value.
+    return (label or link or data), link
+
+
 def _spiderfoot_identity_basis(event_type: str, module: str) -> str:
     """ "confirmed" for an observation about the target, "candidate" for anything inferred."""
     if module in _SF_CANDIDATE_MODULES:
@@ -656,6 +678,13 @@ def _spiderfoot_records(events: list, target: str) -> list[dict]:
     evidence that another module saw it too -- the same shape as `_merge_maigret_hosts`.
     """
     normalized = (target or "").strip().lower()
+    # hash -> type, so an event can name what it was derived from. Built first because
+    # SpiderFoot does not order events parent-before-child.
+    lineage = {
+        e.get("hash"): str(e.get("type") or "")
+        for e in events
+        if isinstance(e, dict) and e.get("hash")
+    }
     groups: dict[tuple, dict] = {}
     for event in events:
         if not isinstance(event, dict):
@@ -671,6 +700,7 @@ def _spiderfoot_records(events: list, target: str) -> list[dict]:
             continue  # the scan's own target, echoed back as an event
         module = str(event.get("module") or "").strip()
         basis = _spiderfoot_identity_basis(event_type, module)
+        data, link = _spiderfoot_split_data(data)
         record = {
             "event_type": event_type,
             "data": data,
@@ -686,10 +716,20 @@ def _spiderfoot_records(events: list, target: str) -> list[dict]:
         }
         # A URL-valued event is the one lead worth following. `url` is also what record_key
         # prefers, so these keep a stable entity across reruns instead of a content hash.
-        link = http_url(data)
         if link:
             record["url"] = link
-        key = (event_type, data)
+        # Provenance: which finding this one came OFF. SpiderFoot chains events by hash, and
+        # for an email target the chain is the whole story -- sfp_accounts derives a USERNAME
+        # from the local part and the accounts hang off THAT, so an account reported for an
+        # address was reached by handle, not by anything tying the address to the profile.
+        # Surfaced as a field rather than folded into identity_basis, because it is a
+        # different question: basis says how strong the finding is, this says what it rests on.
+        parent = lineage.get(event.get("source_event_hash"))
+        if parent and parent not in _SF_NOISE_TYPES and parent != event_type:
+            record["derived_via"] = parent
+        # Keyed on the URL when there is one: the same profile reported with two different
+        # labels is one account, and two accounts could share a label.
+        key = (event_type, link or data)
         existing = groups.get(key)
         if existing is None:
             groups[key] = record
