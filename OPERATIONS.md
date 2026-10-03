@@ -300,8 +300,9 @@ maigret pattern -- one capture holding the tool's own JSON, read later by the JS
 with two differences that are specific to it:
 
 - **Credentials are mandatory and interactive to obtain.** GHunt derives its credential path
-  from `Path.home()` with no override, so harvest checks for
-  `$HOME/.malfrats/ghunt/creds.m` *before* launching it. Without that check a missing
+  from `Path.home()` with no override (verified in 2.3.4: `objects/base.GHuntCreds`), and
+  creates the directory if absent, so harvest checks for `$HOME/.malfrats/ghunt/creds.m`
+  *before* launching it. Without that check a missing
   credential reads as a failed scan rather than an unconfigured deployment. Obtain it once
   with `ghunt login` against a Google account you own, then mount the resulting `creds.m`
   into the worker. It is a session credential: treat it like a password, keep it out of the
