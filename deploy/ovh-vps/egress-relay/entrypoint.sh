@@ -32,8 +32,15 @@ KEY=HARVEST_EGRESS_UPSTREAM
 
 die() { echo "egress-relay: $1" >&2; exit 1; }
 
-[ -r "$TEMPLATE" ] || die "config template is missing or unreadable at $TEMPLATE"
-[ -r "$SECRET" ] || die "upstream credential file is missing or unreadable at $SECRET -- refusing to start, because without it this relay would egress directly from this host"
+[ -f "$TEMPLATE" ] && [ -r "$TEMPLATE" ] || die "config template is missing or unreadable at $TEMPLATE"
+
+# `-d` before `-f`, because this is the case that actually happens: when the host path for a
+# bind mount does not exist, Docker CREATES A DIRECTORY there, and the container then sees a
+# perfectly readable directory rather than a missing file. Without this branch the failure
+# still fails closed, but it reports "absent or empty", which sends whoever is debugging a
+# downed relay looking inside the file instead of at the host path that was never created.
+[ -d "$SECRET" ] && die "$SECRET is a DIRECTORY, not a file -- Docker creates one when the host bind-mount source is missing; create /opt/harvest/egress-relay/upstream.secret (0600) on the host and recreate this container"
+[ -f "$SECRET" ] && [ -r "$SECRET" ] || die "upstream credential file is missing or unreadable at $SECRET -- refusing to start, because without it this relay would egress directly from this host"
 
 # Read with the `read` builtin only. `$KEY=` prefix match rather than sourcing the file, so a
 # stray line in the secret cannot execute as shell. The `|| [ -n "$line" ]` tail makes a file
