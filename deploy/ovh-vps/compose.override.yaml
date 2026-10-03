@@ -4,8 +4,23 @@
 # than 0.0.0.0. Docker publishes ports by writing its own iptables rules in
 # DOCKER-USER, which bypass ufw entirely, so an interface-bound publish -- not a
 # ufw rule -- is what actually keeps these services off the public internet.
+#
+# This file must ALWAYS be loaded. `COMPOSE_FILE` in .env names it (with the other
+# overlays) so a bare `docker compose up -d` cannot omit it; omitting it publishes the
+# API on 0.0.0.0 and drops the deployment to direct egress, both silently.
+#
+# x-tools is the single source of truth for which external CLIs go into the image. It
+# lived in .env.build, which a bare `docker compose build` does not read -- so a routine
+# rebuild produced an image with no maigret while still printing "Built", and jobs then
+# failed at run time with "not installed in this worker image". Here it cannot be skipped
+# without also skipping proxy mode and the port binding, which the verify script catches.
+x-tools: &tool-packages maigret==0.6.6 ghunt==2.3.4
+
 services:
   api:
+    build:
+      args:
+        HARVEST_TOOL_PACKAGES: *tool-packages
     ports: !override
       - "100.118.181.47:8000:8000"
     networks: [default, osint-net]
@@ -45,7 +60,11 @@ services:
 
   # The worker runs tool tasks, so it is what reaches SpiderFoot NG. Both it and the
   # api join the shared external network; sf-api resolves by container name there.
+  # Both services are built from the same image, so both carry the same tool packages.
   worker:
+    build:
+      args:
+        HARVEST_TOOL_PACKAGES: *tool-packages
     networks: [default, osint-net]
 
 volumes:

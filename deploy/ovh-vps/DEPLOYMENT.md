@@ -345,9 +345,7 @@ Set the `Upstream` line in `/opt/harvest/egress-relay/tinyproxy.conf`:
 Then bring the stack up with the opt-in file:
 
     cd /opt/harvest/app
-    set -a; . .env.build; set +a
-    docker compose -f compose.yaml -f compose.override.yaml \
-                   -f compose.egress-proxy.yaml up -d
+    docker compose up -d        # COMPOSE_FILE in .env applies every overlay
 
 Attach sf-api to the internal network so the confined worker can still reach it. This
 survives restarts but **not** a container recreate, so redo it after rebuilding sf-api:
@@ -398,24 +396,47 @@ for Webshare (same shape: HTTP proxy, `user:pass@host:port`):
 
 Only the relay's `Upstream` line changes for the real Webshare endpoint.
 
-## ghunt — built and configurable, NOT yet enabled
+## ghunt
 
-`HARVEST_TOOLS` on this host is `maigret,spiderfoot`. ghunt is **not** in it, so the tool is
-refused at submit and nothing about this deployment changes until all three of the following
-are true:
+`HARVEST_TOOLS` on this host is `maigret,spiderfoot,ghunt`, the pin
+`ghunt==2.3.4` is in `compose.override.yaml`'s `x-tools` anchor, and
+`compose.ghunt.yaml` gives the worker a persistent writable `HOME`. All three are in place,
+so the only remaining requirement is the credential:
 
-1. `ghunt` is in the worker image — add it to `.env.build`:
-   `HARVEST_TOOL_PACKAGES=maigret==0.6.6 ghunt==2.3.4`, then rebuild with the full
-   compose invocation from "Operating".
-2. `ghunt` is added to `HARVEST_TOOLS` in `/opt/harvest/.env`.
-3. A credential exists at `$HOME/.malfrats/ghunt/creds.m` inside the worker.
+`$HOME/.malfrats/ghunt/creds.m` inside the worker, where `$HOME` is `/home/harvest` on the
+`harvest-ghunt-home` volume.
 
-Step 3 is the one that cannot be automated. GHunt authenticates as a real Google account and
-`ghunt login` is interactive, so it needs a Google account the operator owns and is willing
-to have attributed to this deployment's traffic. Harvest checks for the file before launching
-the binary, so until then an enabled-but-unconfigured ghunt reports
-`ghunt has no credentials at /home/harvest/.malfrats/ghunt/creds.m` as a policy denial rather
-than a failed scan.
+That step cannot be automated. GHunt authenticates as a real Google account and
+`ghunt login` is interactive, so it needs a dedicated Google account the operator owns and
+is willing to have attributed to this deployment's traffic. Harvest checks for the file
+before launching the binary, so while it is absent an enabled ghunt reports
+`ghunt has no credentials at /home/harvest/.malfrats/ghunt/creds.m` as a **policy denial**
+(task status `blocked`) rather than a failed scan. `verify-deployment.sh` reports the
+credential as present or absent and never reads it.
+
+### Interactive login (one time)
+
+    cd /opt/harvest/app
+    docker compose exec worker ghunt login
+
+Choose the method GHunt offers and complete it with the dedicated account. The prompt echoes
+nothing useful to a log, but **the resulting `creds.m` is a session credential**: it holds
+that account's cookies, OSIDs and a long-lived Android master token, which together are
+equivalent to a logged-in browser. It is not scoped and cannot be revoked except by changing
+the account's password or signing out all its sessions. Never copy it out of the volume,
+never bake it into an image, never commit it.
+
+Then confirm it survives a restart, which is the whole point of the volume:
+
+    docker compose restart worker
+    docker compose exec worker test -f /home/harvest/.malfrats/ghunt/creds.m && echo present
+
+### Exposure
+
+Every `ghunt email` query is made **as that account**. Google sees the lookups and
+associates them with it, so the account is attributable to this deployment's investigative
+traffic and is plausibly subject to rate limiting or suspension for it. Use a dedicated
+account, not a personal one.
 
 Persistence is handled by the opt-in `compose.ghunt.yaml` (tracked under `deploy/ovh-vps/`),
 which moves the worker's `HOME` to `/home/harvest` on a named volume. The base compose sets
@@ -465,21 +486,36 @@ maigret's `settings.json`, then flip the flag.
     cd /opt/harvest/app          && docker compose ps
     cd /opt/harvest/spiderfoot-ng && docker compose -f compose.core.yml ps
 
-Rebuild Harvest after a repo update:
+Rebuild Harvest after a repo update. **Pass no `-f` flags.**
 
     git -C /opt/harvest/app fetch origin && git -C /opt/harvest/app checkout <commit>
     cd /opt/harvest/app
-    set -a; . ./.env.build; set +a      # HARVEST_TOOL_PACKAGES, tracked in the repo
-    docker compose -f compose.yaml -f compose.override.yaml \
-                   -f compose.egress-proxy.yaml build api worker
-    docker compose -f compose.yaml -f compose.override.yaml \
-                   -f compose.egress-proxy.yaml up -d
-    # confirm, do not assume -- the build prints "Built" either way:
-    docker exec harvest-platform-worker-1 maigret --version
+    cp -f deploy/ovh-vps/compose.*.yaml .      # overlays are tracked under deploy/
+    docker compose build api worker
+    docker compose up -d
+    ./verify-deployment.sh                     # confirm, do not assume
 
-`HARVEST_TOOL_PACKAGES` is a Dockerfile `ARG` defaulting to empty. Building without it
-produces an image with **no maigret**, and jobs then fail with "maigret is not installed
-in this worker image". `.env.build` is tracked so an ordinary rebuild preserves it.
+`COMPOSE_FILE` in `.env` names all four compose files, so a bare `docker compose` applies
+them all — including `compose.egress-proxy.yaml` (proxy mode) and `compose.override.yaml`
+(the Tailscale-only port binding). **An explicit `-f` replaces that list entirely**, which
+is how the previous version of this section caused an outage of posture rather than of
+service: the command below it named three files, the prose above it claimed the deployment
+was in direct mode, and anyone who typed a shorter command silently moved it there for real.
+
+The external tool pin now lives in `compose.override.yaml` as the `x-tools` anchor, applied
+to both `api` and `worker` build args. It used to live in `.env.build`, which a bare
+`docker compose build` does not read — so a routine rebuild produced an image with **no
+maigret** while still printing "Built", and jobs then failed at run time with "not installed
+in this worker image". `.env.build` has been deleted; there is one source of truth, in a
+file that cannot be skipped without also dropping proxy mode, and `verify-deployment.sh`
+cross-checks `HARVEST_TOOLS` against the binaries actually in the image.
+
+`verify-deployment.sh` asserts the deployed state rather than the intended one: the compose
+files in effect, that the live overlay copies still match the tracked ones, that every
+published port is bound to the Tailscale address, that the worker is in proxy mode and
+cannot reach `1.1.1.1:443` directly, that every allowlisted tool exists in the image, and
+that GHunt's credential is present on persistent storage. It prints no secrets. Run it after
+every deploy; it exits non-zero if anything disagrees.
 
 Rebuild SpiderFoot NG. **The base image is not optional.** All the Python source lives
 in `spiderfoot-base`; `Dockerfile.api` and `Dockerfile.scanner` only add configuration on

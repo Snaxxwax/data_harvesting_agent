@@ -239,13 +239,23 @@ pinned version to maigret's range.
 Build the image with the tools you intend to enable, then enable them at runtime:
 
 ```bash
-HARVEST_TOOL_PACKAGES="maigret==0.6.6" docker compose build
-HARVEST_TOOLS=maigret docker compose up -d
+HARVEST_TOOL_PACKAGES="maigret==0.6.6 ghunt==2.3.4" docker compose build
+HARVEST_TOOLS=maigret,ghunt docker compose up -d
 ```
 
 Both variables are required. Building without `HARVEST_TOOL_PACKAGES` keeps the default
 image lean; enabling `HARVEST_TOOLS` for a tool absent from the image fails that task with
 a clear "not installed in this worker image" error rather than silently skipping it.
+
+That error is clear but it arrives at *run* time, after a build that reported success —
+`HARVEST_TOOL_PACKAGES` is a Dockerfile `ARG` defaulting to empty, so a plain
+`docker compose build` silently produces an image with no tools at all. Passing it on the
+command line, as above, means remembering it every time. A deployment that depends on these
+tools should put the pin in a compose file it always loads instead, and name that file in
+`COMPOSE_FILE` so a bare `docker compose` cannot skip it; see
+`deploy/ovh-vps/compose.override.yaml` (the `x-tools` anchor) and
+`deploy/ovh-vps/verify-deployment.sh`, which cross-checks `HARVEST_TOOLS` against the
+binaries actually present in the running image.
 
 Tool runs are exempt from request, byte and per-origin pacing budgets, because the binary
 makes its own requests outside the fetcher. `limits.tool_runs` bounds actual invocations and
