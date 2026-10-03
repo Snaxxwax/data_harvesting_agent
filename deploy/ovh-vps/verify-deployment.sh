@@ -25,16 +25,45 @@ section() { printf '\n== %s\n' "$1"; }
 # so it is the one that has to be correct. It picks up COMPOSE_FILE from .env.
 dc() { docker compose "$@"; }
 
-section "Compose files in effect (bare \`docker compose\`, no -f)"
-# `config --format json` resolves everything compose would actually apply.
+section "Overlays applied by a bare \`docker compose\` (checked by effect)"
+# COMPOSE_FILE lives in .env, which compose reads but this shell does not, so testing
+# $COMPOSE_FILE here would report a false failure on a correctly configured host. What
+# matters is not the variable but whether each overlay's distinctive effect survives into
+# the config compose would actually apply, so assert that instead.
 CONFIG=$(dc config --format json 2>/dev/null) || { bad "docker compose config failed"; exit 1; }
-for f in compose.yaml compose.override.yaml compose.egress-proxy.yaml compose.ghunt.yaml; do
-    if [[ ":${COMPOSE_FILE:-}:" == *":$f:"* ]]; then
-        ok "$f is named in COMPOSE_FILE"
-    else
-        bad "$f is NOT in COMPOSE_FILE -- a bare compose command would skip it"
-    fi
-done
+marker() { printf '%s' "$CONFIG" | python3 -c '
+import json, sys
+node, want = json.load(sys.stdin), sys.argv[2]
+for key in sys.argv[1].split("."):
+    if not isinstance(node, dict) or key not in node:
+        print("MISSING")
+        raise SystemExit
+    node = node[key]
+print("PRESENT" if want == "*" or str(node) == want else "GOT:" + str(node))
+' "$1" "$2" 2>/dev/null; }
+
+check_marker() { # <description> <dotted.path> <expected|*> <overlay>
+    local got; got=$(marker "$2" "$3")
+    case "$got" in
+        PRESENT) ok "$1 (from $4)" ;;
+        MISSING) bad "$1 -- absent, so $4 was NOT applied" ;;
+        *)       bad "$1 -- $got, so $4 was not applied as expected" ;;
+    esac
+}
+check_marker "egress-relay service defined"   "services.egress-relay"                        "*"              compose.egress-proxy.yaml
+check_marker "worker HARVEST_EGRESS_MODE"     "services.worker.environment.HARVEST_EGRESS_MODE" "proxy"       compose.egress-proxy.yaml
+check_marker "worker HOME off tmpfs"          "services.worker.environment.HOME"             "/home/harvest"  compose.ghunt.yaml
+check_marker "ghunt home volume declared"     "volumes.harvest-ghunt-home"                   "*"              compose.ghunt.yaml
+check_marker "tool pin reaches the build arg" "services.worker.build.args.HARVEST_TOOL_PACKAGES" "*"           compose.override.yaml
+
+# And confirm the mechanism itself, so the NEXT bare command is also correct.
+if grep -q '^COMPOSE_FILE=.*compose.egress-proxy.yaml' .env 2>/dev/null &&
+   grep -q '^COMPOSE_FILE=.*compose.override.yaml' .env 2>/dev/null &&
+   grep -q '^COMPOSE_FILE=.*compose.ghunt.yaml' .env 2>/dev/null; then
+    ok ".env declares COMPOSE_FILE with every overlay"
+else
+    bad ".env does not declare COMPOSE_FILE with every overlay -- a bare command would skip some"
+fi
 
 section "Live overlay copies match the tracked ones"
 # The overlays live at the project root but are tracked under deploy/ovh-vps/. A drifted
