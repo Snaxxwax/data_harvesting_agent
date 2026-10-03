@@ -743,6 +743,11 @@ def test_spiderfoot_extracts_sfurl_links_and_records_provenance():
     # Provenance: reached via a handle, not via anything tying the address to the profile.
     assert account["derived_via"] == "USERNAME"
     assert by_type["USERNAME"]["derived_via"] == "EMAILADDR"
+    # And the parent's VALUE, which is the only field on an account a dossier can match an
+    # identifier against -- its own `data` is a label. Without it the accounts land in the
+    # dossier's `unresolved` list: found, evidenced, and attached to nobody.
+    assert account["derived_from"] == "me"
+    assert by_type["USERNAME"]["derived_from"] == "me@x.test"
 
 
 def test_spiderfoot_dedupes_the_same_profile_under_two_labels():

@@ -317,6 +317,14 @@ content fingerprint for its entity key, minting a new entity whenever the label 
 URL is now extracted, the label stays as the queryable value, and dedup keys on the URL so
 one profile reported under two labels is one account.
 
+**`derived_from` is what makes an account bindable.** An account's own `data` is a label
+("Pinterest (Category: social)"), so a dossier has nothing on it to match an identifier
+against: the accounts land in `unresolved` — found, evidenced, and attached to nobody — while
+only the derived `USERNAME` itself binds. `derived_from` carries the parent event's *value*,
+so a source rule binds the whole set by the handle they were found under:
+
+    "identifier_fields": {"derived_from": "username"}
+
 **`derived_via` carries the provenance chain.** SpiderFoot links events by hash, and for an
 email target the chain is the whole story: `sfp_accounts` derives a `USERNAME` from the local
 part and the accounts hang off *that*. So an account reported for an address was reached **by

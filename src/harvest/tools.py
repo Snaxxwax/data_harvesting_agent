@@ -681,7 +681,7 @@ def _spiderfoot_records(events: list, target: str) -> list[dict]:
     # hash -> type, so an event can name what it was derived from. Built first because
     # SpiderFoot does not order events parent-before-child.
     lineage = {
-        e.get("hash"): str(e.get("type") or "")
+        e.get("hash"): (str(e.get("type") or ""), e.get("data"))
         for e in events
         if isinstance(e, dict) and e.get("hash")
     }
@@ -724,9 +724,16 @@ def _spiderfoot_records(events: list, target: str) -> list[dict]:
         # address was reached by handle, not by anything tying the address to the profile.
         # Surfaced as a field rather than folded into identity_basis, because it is a
         # different question: basis says how strong the finding is, this says what it rests on.
-        parent = lineage.get(event.get("source_event_hash"))
-        if parent and parent not in _SF_NOISE_TYPES and parent != event_type:
-            record["derived_via"] = parent
+        parent_type, parent_data = lineage.get(event.get("source_event_hash"), ("", None))
+        if parent_type and parent_type not in _SF_NOISE_TYPES and parent_type != event_type:
+            record["derived_via"] = parent_type
+            # The parent's VALUE, not just its type, because that is the only field on an
+            # account record that a dossier can match an identifier against. An account's
+            # own `data` is a label ("Pinterest (Category: social)"), so without this the
+            # accounts land in the dossier's `unresolved` list -- found, evidenced, and
+            # attached to nobody -- while only the derived USERNAME itself binds.
+            if isinstance(parent_data, str) and parent_data.strip():
+                record["derived_from"] = parent_data.strip()
         # Keyed on the URL when there is one: the same profile reported with two different
         # labels is one account, and two accounts could share a label.
         key = (event_type, link or data)
