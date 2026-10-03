@@ -99,3 +99,22 @@ test("modelCapabilityState enables the checkbox and hides the hint when model is
   assert.equal(state.disabled, false);
   assert.equal(state.hintVisible, false);
 });
+
+// An email investigation has no seeds by nature. On a deployment without search that made
+// the Create button permanently disabled, so ghunt could be allowlisted, installed and
+// credentialled and still be unreachable from the UI. A selected tool is enough on its own:
+// Engine.submit enqueues a tool task, so the job has work to do without seed or search.
+test("canCreateInvestigationJob allows a seedless plan when a tool is selected", () => {
+  assert.equal(
+    canCreateInvestigationJob([], { search_configured: false }, [
+      { name: "ghunt", target: "someone@example.org" },
+    ]),
+    true
+  );
+});
+
+test("canCreateInvestigationJob still blocks a seedless plan with no tool selected", () => {
+  assert.equal(canCreateInvestigationJob([], { search_configured: false }, []), false);
+  // Absent argument must behave like none selected, so existing callers keep their meaning.
+  assert.equal(canCreateInvestigationJob([], { search_configured: false }), false);
+});

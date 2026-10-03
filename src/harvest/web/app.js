@@ -132,10 +132,15 @@ function modelCapabilityState(caps) {
 // "provide a seed URL or configure HARVEST_SEARCH_URL" whenever there are no seeds and
 // search isn't configured; mirroring that check client-side lets Create stay disabled
 // (with an actionable hint) instead of letting a predictable 422 reach the user.
-function canCreateInvestigationJob(seeds, caps) {
+function canCreateInvestigationJob(seeds, caps, tools) {
   const hasSeeds = Array.isArray(seeds) && seeds.length > 0;
+  // A selected tool is a starting point in its own right: the engine enqueues a tool task
+  // at submit, so the job has work to do with no seed and no search. Without this, an email
+  // investigation -- which has no seeds by nature -- could never be submitted from the UI on
+  // a deployment without search, even with ghunt selected and ready.
+  const hasTools = Array.isArray(tools) && tools.length > 0;
   const searchConfigured = !!(caps && caps.search_configured);
-  return hasSeeds || searchConfigured;
+  return hasSeeds || hasTools || searchConfigured;
 }
 
 function applyModelCapability() {
@@ -283,6 +288,11 @@ function renderPlanPreview(node, plan, onSeedsChange) {
   seedsInput.value = plan.seeds.join("\n");
   if (onSeedsChange) {
     seedsInput.addEventListener("input", () => onSeedsChange(parseList(seedsInput.value)));
+    // Ticking a tool can be what makes the job submittable, so it has to re-run the same
+    // check. Without this the Create button stays disabled until the seeds box is touched.
+    for (const box of toolBoxes) {
+      box.addEventListener("change", () => onSeedsChange(parseList(seedsInput.value)));
+    }
   }
   const fieldsLabel = el("label", { text: "Fields (editable, comma-separated)" });
   const fieldsInput = el("textarea", { class: "plan-edit-fields", rows: "2" });
@@ -318,10 +328,11 @@ function initInvestigationForm() {
   let currentEditor = null;
 
   const SEEDLESS_HINT =
-    "Add a seed URL above — search is not configured on this deployment, so an objective alone cannot be used to discover pages.";
+    "Add a seed URL above, or select an external tool — search is not configured on this deployment, so an objective alone cannot be used to discover pages.";
 
   function updateCreateAvailability(seeds) {
-    if (canCreateInvestigationJob(seeds, capabilities)) {
+    const tools = currentEditor ? currentEditor.tools() : [];
+    if (canCreateInvestigationJob(seeds, capabilities, tools)) {
       submitButton.disabled = false;
       createHintNode.hidden = true;
       createHintNode.textContent = "";
@@ -368,7 +379,7 @@ function initInvestigationForm() {
       if (!currentPlan) return;
     }
     const seeds = currentEditor.seeds();
-    if (!canCreateInvestigationJob(seeds, capabilities)) {
+    if (!canCreateInvestigationJob(seeds, capabilities, currentEditor.tools())) {
       updateCreateAvailability(seeds);
       showError(errorNode, new Error(SEEDLESS_HINT));
       return;
