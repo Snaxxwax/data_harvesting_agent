@@ -404,8 +404,9 @@ Only the relay's `Upstream` line changes for the real Webshare endpoint.
 refused at submit and nothing about this deployment changes until all three of the following
 are true:
 
-1. `ghunt` is in the worker image — add it to the build arg:
-   `HARVEST_TOOL_PACKAGES="maigret==0.6.6 ghunt==2.2.0" docker compose build`
+1. `ghunt` is in the worker image — add it to `.env.build`:
+   `HARVEST_TOOL_PACKAGES=maigret==0.6.6 ghunt==2.3.4`, then rebuild with the full
+   compose invocation from "Operating".
 2. `ghunt` is added to `HARVEST_TOOLS` in `/opt/harvest/.env`.
 3. A credential exists at `$HOME/.malfrats/ghunt/creds.m` inside the worker.
 
@@ -425,9 +426,16 @@ restart check.
 
 ### Proxy posture
 
-GHunt has no `--proxy` flag: its `get_httpx_client()` takes no proxy argument and leaves
-`trust_env` default, so `HTTP(S)_PROXY` is the only route it reads. Harvest strips ambient
-proxy variables and re-injects the *validated* `HARVEST_EGRESS_PROXY` value.
+GHunt has no `--proxy` flag. Confirmed by reading 2.3.4: `helpers/utils.get_httpx_client()`
+returns `AsyncClient(http2=True, timeout=15)` -- no proxy argument, `trust_env` left at its
+default -- so `HTTP(S)_PROXY` is the only route it reads. (The source even carries a
+commented-out line showing a proxy would otherwise have to be hardcoded.) Harvest strips
+ambient proxy variables and re-injects the *validated* `HARVEST_EGRESS_PROXY` value.
+
+The credential path is likewise confirmed on 2.3.4: `objects/base.GHuntCreds` builds it from
+`Path().home() / ".malfrats/ghunt" / "creds.m"` with no override, and **creates that
+directory if it is missing** -- so the home directory has to be writable as well as
+persistent, which is what `compose.ghunt.yaml` provides.
 
 | Path | Mechanism | Covered in proxy-only mode? |
 |---|---|---|
