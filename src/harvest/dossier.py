@@ -31,6 +31,23 @@ def _identifier_projection(observations, identifier_fields):
     return projection
 
 
+def _identifier_confidence(observations, identifier_fields, namespace, value):
+    """The strongest extraction confidence behind one namespace/value identifier match.
+
+    An entity is admitted to a target by exact identifier overlap, which is not the same
+    thing as having verified the identity: a username namespace overlapping means a handle
+    matched somewhere, and that evidence can be as weak as a 200 response. Reporting the
+    confidence of the observation that actually did the matching keeps "an account with this
+    handle exists" visibly distinct from "this is the target's account".
+    """
+    scores = [
+        obs["confidence"]
+        for obs in observations
+        if identifier_fields.get(obs["field"]) == namespace and obs["value"] == value
+    ]
+    return max(scores) if scores else None
+
+
 def _match_targets(projection, targets):
     """A target is a candidate if any declared namespace/value pair overlaps its identifiers.
 
@@ -109,9 +126,25 @@ def reconcile(investigation, observations):
     rules = {s.url: s for s in investigation.sources}
 
     entities: dict[tuple[str, str], dict] = {}
+    excluded: dict[str, dict] = {}
     for obs in observations:
         rule = rules.get(obs["source_url"])
         if rule is None:
+            # No declared source rule, so there is nothing to reconcile this against. It used
+            # to be dropped in silence, which is how a job whose only evidence came from a
+            # tool reported a "completed" dossier with nothing in it at all. Counted instead,
+            # so the operator sees evidence exists and which rule is missing to admit it.
+            entry = excluded.setdefault(
+                obs["source_url"],
+                {
+                    "source_url": obs["source_url"],
+                    "reason": "no_source_rule",
+                    "observations": 0,
+                    "entity_keys": set(),
+                },
+            )
+            entry["observations"] += 1
+            entry["entity_keys"].add(obs["entity_key"])
             continue
         key = (obs["source_url"], obs["entity_id"])
         entry = entities.setdefault(
@@ -149,7 +182,17 @@ def reconcile(investigation, observations):
             if len(viable) == 1:
                 target_key = next(iter(viable))
                 match = next((m for m in matches if m[0] == target_key), None)
-                match_info = {"namespace": match[1], "value": match[2]} if match else None
+                match_info = (
+                    {
+                        "namespace": match[1],
+                        "value": match[2],
+                        "confidence": _identifier_confidence(
+                            obs_list, rule.identifier_fields, match[1], match[2]
+                        ),
+                    }
+                    if match
+                    else None
+                )
                 matched_entities[target_key].append(
                     {
                         "entity_id": entity_id,
@@ -229,7 +272,22 @@ def reconcile(investigation, observations):
             }
         )
 
-    return {"targets": targets_out, "unresolved": unresolved, "ambiguous": ambiguous}
+    return {
+        "targets": targets_out,
+        "unresolved": unresolved,
+        "ambiguous": ambiguous,
+        "excluded": sorted(
+            (
+                {
+                    **entry,
+                    "entity_keys": sorted(entry["entity_keys"])[:20],
+                    "entities": len(entry["entity_keys"]),
+                }
+                for entry in excluded.values()
+            ),
+            key=lambda e: e["source_url"],
+        ),
+    }
 
 
 def _escape(value) -> str:
@@ -254,7 +312,15 @@ def render_markdown(dossier: dict) -> str:
                 note = "document binding (operator assertion, not evidence of identity)"
             else:
                 match = entity["match"] or {}
-                note = f"identifier match {match.get('namespace')}={match.get('value')}"
+                confidence = match.get("confidence")
+                note = (
+                    f"identifier match {match.get('namespace')}={match.get('value')}"
+                    + (f" at confidence {confidence}" if confidence is not None else "")
+                    # Admission is exact identifier overlap, nothing more. A matching handle
+                    # shows an account by that name exists; it is not a verified identity,
+                    # and the dossier must not read as though it were.
+                    + " — account matched on identifier overlap, identity not verified"
+                )
             lines.append(
                 f"- `{_escape(entity['entity_key'])}` from "
                 f"[{_escape(entity['source_url'])}]({entity['source_url']}) — {note}"
@@ -290,6 +356,22 @@ def render_markdown(dossier: dict) -> str:
                 f"- `{_escape(record['entity_key'])}` from "
                 f"[{_escape(record['source_url'])}]({record['source_url']}) — {record['reason']} "
                 f"(observations {record['observation_ids']})"
+            )
+        lines.append("")
+    if dossier.get("excluded"):
+        lines.append("## Evidence with no declared source rule (not reconciled)")
+        lines.append("")
+        lines.append(
+            "These observations exist in the job but no source rule declares their source, "
+            "so nothing above could admit them. Declare a rule for the source to reconcile "
+            "them (a tool capture's source is `tool://<name>/<target>`)."
+        )
+        lines.append("")
+        for record in dossier["excluded"]:
+            lines.append(
+                f"- `{_escape(record['source_url'])}` — {record['reason']}: "
+                f"{record['observations']} observations across {record['entities']} entities "
+                f"(e.g. {', '.join('`' + _escape(k) + '`' for k in record['entity_keys'][:3])})"
             )
         lines.append("")
     if dossier["ambiguous"]:

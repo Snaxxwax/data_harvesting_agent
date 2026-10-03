@@ -4,6 +4,6 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 dist/
-data/
+/data/
 .env
 *.sqlite*

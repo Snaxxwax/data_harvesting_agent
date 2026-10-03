@@ -49,7 +49,7 @@ and GitHub Actions major tags are not digest-pinned.
 | `HARVEST_USER_AGENT` | Crawler identity; set a contact-bearing identifier for your deployment |
 | `HARVEST_SEARCH_URL` | Optional SearXNG base URL, JSON format enabled |
 | `HARVEST_PRIVATE_HOSTS` | Exact administrator-approved hosts allowed to resolve privately; default empty |
-| `HARVEST_TOOLS` | External OSINT CLIs permitted as acquisition tasks (e.g. `maigret`); default empty, meaning none |
+| `HARVEST_TOOLS` | External OSINT CLIs permitted as acquisition tasks (`maigret`, `ghunt`, `spiderfoot`); default empty, meaning none |
 | `HARVEST_TOOL_PACKAGES` | Build-time only: pinned tool packages to install into the image; default empty |
 | `HARVEST_TOOL_TIMEOUT` | Wall-clock seconds one tool run may take before the task fails; default 300 |
 | `HARVEST_MAIGRET_RETRIES` | Retry transient failures for individual Maigret sites, 0–3; default 0 |
@@ -293,6 +293,30 @@ scan itself costs in outbound requests is bounded by SpiderFoot and by
 module set is active reconnaissance against the target. A scan that ends in any state other
 than `FINISHED` fails the task rather than storing a partial result set.
 
+### ghunt
+
+`ghunt` consumes an **email** and reports the Google account behind it. It follows the
+maigret pattern -- one capture holding the tool's own JSON, read later by the JSON adapter --
+with two differences that are specific to it:
+
+- **Credentials are mandatory and interactive to obtain.** GHunt derives its credential path
+  from `Path.home()` with no override, so harvest checks for
+  `$HOME/.malfrats/ghunt/creds.m` *before* launching it. Without that check a missing
+  credential reads as a failed scan rather than an unconfigured deployment. Obtain it once
+  with `ghunt login` against a Google account you own, then mount the resulting `creds.m`
+  into the worker. It is a session credential: treat it like a password, keep it out of the
+  image and out of git.
+- **There is no `--proxy` flag.** GHunt's `get_httpx_client()` takes no proxy argument and
+  leaves `trust_env` at its default, so `HTTP(S)_PROXY` is the only route it reads. Harvest
+  strips ambient proxy variables as it does for every tool, then re-injects the *validated*
+  `HARVEST_EGRESS_PROXY` value, so an unvalidated ambient proxy still cannot reach it.
+  Because an environment variable is a weaker promise than an argv flag, proxy-only mode
+  still requires the host to block direct egress and verifies it with the same probe.
+
+`personId` (the Gaia ID) is surfaced as `id` so `record_key` yields a stable per-account
+entity rather than a content fingerprint, which would mint a new entity whenever any profile
+detail changed.
+
 A tool task is never retried, including after a worker lease expires. A timeout and a
 nonzero exit both fail the task permanently,
 because one attempt already costs hundreds to thousands of unbudgeted third-party requests
@@ -306,6 +330,74 @@ maigret runs with `--all-sites`: every known site rather than the top-ranked def
 is roughly ten times the sites and so roughly ten times the outbound requests, none of which
 pass through the fetcher's budgets or per-origin pacing. It also roughly doubles what a scan
 finds. Treat one run as conspicuous traffic from the deployment's address.
+
+`--all-sites` remains the default. `ToolRun.top_sites` (per job, not per deployment) checks
+only that many top-ranked sites instead, for when a run does not need the full database.
+Breadth is a per-run authorization and cost decision, which is why it is on the job rather
+than in `Settings`.
+
+### What a maigret record contains
+
+A scan's records are reshaped before the JSON adapter reads them, because a verbatim record
+produced unusable evidence. Each record is one found account, with maigret's own field names:
+
+- `status.ids` -- the parsed profile data (`fullname`, `uid`, `created_at`, follower counts)
+  -- is promoted to top-level fields. As one nested object it was a single opaque claim that
+  could not be queried, mapped to a dossier field, or corroborated against another source.
+- The `site` block is dropped. It is maigret's site *definition*, not evidence about the
+  subject: url templates, regexes, and the `usernameClaimed`/`usernameUnclaimed` probe
+  fixtures, which were being recorded as though they were observed values.
+- `url_main`, the site's front page, is dropped. It is a navigation page, so crawling it
+  spent the fetcher's budget on site homepages instead of profile enrichment. `url` (the
+  profile) and `url_probe` (its API endpoint, where the site has one) are kept.
+- One account reachable at both a host and its parent domain (`antichat.io` and
+  `forum.antichat.io` share one vBulletin definition) is merged into one record, which
+  names the merged hosts in `related_sites`. Two records merge only when their profile path
+  and query are identical *and* one host is a suffix of the other, so unrelated sites that
+  happen to share a URL shape are never merged.
+- The target's own handle is removed from `ids_usernames`. It is the scan's input, so as a
+  claim it read as the account corroborating itself.
+
+### Confidence is graded, not assumed
+
+maigret reports the same word, "Claimed", for very different evidence. All of it used to
+arrive as confidence `1.0`, which is how a login-walled 403 page reached a dossier as a
+claimed account. Records now carry a coarse grade that ranks evidence; it is not a
+probability:
+
+| Evidence | Confidence |
+|---|---|
+| Profile data parsed off the response (`status.ids` non-empty) | 0.9 |
+| An expected string matched in the body (`checkType: message`) | 0.6 |
+| The response URL matched (`checkType: response_url`) | 0.5 |
+| The URL merely returned success (`checkType: status_code`) | 0.4 |
+| The verdict came off a **non-2xx** response (error, login wall, block page) | 0.3 |
+| maigret's own `is_similar` flag set | base minus 0.1 |
+
+A record may set `_confidence` for this purpose; the JSON adapter reads it, clamps it to
+0-1 and keeps it out of the claims. The field can only ever *lower* a claim below the 1.0
+default, so a third-party JSON source cannot use it to inflate confidence in anything.
+
+### Follow-up crawling
+
+`ToolRun.crawl` (default `true`) decides whether a tool's findings may become fetch tasks.
+A tool run is useful without it -- the capture and its claims are the evidence -- while
+crawling every profile it reports is a much larger request budget than running the tool
+once. With it off, nothing the scan found is queued, and the extract task's
+`suppressed_leads` reports exactly how much was held back.
+
+`suppressed_leads` is now the difference between the leads an extraction produced and the
+tasks that were actually queued (already seen, out of scope, over the depth limit,
+deduplicated, past the per-task cap, or not crawled at all). It was previously reported as
+`0` for every non-replay task, so a job discarding most of its leads looked like one that
+had none.
+
+Two things never become leads, in any adapter: a URL containing an unexpanded `{...}`
+template (`canonical_url` rejects it, so `https://t.me/{username}` can no longer be fetched
+as though it were an address), and the value of a field naming a binary asset
+(`image`, `avatar`, `thumbnail`, ... -- see `extract.ASSET_FIELDS`). Both were guaranteed
+wasted requests whose failures then read as broken sources. The asset URL is still kept as
+a claim: the same avatar on two sites is real corroborating evidence.
 
 A scan fits the compose worker's `mem_limit: 512m`. Measured inside a read-only,
 `cap-drop ALL`, non-root container with swap disabled, counting the worker and the tool
@@ -356,6 +448,46 @@ Run `harvest replay CAPTURE_ID --investigation mal-investigation.json` and then
 interpretation; the original job stays intact. Use the original capture `url` in the
 source rule, even if its `final_url` differs after redirects. A username shared across
 platforms is never treated as evidence that the accounts belong to one person.
+
+### Declaring a tool run as a source
+
+A tool run's capture URL is `tool://<name>/<target>`, and that is the exact string a source
+rule must name to reconcile its observations. Until 0.5.1 `SourceRule.url` accepted only
+HTTP(S), so a tool's observations could never have a rule and were dropped in silence:
+a job whose only evidence was a tool scan produced an empty dossier that still reported
+"completed".
+
+```json
+{
+  "targets": [{"key": "handle", "label": "Declared handle",
+               "identifiers": {"username": ["Snaxxwax"]}}],
+  "sources": [{"url": "tool://maigret/Snaxxwax",
+               "identifier_fields": {"username": "username"},
+               "field_map": {"url": "profile_url", "fullname": "display_name",
+                             "uid": "account_id", "created_at": "account_created"}}]
+}
+```
+
+A `tool://` rule cannot use `document_target`: document binding matches the one entity keyed
+on the rule's own URL, and a tool's records are per-account, so such a rule would silently
+bind nothing. It is rejected at submit instead.
+
+**Account existence is not identity attribution.** A rule like the one above admits every
+site that answered to the handle, including sites with nothing behind them but a 200
+response. Read it as "an account with this handle exists here", never as "this is the
+target's account". Two things in the dossier keep that visible: each candidate carries the
+graded `extraction_confidence` of the observation it came from, and `matched_entities`
+records the `namespace`, `value` and `confidence` of the identifier overlap that admitted
+it. The rendered markdown states it outright -- *"account matched on identifier overlap,
+identity not verified"*.
+
+### Evidence with no declared source rule
+
+`reconcile` no longer discards an observation whose source has no rule. The dossier's
+`excluded` list reports each such source with its observation and entity counts, and the
+markdown renders it under *"Evidence with no declared source rule (not reconciled)"*. An
+empty dossier is now distinguishable from a dossier whose evidence simply had nowhere to go,
+which is what the missing `tool://` support looked like from the outside.
 
 Install trusted packages exposing an entry point:
 

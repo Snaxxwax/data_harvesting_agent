@@ -6,7 +6,8 @@ COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable && \
     groupadd --gid 10001 harvest && useradd --uid 10001 --gid 10001 --no-create-home harvest && \
-    mkdir /data && chown harvest:harvest /data
+    mkdir /data && chown harvest:harvest /data && \
+    mkdir -p /home/harvest/.malfrats/ghunt && chown -R harvest:harvest /home/harvest
 # External OSINT CLIs, e.g. --build-arg HARVEST_TOOL_PACKAGES="maigret==0.6.6". Empty by
 # default: HARVEST_TOOLS also defaults to empty, so most deployments must not pay for
 # maigret's 28 transitive packages (Flask, lxml, reportlab, XMind, pyvis).
@@ -25,6 +26,14 @@ RUN if [ -n "$HARVEST_TOOL_PACKAGES" ]; then \
 # The service user has no home directory and the container filesystem is read-only, so
 # HOME must point at writable scratch: maigret creates MAIGRET_HOME on startup and aborts
 # with EROFS otherwise. Compose mounts a tmpfs here; its contents are an expendable cache.
+#
+# /home/harvest exists, owned by the service user, for the opposite case: a tool whose state
+# must SURVIVE a restart. GHunt derives $HOME/.malfrats/ghunt/creds.m from Path.home() with
+# no override and rewrites it when it refreshes the session, so it needs a writable
+# persistent home, not tmpfs. It is empty and unused unless a deployment overrides HOME to
+# it and mounts a volume there -- see deploy/ovh-vps/compose.ghunt.yaml. Created here rather
+# than by the volume mount so Docker initialises the volume with the right ownership; a
+# root-owned fresh volume would be unwritable by the non-root service user.
 ENV PATH="/app/.venv/bin:$PATH" HOME=/tmp
 USER 10001:10001
 VOLUME ["/data"]

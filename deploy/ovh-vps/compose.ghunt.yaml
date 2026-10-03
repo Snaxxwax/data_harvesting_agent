@@ -1,0 +1,51 @@
+# GHunt credentials. OPT-IN: this file is not loaded unless you name it.
+#
+#   docker compose -f compose.yaml -f compose.override.yaml \
+#                  -f compose.ghunt.yaml up -d worker
+#
+# Why a volume and not a bind mount or a tmpfs:
+#
+# GHunt derives its credential path from Path.home() with no override, so the file has to be
+# at $HOME/.malfrats/ghunt/creds.m inside the worker. The base compose sets HOME=/tmp, which
+# is a tmpfs, so the credential would be gone on every restart and `ghunt login` is
+# interactive -- it cannot be re-run by a restart policy. GHunt also *rewrites* creds.m when
+# it refreshes the session, so a read-only bind mount of the file would break on refresh.
+#
+# A named volume is the only one of the three that is both writable and persistent. HOME
+# moves to /home/harvest, which the image creates owned by uid 10001, so the fresh volume
+# inherits an ownership the non-root service user can actually write to.
+#
+# Only the worker runs tool tasks, so only the worker needs this. The api must NOT get it:
+# nothing in the API path reads the credential, and a second mount is a second place for a
+# Google session token to leak from.
+#
+# creds.m is a Google session credential. It is equivalent to a logged-in browser for the
+# account that produced it. Never bake it into an image, never commit it, and use an account
+# you own and are willing to have attributed to this deployment's traffic.
+#
+# First-time setup (interactive, once, inside the worker):
+#
+#   docker compose ... up -d worker
+#   docker compose ... exec worker ghunt login
+#
+# then confirm it survives a restart:
+#
+#   docker compose ... restart worker
+#   docker compose ... exec worker test -f /home/harvest/.malfrats/ghunt/creds.m && echo ok
+#
+# Harvest checks for that file before launching ghunt, so an unconfigured deployment reports
+# "ghunt has no credentials at ..." as a policy denial instead of a failed scan.
+services:
+  worker:
+    environment:
+      # maigret's expendable site-database cache moves here with HOME. That is harmless --
+      # --no-autoupdate means the pinned database in the image is what is used either way --
+      # but it does mean the cache now persists instead of being re-created per container.
+      HOME: /home/harvest
+    # Repeated in full: YAML merge keys do not deep-merge lists, so naming `volumes` here
+    # replaces the base service's list rather than adding to it.
+    volumes:
+      - harvest-data:/data
+      - harvest-ghunt-home:/home/harvest
+volumes:
+  harvest-ghunt-home:
