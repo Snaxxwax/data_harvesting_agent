@@ -913,9 +913,19 @@ def test_spiderfoot_http_proxy_maps_to_sf_http_type():
     tools._assert_spiderfoot_proxied(client, settings)
 
 
+# Shaped after GHunt 2.3.4's own writer (modules/email.py) and parsers (parsers/people.py):
+# every sub-object is keyed by the Google "container" name, two to three levels down.
 GHUNT_REPORT = {
     "PROFILE_CONTAINER": {
-        "profile": {"personId": "109274296986499857531", "name": "Jane Doe"},
+        "profile": {
+            "personId": "109274296986499857531",
+            "names": {"PROFILE": {"fullname": "Jane Doe", "firstName": "Jane", "lastName": "Doe"}},
+            "emails": {"PROFILE": {"value": "jane.doe@gmail.com"}},
+            "profilePhotos": {
+                "PROFILE": {"url": "https://lh3.googleusercontent.com/a/x", "isDefault": False}
+            },
+            "profileInfos": {"PROFILE": {"userTypes": ["GOOGLE_USER", "GPLUS_USER"]}},
+        },
         "maps": {"reviews": []},
     }
 }
@@ -960,9 +970,43 @@ def test_ghunt_yields_one_entity_keyed_by_gaia_id(fake_ghunt):
     assert record["id"] == "109274296986499857531"
     assert record["email"] == "jane.doe@gmail.com"
     assert record["container"] == "PROFILE_CONTAINER"
-    assert record["profile"]["name"] == "Jane Doe"
     argv = fake_ghunt[0]
     assert argv[:3] == ["ghunt", "email", "jane.doe@gmail.com"]
+
+
+def test_ghunt_profile_fields_are_promoted_out_of_the_nested_container(fake_ghunt):
+    """GHunt buries every useful value under profile.<section>.PROFILE.<field>, which no
+    dossier field_map can address -- the same defect maigret's status.ids had."""
+    record = json.loads(tools.run("ghunt", "jane.doe@gmail.com", ghunt_enabled()).body)["results"][
+        0
+    ]
+    assert record["fullname"] == "Jane Doe"
+    assert record["first_name"] == "Jane"
+    assert record["last_name"] == "Doe"
+    assert record["email_profile"] == "jane.doe@gmail.com"
+    assert record["image_url"] == "https://lh3.googleusercontent.com/a/x"
+    assert record["profile_photo_is_default"] is False
+    assert record["user_types"] == ["GOOGLE_USER", "GPLUS_USER"]
+    # The Gaia ID still identifies the entity, not a promoted field.
+    assert record["id"] == "109274296986499857531"
+    # Nothing is discarded: the nested container remains as evidence.
+    assert record["profile"]["names"]["PROFILE"]["fullname"] == "Jane Doe"
+
+
+def test_ghunt_promotion_degrades_to_absent_rather_than_wrong(fake_ghunt, monkeypatch):
+    """A schema change must lose a field, never invent one of the wrong type."""
+    assert tools._ghunt_profile({}) == {}
+    assert tools._ghunt_profile({"names": "not-a-dict"}) == {}
+    assert tools._ghunt_profile({"names": {"PROFILE": {"fullname": ""}}}) == {}
+    # bool is an int subclass; an exact type check keeps it out of a string field.
+    assert tools._ghunt_profile({"names": {"PROFILE": {"fullname": True}}}) == {}
+    assert tools._ghunt_profile({"profilePhotos": {"PROFILE": {"isDefault": 1}}}) == {}, (
+        "1 is not a boolean"
+    )
+    # A legitimate False must still be promoted: "this is not the default avatar" is a fact.
+    assert tools._ghunt_profile({"profilePhotos": {"PROFILE": {"isDefault": False}}}) == {
+        "profile_photo_is_default": False
+    }
 
 
 def test_ghunt_refuses_without_credentials(monkeypatch, tmp_path):
