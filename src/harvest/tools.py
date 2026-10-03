@@ -430,6 +430,53 @@ def _maigret(
     )
 
 
+# GHunt's PROFILE container, per its own parsers (ghunt/parsers/people.py). Each of these
+# lives two or three levels down, keyed by the Google "container" name, so as raw JSON they
+# are one opaque claim that no dossier field_map can address -- the same defect maigret's
+# status.ids had. Mapped to flat names on the record instead. Values are promoted only when
+# they are the expected scalar type, so a schema change degrades to "field absent", which is
+# today's behaviour, rather than to a wrong claim.
+_GHUNT_PROFILE_FIELDS = (
+    ("names", "fullname", "fullname", str),
+    ("names", "firstName", "first_name", str),
+    ("names", "lastName", "last_name", str),
+    ("emails", "value", "email_profile", str),
+    ("profilePhotos", "url", "image_url", str),
+    ("profilePhotos", "isDefault", "profile_photo_is_default", bool),
+    ("coverPhotos", "url", "cover_image_url", str),
+)
+
+
+def _ghunt_profile(profile: dict, container: str = "PROFILE") -> dict:
+    """Flatten GHunt's nested PROFILE container into queryable top-level fields.
+
+    GHunt keys every sub-object by container name and always requires a "PROFILE" one (its
+    email module exits when that is absent), so that is the container read here. Anything
+    not promoted stays on the record untouched, so no evidence is lost.
+    """
+    flat: dict = {}
+    for section, source, target, expected in _GHUNT_PROFILE_FIELDS:
+        node = profile.get(section)
+        if not isinstance(node, dict):
+            continue
+        entry = node.get(container)
+        if not isinstance(entry, dict):
+            continue
+        value = entry.get(source)
+        # bool is an int subclass, so an exact type check keeps a boolean out of a str field
+        # and a stray 0/1 out of a boolean one.
+        if type(value) is expected and (value != "" if expected is str else True):
+            flat[target] = value
+    types = (profile.get("profileInfos") or {}).get(container)
+    if isinstance(types, dict) and isinstance(types.get("userTypes"), list):
+        kinds = [t for t in types["userTypes"] if isinstance(t, str)]
+        if kinds:
+            # Distinguishes a consumer account from a Workspace one, which is the closest
+            # thing GHunt reports to "what kind of account is this".
+            flat["user_types"] = kinds
+    return flat
+
+
 def _ghunt(
     target: str,
     workdir: str,
@@ -487,7 +534,11 @@ def _ghunt(
                 "container": name,
                 "email": target,
                 **({"id": person} if isinstance(person, str) and person else {}),
+                # The tool's own structure first, then the promoted scalars, so a promotion
+                # always lands even if GHunt later adds a container key of the same name.
+                # Nothing is dropped: `profile` is still here whole, nested, as evidence.
                 **container,
+                **_ghunt_profile(profile),
             }
         )
     return records

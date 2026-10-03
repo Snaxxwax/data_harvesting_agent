@@ -328,6 +328,15 @@ with two differences that are specific to it:
 entity rather than a content fingerprint, which would mint a new entity whenever any profile
 detail changed.
 
+GHunt keys every sub-object by the Google "container" name, so its values sit two or three
+levels down (`profile.names.PROFILE.fullname`) where no dossier `field_map` can address
+them -- the same defect maigret's `status.ids` had. The PROFILE container's scalars are
+promoted to flat record fields: `fullname`, `first_name`, `last_name`, `email_profile`,
+`image_url`, `cover_image_url`, `profile_photo_is_default` and `user_types`. A value is
+promoted only when it is exactly the expected type, so a GHunt schema change loses a field
+rather than producing a wrong claim, and the nested `profile` object stays on the record
+untouched as evidence.
+
 A tool task is never retried, including after a worker lease expires. A timeout and a
 nonzero exit both fail the task permanently,
 because one attempt already costs hundreds to thousands of unbudgeted third-party requests
