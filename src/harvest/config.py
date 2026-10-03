@@ -78,6 +78,27 @@ class Settings:
             if m.strip()
         )
     )
+    # How SpiderFoot's OWN egress is routed, which this process cannot observe: its modules
+    # run in a different container, so neither Harvest's proxy nor its egress probe covers
+    # them. "direct" (the default) means unproxied, and proxy-only mode then refuses to run
+    # the tool at all. "proxy-env" declares that the scanner container carries HTTP(S)_PROXY
+    # pointing at HARVEST_EGRESS_PROXY.
+    #
+    # This is an operator declaration, which is weaker than a measurement, and it is a
+    # declaration only because every measurable alternative was tried and does not work on
+    # SpiderFoot NG 6.1.0:
+    #   * its own `_socks*` global proxy IS persisted to Postgres by save_config(), but
+    #     nothing reloads it at startup, so GET /api/v1/config always reports the hardcoded
+    #     "" defaults -- and with two uvicorn workers a read right after a PATCH answers
+    #     from whichever worker handles it, so the value read back is nondeterministic.
+    #   * the scanner ignores it regardless: measured with an outbound-module scan, relay
+    #     throughput was 0 bytes while the module reached its target, i.e. direct egress.
+    # So asserting against that API was asserting against a value with no bearing on where
+    # the packets go. verify-deployment.sh asserts the container-level truth instead: the env
+    # var, the network attachment, and the scanner's actual exit IP.
+    spiderfoot_egress: str = field(
+        default_factory=lambda: os.getenv("HARVEST_SPIDERFOOT_EGRESS", "direct").strip().lower()
+    )
     model_url: str = field(default_factory=lambda: os.getenv("HARVEST_MODEL_URL", ""))
     model_name: str = field(default_factory=lambda: os.getenv("HARVEST_MODEL_NAME", ""))
     model_key: str = field(default_factory=lambda: os.getenv("HARVEST_MODEL_KEY", ""))
