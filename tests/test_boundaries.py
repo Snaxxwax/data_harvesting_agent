@@ -276,3 +276,94 @@ def test_proxy_guard_cannot_see_through_dns_known_limitation(engine):
     for literal in ("10.0.0.5", "127.0.0.1", "169.254.169.254"):
         with pytest.raises(PolicyDenied):
             require_public_host(literal)
+
+
+# --- discovery search service is infrastructure, not a target ----------------------
+
+
+def _search_fetcher(engine, **overrides):
+    """A Fetcher in proxy-only mode with a private search service configured."""
+    from harvest.network import Fetcher
+
+    engine.settings.egress_mode = "proxy"
+    engine.settings.proxy = "http://egress-relay:8888"
+    engine.settings.search_url = overrides.get("search_url", "http://searxng:8080")
+    job = engine.submit(JobSpec(objective="probe the guard", seeds=["https://example.org/"]))
+    task = engine.store.claim(job)
+    return Fetcher(engine.store, engine.settings, task)
+
+
+def test_private_search_service_is_reachable_in_proxy_mode(engine, source):
+    """A single-label container name is not a public hostname, and must still be allowed.
+
+    `require_public_host` rejects `searxng` by design -- it exists to stop a *target* from
+    resolving somewhere internal. The discovery search service is named by HARVEST_SEARCH_URL,
+    never by a job or a crawled page, so it is infrastructure in the same sense SpiderFoot is.
+    Without the exemption, proxy-only mode blocked every discovery search with
+    "proxy destination must be a public hostname" while SearXNG sat one network away, healthy.
+    """
+    fetcher = _search_fetcher(engine)
+    assert fetcher.guard("http://searxng:8080/search?q=x", service=True).startswith(
+        "http://searxng:8080/search"
+    )
+
+
+def test_search_exemption_does_not_leak_to_other_private_hosts(engine, source):
+    """The exemption is per-host, so `service=True` is not a blanket internal-access pass.
+
+    This is the redirect case: raw_get re-guards every hop with the SAME flag, so a search
+    service answering with a redirect would otherwise carry its exemption to the target.
+    """
+    import pytest
+
+    from harvest.models import PolicyDenied
+
+    fetcher = _search_fetcher(engine)
+    for internal in (
+        "http://sf-api:8001/api/v1/scans",
+        "http://localhost:8000/jobs",
+        "http://169.254.169.254/latest/meta-data/",
+    ):
+        with pytest.raises(PolicyDenied):
+            fetcher.guard(internal, service=True)
+
+
+def test_search_exemption_requires_the_service_flag(engine, source):
+    """An ordinary crawl lead to the search host is still a scope/route decision."""
+    import pytest
+
+    from harvest.models import PolicyDenied
+
+    fetcher = _search_fetcher(engine)
+    with pytest.raises(PolicyDenied):
+        fetcher.guard("http://searxng:8080/search?q=x", service=False)
+
+
+def test_no_search_configured_means_no_exemption(engine, source):
+    """With HARVEST_SEARCH_URL unset nothing is exempt, so the flag grants nothing."""
+    import pytest
+
+    from harvest.models import PolicyDenied
+
+    fetcher = _search_fetcher(engine, search_url="")
+    with pytest.raises(PolicyDenied):
+        fetcher.guard("http://searxng:8080/search?q=x", service=True)
+
+
+def test_search_service_request_does_not_go_through_the_proxy(engine, source):
+    """A private service must be reached directly, not via the egress proxy.
+
+    Allowing the host was not enough: the request still went out through the proxy, which
+    asks the UPSTREAM to resolve a container name. Measured, that answered HTTP 502 on every
+    discovery search. Targets must keep using the proxied client, so this is per-host.
+    """
+    fetcher = _search_fetcher(engine)
+    search = fetcher.client_for("http://searxng:8080/search?q=x", service=True)
+    target = fetcher.client_for("https://example.org/page", service=False)
+
+    assert search is not target
+    # The proxied client is the one with a proxy mount; the service client has none.
+    assert not search._mounts, "service client must not carry a proxy mount"
+    assert target is fetcher.client
+    # Same host without the service flag stays on the proxied client.
+    assert fetcher.client_for("http://searxng:8080/x", service=False) is fetcher.client

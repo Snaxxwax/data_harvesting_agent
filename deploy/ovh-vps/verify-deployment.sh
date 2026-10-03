@@ -59,7 +59,8 @@ check_marker "tool pin reaches the build arg" "services.worker.build.args.HARVES
 # And confirm the mechanism itself, so the NEXT bare command is also correct.
 if grep -q '^COMPOSE_FILE=.*compose.egress-proxy.yaml' .env 2>/dev/null &&
    grep -q '^COMPOSE_FILE=.*compose.override.yaml' .env 2>/dev/null &&
-   grep -q '^COMPOSE_FILE=.*compose.ghunt.yaml' .env 2>/dev/null; then
+   grep -q '^COMPOSE_FILE=.*compose.ghunt.yaml' .env 2>/dev/null && \
+   grep -q '^COMPOSE_FILE=.*compose.searxng.yaml' .env 2>/dev/null; then
     ok ".env declares COMPOSE_FILE with every overlay"
 else
     bad ".env does not declare COMPOSE_FILE with every overlay -- a bare command would skip some"
@@ -68,7 +69,7 @@ fi
 section "Live overlay copies match the tracked ones"
 # The overlays live at the project root but are tracked under deploy/ovh-vps/. A drifted
 # copy means the repo no longer describes what is running.
-for f in compose.override.yaml compose.egress-proxy.yaml compose.ghunt.yaml; do
+for f in compose.override.yaml compose.egress-proxy.yaml compose.ghunt.yaml compose.searxng.yaml; do
     if diff -q "$f" "deploy/ovh-vps/$f" >/dev/null 2>&1; then
         ok "$f matches deploy/ovh-vps/$f"
     else
@@ -275,6 +276,95 @@ if [[ " ${ALLOWED} " == *ghunt* ]]; then
     fi
 else
     note "ghunt is not allowlisted; skipping"
+fi
+
+section "Discovery search (SearXNG)"
+SEARCH_URL=$(grep -E '^HARVEST_SEARCH_URL=' .env 2>/dev/null | cut -d= -f2-)
+if [[ -z "$SEARCH_URL" ]]; then
+    bad "HARVEST_SEARCH_URL is unset -- discovery from an objective is unavailable, and a job with seeds skips search SILENTLY rather than failing"
+else
+    ok "HARVEST_SEARCH_URL is set"
+    # It must be reachable from the WORKER, which is the confined container. Reachable from
+    # the host proves nothing: the worker has no gateway and resolves only harvest-egress.
+    if dc exec -T worker python -c "
+import urllib.request,sys
+urllib.request.urlopen('$SEARCH_URL', timeout=15)
+" >/dev/null 2>&1; then
+        ok "the worker can reach it on the internal network"
+    else
+        bad "the worker CANNOT reach $SEARCH_URL -- attach the search service to harvest-egress"
+    fi
+    # The format matters more than reachability: SearXNG omits json from `formats` by
+    # default and then answers 403 to exactly the request Harvest makes, while its HTML UI
+    # keeps working perfectly -- so this fails as "search returned HTTP 403", which reads
+    # like a broken deployment rather than one missing config line.
+    if dc exec -T worker python -c "
+import json,urllib.request
+d=json.load(urllib.request.urlopen('$SEARCH_URL/search?q=ping&format=json', timeout=25))
+raise SystemExit(0 if 'results' in d else 1)
+" >/dev/null 2>&1; then
+        ok "it serves format=json (the only format Harvest uses)"
+    else
+        bad "it does not serve format=json -- add 'json' to search.formats in settings.yml"
+    fi
+    # Its own engine queries must leave through the relay, or the searches are attributable
+    # to this VPS while every other request in the deployment is not.
+    if [[ -n "$(docker ps -q -f name=harvest-searxng 2>/dev/null)" ]]; then
+        if docker exec harvest-searxng grep -q 'egress-relay' /etc/searxng/settings.yml 2>/dev/null; then
+            ok "its outgoing.proxies points at the egress relay"
+        else
+            bad "harvest-searxng has no egress-relay proxy configured -- its engine queries would leave directly"
+        fi
+        if docker port harvest-searxng 2>/dev/null | grep -q .; then
+            bad "harvest-searxng PUBLISHES a port -- it must stay private (a reachable SearXNG is an open search relay)"
+        else
+            ok "it publishes no port (private service)"
+        fi
+    fi
+fi
+
+section "SpiderFoot scan egress"
+SFE=$(grep -E '^HARVEST_SPIDERFOOT_EGRESS=' .env 2>/dev/null | cut -d= -f2-)
+if [[ " ${ALLOWED} " != *spiderfoot* ]]; then
+    note "spiderfoot is not allowlisted; skipping"
+elif [[ "$MODE" != proxy ]]; then
+    note "not in proxy mode; spiderfoot egress is unconstrained by design"
+else
+    # The declaration Harvest gates the tool on. Harvest cannot observe another container's
+    # egress, so it reads this; the checks below are what the declaration stands for.
+    if [[ "$SFE" == "proxy-env" ]]; then
+        ok "HARVEST_SPIDERFOOT_EGRESS=proxy-env (Harvest will run the tool)"
+    else
+        bad "HARVEST_SPIDERFOOT_EGRESS=${SFE:-unset} -- in proxy mode Harvest refuses every spiderfoot run (this is why the tool silently never ran)"
+    fi
+    if [[ -n "$(docker ps -q -f name=sf-celery-worker 2>/dev/null)" ]]; then
+        # The scanner, not sf-api, is what runs modules and makes the requests.
+        if docker exec sf-celery-worker printenv HTTPS_PROXY 2>/dev/null | grep -q 'egress-relay'; then
+            ok "the scanner container carries HTTPS_PROXY pointing at the relay"
+        else
+            bad "sf-celery-worker has no HTTPS_PROXY to the relay -- its modules egress DIRECTLY from this host"
+        fi
+        if docker inspect sf-celery-worker --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null | grep -q harvest-egress; then
+            ok "the scanner is attached to harvest-egress (so the relay resolves)"
+        else
+            bad "sf-celery-worker is NOT on harvest-egress -- egress-relay will not resolve and every module request fails; run: docker network connect harvest-egress sf-celery-worker"
+        fi
+        # The measurement, not the declaration: where the scanner's packets actually exit.
+        # SpiderFoot's own _socks* config is deliberately not consulted -- it is never
+        # reloaded at startup and its scanner ignores it (measured: 0 bytes via the relay).
+        SF_IP=$(docker exec sf-celery-worker python -c "
+import requests
+print(requests.get('https://api.ipify.org', timeout=25).text.strip())
+" 2>/dev/null | tr -d '\r')
+        HOST_IP=$(curl -s --max-time 15 https://api.ipify.org 2>/dev/null)
+        if [[ -z "$SF_IP" ]]; then
+            bad "could not read the scanner's exit IP"
+        elif [[ "$SF_IP" == "$HOST_IP" ]]; then
+            bad "the scanner's exit IP equals this host's ($HOST_IP) -- its scans are attributable to this VPS"
+        else
+            ok "the scanner's exit IP is the upstream proxy's, not this host's"
+        fi
+    fi
 fi
 
 section "Service health"

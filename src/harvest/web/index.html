@@ -17,6 +17,10 @@
   </nav>
   <div class="topbar-right">
     <span id="config-warning" class="warning" hidden></span>
+    <!-- Which SpiderFoot modules a scan will actually run. "spiderfoot" in the tool list
+         says nothing about breadth: one passive resolver and a dozen identity modules look
+         identical in the job form and produce wildly different scans. -->
+    <span id="spiderfoot-modules" class="hint" hidden></span>
     <button id="logout" type="button" hidden>Log out</button>
   </div>
 </header>

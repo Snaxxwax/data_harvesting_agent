@@ -172,6 +172,149 @@ module set is active reconnaissance against the target, which is an authorizatio
 that has to be made deliberately. A scan ending in any state other than `FINISHED` fails
 the task rather than storing a partial result set.
 
+## Discovery search (SearXNG)
+
+`HARVEST_SEARCH_URL=http://searxng:8080`. Before this it was **unset**, which meant
+discovery was dead: a job with no seeds was rejected outright, and a job *with* seeds
+skipped search **silently** rather than erroring. `/meta` now reports it.
+
+No code was needed for the protocol — Harvest's `search` task already GETs
+`{HARVEST_SEARCH_URL}/search?q=...&format=json` and reads `results[].url/.title`, which is
+SearXNG's JSON API exactly. What was needed was a reachable instance and three fixes.
+
+**Why an instance here rather than the one on the workstation.** That one is bound to
+`127.0.0.1`, but the deeper reason is routing: the Harvest worker sits on `harvest-egress`,
+an `internal: true` network with **no gateway**. It cannot reach a tailnet address at all,
+and giving it a route is the single change that would dismantle proxy-only egress. A service
+reachable *on that network* is the only shape that works — the same reason `sf-api` is
+attached to it. The image is pinned by digest to the exact version already in service on the
+workstation, not `:latest`, because this host runs Watchtower and a nightly bump of a search
+backend silently changes what discovery returns.
+
+**`search.formats` must include `json`.** It is not in SearXNG's defaults, and without it
+every discovery search gets `HTTP 403` while the HTML UI keeps working perfectly — a failure
+that reads as a broken deployment rather than one missing config line. The container
+healthcheck probes `format=json` specifically for this reason.
+
+**Its engine queries go out through the relay** (`outgoing.proxies` in `settings.yml`).
+Without that, the searches would be attributable to this VPS's own address while every other
+request in the deployment went through the upstream proxy. Verified by exit IP, and by
+watching relay throughput during a search.
+
+**It publishes no port.** Nothing outside Docker needs to query it, and a reachable SearXNG
+on a public address is an open search relay for other people's traffic.
+
+### Two fixes that proxy-only mode required
+
+A private search service is *infrastructure*, not a scan target, and proxy-only mode broke it
+in two separate ways. Both are per-host exemptions keyed on `HARVEST_SEARCH_URL`, never a
+mode switch, and `raw_get` re-guards every redirect hop with the same flag — so a search
+service that answered with a redirect cannot carry its exemption to wherever it points.
+
+1. **Policy.** `require_public_host()` rejects `searxng`: a single-label name is not a public
+   hostname, by design. Every search failed `proxy destination must be a public hostname`
+   while the service sat one network away, healthy.
+2. **Transport.** Allowing the host was not enough. The request still went *through* the
+   egress proxy, which asks the **upstream** to resolve a container name — `HTTP 502`, every
+   time. Service calls now use a separate direct client. Targets keep using the proxied one.
+
+## SpiderFoot identity modules — and what does not work
+
+`HARVEST_SPIDERFOOT_MODULES` was `sfp_dnsresolve` alone. It is now the email-consuming set
+that was measured to execute cleanly:
+
+    sfp_dnsresolve,sfp_gravatar,sfp_hudsonrock,sfp_pgp,sfp_debounce,sfp_names,sfp_wikileaks
+
+Excluded, with reasons, from the 18 identity-consuming modules that need no API key:
+`sfp_threatcrowd` (its API domain is NXDOMAIN — the service is gone), `sfp_trumail`
+(retired), `sfp_myspace` (dead site), `sfp_ahmia` / `sfp_onionsearchengine` / `sfp_torch`
+(tor-flagged; there is no tor route through an HTTP proxy), and everything `apikey`-flagged.
+
+### The tool had never run once
+
+Before this, **every `spiderfoot` run in proxy mode was policy-denied** — task status
+`blocked`, with the tool sitting in `HARVEST_TOOLS` looking enabled. The old check read
+SpiderFoot's own `_socks*` global proxy back over `GET /api/v1/config` and compared it to
+`HARVEST_EGRESS_PROXY`. Measured on NG 6.1.0, that check was worse than no check:
+
+* **It could never pass.** `save_config()` *does* persist `_socks*` to Postgres — the rows
+  are there, `configSerialize` filters `__`-prefixed keys, not `_`-prefixed ones — but
+  nothing reloads them at startup, so the endpoint always answers with the hardcoded `""`
+  default. With two uvicorn workers it is also nondeterministic: a read immediately after a
+  `PATCH` is served by whichever worker handles it, so the same value read twice disagreed
+  (1 of 5 reads returned the value that had just been written).
+* **Had it passed, it would have proved nothing.** The scanner ignores the setting. A scan
+  whose modules reached their targets moved **0 bytes** through the relay — it egressed
+  directly from this host while the API reported a configured proxy.
+
+### What actually proxies the scans
+
+`HTTP_PROXY`/`HTTPS_PROXY` on the **scanner** container (`sf-celery-worker`, not `sf-api` —
+the scanner is what runs modules). Its modules use `requests`, which honours them. Measured
+from inside the container: exit IP becomes the upstream proxy's instead of this host's.
+`NO_PROXY` covers the internal services, because the relay has a blanket upstream and would
+otherwise forward a Postgres connection to Webshare.
+
+Harvest cannot read another container's environment, so it gates on
+`HARVEST_SPIDERFOOT_EGRESS=proxy-env` — an operator declaration, defaulting to `direct` so a
+deployment that has not opted in is refused rather than silently scanning from this host.
+`verify-deployment.sh` asserts what the declaration stands for: the env var, the network
+attachment, **and the scanner's real exit IP compared against this host's**.
+
+Requires `docker network connect harvest-egress sf-celery-worker`, as `sf-api` needs. Without
+it `egress-relay` does not resolve and every module request fails — fail-closed and
+deliberate: for an attribution-control tool, no scan beats a scan that silently leaves from
+this host. The attachment survives a restart, not a recreate.
+
+### Bare usernames are refused, with a reason
+
+`POST /api/v1/scans` derives the target type from the target **string** and then uses that
+same string as the target **value**, with no way to pass the type separately (`ScanRequest`
+has no such field). SpiderFoot's convention for "this is a username" is to wrap it in double
+quotes, and the two uses collide:
+
+| target passed | type inferred | what the modules did |
+|---|---|---|
+| `Snaxxwax` | `INTERNET_NAME` | nothing — 5 modules, 476 s, **zero events**; every identity module consumes `USERNAME` and none was ever emitted |
+| `"Snaxxwax"` | `USERNAME` ✓ | requests to `https://%22snaxxwax%22.weebly.com/` — the quotes stay in the value and every URL is malformed |
+
+So a username scan burns a full module sweep and returns nothing either way. Harvest now
+refuses a bare username (no `@`, no `.`) up front and names **maigret**, which covers
+username-to-accounts over a far larger site set and works today. Email and domain targets are
+unaffected: SpiderFoot types those from their own shape and the value survives intact.
+
+The fix is one field on `ScanRequest` plus stripping the quotes before use, in the fork at
+`github.com/Snaxxwax/spiderfoot`. Until then it is a documented capability gap.
+
+### Events become deduplicated records, and candidates are labelled
+
+Raw events were returned verbatim, which had the defect maigret's `status.ids` and GHunt's
+nested containers had: the useful part was addressable only as opaque JSON, so no dossier
+`field_map` could reach it. Each event is now flat fields — `event_type`, `data`, `module`,
+`identity_basis`, `risk`, `visibility` — plus `url` when the value is one, which is both the
+follow-up lead and a stable entity key across reruns.
+
+**`identity_basis` is `confirmed` or `candidate`.** SpiderFoot reports both at its default
+confidence of 100, so without this an inferred name ties with a profile that was actually
+read. `candidate` covers SpiderFoot's own "related to, but not, the thing you asked about"
+prefixes — `AFFILIATE_`, `SIMILAR_`, `CO_HOSTED_`, `DARKNET_`, `LEAKSITE_` — and
+`sfp_names`, which derives human names from the local part of an address. Candidates are
+capped at `_confidence` 0.5 so a guess can never outrank an observation.
+
+Dropped: `ROOT`, the echo of the scan's own target, and events with no data — the input
+restated is not a finding. Deduplicated by `(type, data)`: a dozen modules reporting the same
+address is one fact found a dozen ways. The strongest survives and names the others in
+`related_modules`, so collapsing the duplicate entity never discards the evidence.
+
+### Budgets
+
+`limits.search_results` (default 50, max 500) caps how many results one discovery search may
+become leads. It was a bare `[:50]` in the engine, which made the breadth of a discovery job
+the only budget that could not be stated in its spec — and discovery is where an unbounded
+lead set costs the most, because every accepted result is a fetch against a host nobody
+named. `select_leads` still applies scope, depth and dedup on top; this caps the input.
+A scan is additionally capped at 5000 events before pagination stops.
+
 ## maigret
 
 `--all-sites` and `--no-autoupdate` are both in effect. `--no-autoupdate` is now

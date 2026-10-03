@@ -164,11 +164,36 @@ async function checkAuthAndConfig() {
       search_configured: !!meta.search_configured,
       model_configured: !!meta.model_configured,
     };
+    // One line per capability that is configured but not usable. A tool listed in
+    // tools_enabled can still refuse every run (spiderfoot did, for weeks, because its
+    // container egress was undeclared), and that reads exactly like "found nothing" unless
+    // it is said out loud here.
+    const caps = meta.capabilities || {};
+    const blocked = [];
     if (!meta.search_configured) {
-      warning.textContent = "Search is not configured: only URL/domain seeds will work.";
+      blocked.push(
+        "Discovery search is not configured: only URL/domain seeds will work." +
+          (caps.discovery_search && caps.discovery_search.detail
+            ? ` (${caps.discovery_search.detail})`
+            : "")
+      );
+    }
+    const sf = caps.spiderfoot;
+    if (sf && !sf.ready && sf.detail && sf.detail !== "not in HARVEST_TOOLS") {
+      blocked.push(`SpiderFoot cannot run: ${sf.detail}.`);
+    }
+    if (blocked.length) {
+      warning.textContent = blocked.join(" ");
       warning.hidden = false;
     } else {
       warning.hidden = true;
+    }
+    if (sf && sf.ready && Array.isArray(sf.modules) && sf.modules.length) {
+      const node = document.getElementById("spiderfoot-modules");
+      if (node) {
+        node.textContent = `SpiderFoot modules (${sf.modules.length}): ${sf.modules.join(", ")}`;
+        node.hidden = false;
+      }
     }
     applyModelCapability();
     return true;

@@ -665,10 +665,101 @@ def test_spiderfoot_scan_returns_events_as_records(fake_sf, monkeypatch):
     capture = tools.run("spiderfoot", "example.com", _sf_settings())
     body = json.loads(capture.body)
     assert body["tool"] == "spiderfoot" and body["target"] == "example.com"
-    # Both pages are collected, so a multi-page scan is not silently truncated.
-    assert [r["data"] for r in body["results"]] == ["1.2.3.4", "example.com"]
+    # Both pages are collected, so a multi-page scan is not silently truncated. The
+    # DOMAIN_NAME event on page 2 is the scan's own target echoed back, so it is dropped:
+    # restating the input as a finding is what made these captures read as noise.
+    assert [r["data"] for r in body["results"]] == ["1.2.3.4"]
     assert fake.created[0]["modules"] == ["sfp_dnsresolve"]
     assert fake.created[0]["target"] == "example.com"
+
+
+def test_spiderfoot_marks_inferred_findings_as_candidates():
+    """An inference must never read as an observation, and must rank below one.
+
+    SpiderFoot reports both at its default confidence of 100, so without this an inferred
+    HUMAN_NAME ties with a profile that was actually read -- and a name guessed from an
+    address's local part is exactly the claim that must not reach a dossier as confirmed.
+    """
+    events = [
+        {"type": "ACCOUNT_EXTERNAL_OWNED", "data": "https://x.test/a", "module": "sfp_accounts"},
+        {"type": "SIMILAR_ACCOUNT_EXTERNAL", "data": "https://x.test/a2", "module": "sfp_accounts"},
+        {"type": "AFFILIATE_EMAILADDR", "data": "other@x.test", "module": "sfp_pgp"},
+        {"type": "HUMAN_NAME", "data": "Guessed Name", "module": "sfp_names"},
+    ]
+    by_type = {r["event_type"]: r for r in tools._spiderfoot_records(events, "me@x.test")}
+
+    assert by_type["ACCOUNT_EXTERNAL_OWNED"]["identity_basis"] == "confirmed"
+    for inferred in ("SIMILAR_ACCOUNT_EXTERNAL", "AFFILIATE_EMAILADDR", "HUMAN_NAME"):
+        assert by_type[inferred]["identity_basis"] == "candidate", inferred
+        # The ceiling is what keeps a guess from outranking an observation.
+        assert by_type[inferred]["_confidence"] <= 0.5, inferred
+    assert by_type["ACCOUNT_EXTERNAL_OWNED"]["_confidence"] > 0.5
+
+
+def test_spiderfoot_dedupes_one_fact_found_by_several_modules():
+    """Same (type, data) from N modules is one record naming the others, not N records."""
+    events = [
+        {
+            "type": "ACCOUNT_EXTERNAL_OWNED",
+            "data": "https://github.test/u",
+            "module": "sfp_github",
+            "confidence": 80,
+        },
+        {
+            "type": "ACCOUNT_EXTERNAL_OWNED",
+            "data": "https://github.test/u",
+            "module": "sfp_accounts",
+            "confidence": 100,
+        },
+        {
+            "type": "ACCOUNT_EXTERNAL_OWNED",
+            "data": "https://github.test/u",
+            "module": "sfp_social",
+            "confidence": 50,
+        },
+    ]
+    records = tools._spiderfoot_records(events, "me@x.test")
+
+    assert len(records) == 1
+    kept = records[0]
+    # The strongest survives...
+    assert kept["module"] == "sfp_accounts" and kept["_confidence"] == 1.0
+    # ...and the evidence that the others saw it too is not discarded.
+    assert kept["related_modules"] == ["sfp_github", "sfp_social"]
+    # A URL-valued event carries `url`, which is both the lead and the stable entity key.
+    assert kept["url"] == "https://github.test/u"
+
+
+def test_spiderfoot_drops_its_own_input_and_empty_events():
+    """ROOT, the echoed target, and data-less events are not findings."""
+    events = [
+        {"type": "ROOT", "data": "me@x.test", "module": ""},
+        {"type": "EMAILADDR", "data": "ME@X.TEST", "module": "sfp_x"},  # echo, any case
+        {"type": "PUBLIC_CODE_REPO", "data": "", "module": "sfp_github"},
+        {"type": "PUBLIC_CODE_REPO", "data": None, "module": "sfp_github"},
+        {"type": "", "data": "orphan", "module": "sfp_github"},
+        {"type": "GEOINFO", "data": "Berlin", "module": "sfp_gravatar"},
+    ]
+    records = tools._spiderfoot_records(events, "me@x.test")
+    assert [r["event_type"] for r in records] == ["GEOINFO"]
+
+
+def test_spiderfoot_egress_declaration_is_fail_closed():
+    """proxy-only mode refuses the tool unless the deployment declares a proxied scanner.
+
+    The old check read SpiderFoot's own `_socks*` config, which is never reloaded at startup
+    and which its scanner ignores -- so it both always failed AND would have proved nothing.
+    """
+    from harvest.models import PolicyDenied
+
+    direct = _sf_settings(egress_mode="proxy", proxy="http://relay:8888")
+    with pytest.raises(PolicyDenied, match="HARVEST_SPIDERFOOT_EGRESS"):
+        tools._assert_spiderfoot_proxied(direct)
+
+    declared = _sf_settings(
+        egress_mode="proxy", proxy="http://relay:8888", spiderfoot_egress="proxy-env"
+    )
+    tools._assert_spiderfoot_proxied(declared)  # does not raise
 
 
 def test_spiderfoot_sends_api_key_and_never_logs_it(fake_sf, monkeypatch, caplog):
@@ -841,76 +932,43 @@ def _proxy_sf_settings(**kw):
     )
 
 
-class _FakeResponse:
-    def __init__(self, payload, status_code=200):
-        self._payload = payload
-        self.status_code = status_code
+def test_spiderfoot_is_refused_unless_its_container_egress_is_declared():
+    """SpiderFoot's modules run in their own container, so this process cannot observe them.
 
-    def json(self):
-        return self._payload
+    This replaces five tests that asserted against SpiderFoot's own `_socks*` config. That
+    check was removed because it was measured to be both always-failing and meaningless on
+    SpiderFoot NG 6.1.0: `GET /api/v1/config` answers from per-uvicorn-worker memory that is
+    never reloaded from the database (so the value read back was "" or nondeterministic), and
+    the scanner ignores the setting regardless -- a scan whose modules reached their targets
+    moved 0 bytes through the relay. Asserting it gated the tool on a value with no bearing
+    on where the packets went.
 
-    def raise_for_status(self):
-        return None
-
-
-def test_spiderfoot_is_refused_when_its_own_proxy_is_unset(monkeypatch):
-    """SpiderFoot egresses from its own container; an unset proxy there is a leak."""
-    import pytest
-
-    from harvest import tools
-    from harvest.models import PolicyDenied
-
-    client = type(
-        "C",
-        (),
-        {"get": lambda self, url, **k: _FakeResponse({"_socks1type": "", "_socks2addr": ""})},
-    )()
-    with pytest.raises(PolicyDenied, match="SpiderFoot's global proxy"):
-        tools._assert_spiderfoot_proxied(client, _proxy_sf_settings())
+    What is asserted now is the operator's declaration, and it is fail-closed: the default
+    refuses. verify-deployment.sh checks the container-level truth it stands for.
+    """
+    with pytest.raises(PolicyDenied, match="HARVEST_SPIDERFOOT_EGRESS"):
+        tools._assert_spiderfoot_proxied(_proxy_sf_settings())
 
 
-def test_spiderfoot_is_refused_when_its_proxy_points_elsewhere(monkeypatch):
-    import pytest
-
-    from harvest import tools
-    from harvest.models import PolicyDenied
-
-    other = {"_socks1type": "5", "_socks2addr": "192.0.2.50", "_socks3port": "1080"}
-    client = type("C", (), {"get": lambda self, url, **k: _FakeResponse(other)})()
-    with pytest.raises(PolicyDenied, match="SpiderFoot's global proxy"):
-        tools._assert_spiderfoot_proxied(client, _proxy_sf_settings())
+def test_spiderfoot_runs_when_container_egress_is_declared_proxied():
+    tools._assert_spiderfoot_proxied(_proxy_sf_settings(spiderfoot_egress="proxy-env"))
 
 
-def test_spiderfoot_accepts_a_matching_proxy():
-    from harvest import tools
-
-    match = {"_socks1type": "5", "_socks2addr": "10.0.0.9", "_socks3port": "1080"}
-    client = type("C", (), {"get": lambda self, url, **k: _FakeResponse(match)})()
-    tools._assert_spiderfoot_proxied(client, _proxy_sf_settings())  # must not raise
-
-
-def test_spiderfoot_accepts_nested_config_payload():
-    """The API wraps settings under "config" on some versions."""
-    from harvest import tools
-
-    nested = {"config": {"_socks1type": "5", "_socks2addr": "10.0.0.9", "_socks3port": "1080"}}
-    client = type("C", (), {"get": lambda self, url, **k: _FakeResponse(nested)})()
-    tools._assert_spiderfoot_proxied(client, _proxy_sf_settings())
-
-
-def test_spiderfoot_http_proxy_maps_to_sf_http_type():
-    from harvest import tools
+def test_spiderfoot_egress_declaration_defaults_to_direct():
+    """Nobody gets proxied egress by forgetting to configure it."""
     from harvest.config import Settings
 
-    settings = Settings(
-        egress_mode="proxy",
-        proxy="http://user:pw@198.51.100.7:8080",
-        spiderfoot_url="http://sf-api:8001",
-        spiderfoot_api_key="sf_test",
-    )
-    match = {"_socks1type": "HTTP", "_socks2addr": "198.51.100.7", "_socks3port": "8080"}
-    client = type("C", (), {"get": lambda self, url, **k: _FakeResponse(match)})()
-    tools._assert_spiderfoot_proxied(client, settings)
+    assert Settings().spiderfoot_egress == "direct"
+
+
+def test_spiderfoot_tool_is_blocked_end_to_end_without_the_declaration(fake_sf, monkeypatch):
+    """The denial must happen before any scan is created, not after."""
+    monkeypatch.setattr(tools.time, "sleep", lambda _s: None)
+    fake = fake_sf(_FakeSF(statuses=["FINISHED"], pages=[([], False)]))
+    enabled_sf = _proxy_sf_settings(tools=frozenset({"spiderfoot"}))
+    with pytest.raises(PolicyDenied, match="HARVEST_SPIDERFOOT_EGRESS"):
+        tools.run("spiderfoot", "example.com", enabled_sf)
+    assert fake.created == []
 
 
 # Shaped after GHunt 2.3.4's own writer (modules/email.py) and parsers (parsers/people.py):

@@ -420,7 +420,7 @@ class Engine:
                     Lead(
                         url=r["url"], reason="search: " + str(r.get("title", ""))[:200], priority=25
                     )
-                    for r in data.get("results", [])[:50]
+                    for r in data.get("results", [])[: spec.limits.search_results]
                     if isinstance(r, dict) and isinstance(r.get("url"), str)
                 ]
                 leads = self.select_leads(task, found, search=True)

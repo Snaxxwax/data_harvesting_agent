@@ -66,6 +66,12 @@ class Limits(StrictModel):
     no_gain_pages: int = Field(default=8, ge=1, le=1000)
     domain_delay: float = Field(default=1, ge=0.1, le=120)
     records: int = Field(default=10_000, ge=1, le=1_000_000)
+    # How many results one discovery search may turn into follow-up leads. This was a bare
+    # `[:50]` in the engine, which made the breadth of a discovery job the only budget that
+    # could not be stated in its spec -- and discovery is precisely where an unbounded lead
+    # set costs the most, because every accepted result is a fetch against a host nobody
+    # named. `select_leads` still applies scope, depth and dedup on top; this caps the input.
+    search_results: int = Field(default=50, ge=1, le=500)
     claims: int = Field(default=100_000, ge=1, le=5_000_000)
     reading_passes: int = Field(default=3, ge=1, le=10)
     # Tool tasks are only ever enqueued at submit and never retried (a tool timeout is a
