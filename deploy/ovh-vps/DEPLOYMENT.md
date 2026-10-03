@@ -417,9 +417,29 @@ credential as present or absent and never reads it.
 ### Interactive login (one time)
 
     cd /opt/harvest/app
-    docker compose exec worker ghunt login
+    ./ghunt-login.sh
 
-Choose the method GHunt offers and complete it with the dedicated account. The prompt echoes
+Run it by hand, in your own terminal. The wrapper exists because two things are easy to get
+wrong and both fail confusingly: GHunt reads `HTTP(S)_PROXY` from its own environment (its
+`get_httpx_client()` takes no proxy argument), the worker container does not set those —
+harvest injects them only into the tool subprocesses it spawns — and the worker is on an
+internal network with no gateway, so without them the login cannot reach Google and the
+error looks like a bad token rather than no route. `exec -T` would also kill the TTY the
+prompts need.
+
+GHunt offers four methods. **[1] (Companion listening mode) states it is "currently not
+compatible with docker"** — it expects to bind a port on the browser's own machine. Use
+**[2]** (paste the base64 blob from the GHunt Companion browser extension), **[3]** an
+`oauth_token` (`oauth2_4/…`), or **[4]** a master token (`aas_et/…`).
+
+Verified before handing this over: `android.googleapis.com`, `accounts.google.com` and
+`people-pa.clients6.google.com` are all reachable through the relay, so the token exchange
+has a route.
+
+**GHunt echoes the OAuth2 token, then the account's name and email, to the terminal.** Those
+lines are secrets — the master token it then saves is equivalent to a logged-in browser for
+that account, is unscoped, and is revocable only by changing the password or signing out all
+sessions. Do not copy that output into a chat, ticket, log or commit. The prompt echoes
 nothing useful to a log, but **the resulting `creds.m` is a session credential**: it holds
 that account's cookies, OSIDs and a long-lived Android master token, which together are
 equivalent to a logged-in browser. It is not scoped and cannot be revoked except by changing
