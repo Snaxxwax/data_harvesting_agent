@@ -58,6 +58,33 @@ services:
   # (exit 69 in both cases) -- so it still reports unhealthy for the real
   # failures, which is the point of keeping a probe at all.
   celery-worker:
+    # THIS is what actually proxies SpiderFoot's scans. Its modules use `requests`, which
+    # honours HTTP(S)_PROXY, and measured from inside this container the exit IP becomes the
+    # upstream proxy's instead of this VPS's.
+    #
+    # SpiderFoot's OWN global proxy (`_socks1type`/`_socks2addr`/`_socks3port`) does not
+    # work here and must not be relied on. Measured on NG 6.1.0:
+    #   * `save_config()` persists those keys to Postgres -- the rows exist -- but nothing
+    #     reloads them at startup, so `GET /api/v1/config` always answers with the hardcoded
+    #     "" default; and with two uvicorn workers a read right after a PATCH is served by
+    #     whichever worker gets it, so the same value read twice disagreed.
+    #   * the scanner ignores them regardless: a scan whose modules reached their targets
+    #     moved 0 bytes through the relay, i.e. it egressed directly.
+    # Harvest therefore stopped asserting against that API (it had been denying every
+    # spiderfoot run since proxy mode was enabled) and reads HARVEST_SPIDERFOOT_EGRESS
+    # instead, which declares exactly this block. verify-deployment.sh checks it for real.
+    #
+    # Requires `docker network connect harvest-egress sf-celery-worker`, as sf-api does --
+    # without it `egress-relay` does not resolve and every module request fails. That is
+    # fail-closed and deliberate: for an attribution-control tool, no scan beats a scan that
+    # silently leaves from this host. The attachment survives a restart, not a recreate.
+    environment:
+      HTTP_PROXY: http://egress-relay:8888
+      HTTPS_PROXY: http://egress-relay:8888
+      # Internal service traffic must NOT go through the relay: the relay has a blanket
+      # upstream, so a proxied request to postgres/redis would be sent to Webshare. Names
+      # and the Docker DNS resolver are both listed because requests matches on hostname.
+      NO_PROXY: localhost,127.0.0.1,postgres,redis,sf-postgres,sf-redis,api,sf-api,searxng,.local
     healthcheck:
       test: ["CMD-SHELL", "python -m celery -b \"$$SF_REDIS_URL\" inspect ping --timeout 2"]
       interval: 30s

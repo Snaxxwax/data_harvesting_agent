@@ -204,15 +204,71 @@ class Fetcher:
             timeout=settings.request_timeout,
             headers={"User-Agent": settings.user_agent, "Accept-Encoding": "identity"},
         )
+        # Built on first use, and only for our own private services. See client_for().
+        self._service_client = None
 
     def close(self):
         self.client.close()
+        if self._service_client is not None:
+            self._service_client.close()
+
+    def client_for(self, url, *, service=False):
+        """The proxied client for targets; a direct one for our own private services.
+
+        The search service lives on the worker's internal Docker network, so sending its
+        request through the egress proxy asks the UPSTREAM to resolve a container name:
+        measured, that answers `HTTP 502` on every discovery search even once the policy
+        guard allows the host. Routing a target direct would defeat proxy-only egress, so
+        the exemption is per-host (see `_is_search_service`) and never a mode switch --
+        SpiderFoot reaches its own API the same way, with a client that is not the fetcher's.
+
+        No PublicTransport either: that exists to pin a target's resolved address away from
+        private ranges, and this destination is deliberately a private address.
+        """
+        if not (service and self._is_search_service(urlsplit(url).hostname)):
+            return self.client
+        if self._service_client is None:
+            self._service_client = httpx.Client(
+                verify=ssl.create_default_context(cafile=self.settings.ca_bundle),
+                trust_env=False,
+                follow_redirects=False,
+                timeout=self.settings.request_timeout,
+                headers={
+                    "User-Agent": self.settings.user_agent,
+                    "Accept-Encoding": "identity",
+                },
+            )
+        return self._service_client
+
+    def _is_search_service(self, hostname) -> bool:
+        """Is this host the deployment's own configured discovery search service?
+
+        Matched by hostname against HARVEST_SEARCH_URL rather than trusting the `service`
+        flag alone, because `raw_get` re-guards every redirect hop with the same flag: a
+        search service that answered with a redirect would otherwise carry its exemption to
+        wherever it pointed.
+        """
+        configured = getattr(self.settings, "search_url", "")
+        if not configured or not hostname:
+            return False
+        want = urlsplit(configured).hostname
+        return bool(want) and hostname.lower() == want.lower()
 
     def guard(self, url, *, service=False):
         url = canonical_url(url)
         if not service and not in_scope(url, self.spec):
             raise PolicyDenied("destination is outside allowed domains")
         p = urlsplit(url)
+        # The discovery search service is this deployment's own infrastructure on a private
+        # network -- the same category as SpiderFoot, which bypasses the fetcher entirely for
+        # exactly this reason. It is named by HARVEST_SEARCH_URL, never by a job spec or a
+        # crawled page, so the destination rules below do not apply to it: they exist to stop
+        # a *target* resolving somewhere internal, and a single-label container name like
+        # `searxng` fails require_public_host() by design. Without this, proxy-only mode
+        # blocks every discovery search with "proxy destination must be a public hostname"
+        # while the service sits one Docker network away, working.
+        if service and self._is_search_service(p.hostname):
+            return url
         # Remote DNS: the proxy resolves the name, so the destination IP is never visible
         # here and the resolved_addresses() check that guards direct mode cannot run.
         # HARVEST_PROXY_PUBLIC_HOSTS is the operator's stand-in for it and is enforced
@@ -253,7 +309,8 @@ class Fetcher:
             self.store.reserve(self.task, requests=1)
             body = bytearray()
             started = time.monotonic()
-            with self.client.stream("GET", current, headers=headers) as response:
+            client = self.client_for(current, service=service)
+            with client.stream("GET", current, headers=headers) as response:
                 encoding = response.headers.get("content-encoding", "identity").lower()
                 if encoding not in ("", "identity", "gzip", "deflate"):
                     raise PolicyDenied("unsupported content encoding")

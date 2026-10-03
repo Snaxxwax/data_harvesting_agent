@@ -1,0 +1,78 @@
+# SearXNG for Harvest's discovery search. Private service, proxied egress.
+#
+# Harvest's search task already speaks this API exactly -- it GETs
+# {HARVEST_SEARCH_URL}/search?q=...&format=json and reads results[].url/.title -- so wiring
+# discovery up is configuration, not code. Two settings below are what make it work at all.
+#
+# WHY A SEARXNG HERE RATHER THAN THE EXISTING ONE ELSEWHERE:
+# the other instance on the workstation is bound to 127.0.0.1 and, more fundamentally, the
+# Harvest worker sits on `harvest-egress`, an internal Docker network with NO GATEWAY. It
+# cannot route to a tailnet address at all, and giving it a route is the one thing that would
+# dismantle proxy-only egress. A private service reachable ON that network is the only shape
+# that works, which is the same reason sf-api is attached to it.
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "harvest-discovery"
+  # No public instance, no donation links, nothing to serve to a human.
+  contact_url: false
+  enable_metrics: false
+
+server:
+  # Bound inside Docker only; nothing is published to a host interface.
+  bind_address: "0.0.0.0"
+  port: 8080
+  # Overridden from the environment (SEARXNG_SECRET). Only signs SearXNG's own URLs.
+  secret_key: "set-by-environment"
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+search:
+  # THIS IS THE LINE THAT MAKES HARVEST WORK. SearXNG serves JSON only when "json" is in
+  # formats, and it is NOT in the default set -- without it every discovery search gets HTML
+  # and fails with "search returned HTTP 403", which reads as a broken deployment rather
+  # than a missing format.
+  formats:
+    - html
+    - json
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+
+outgoing:
+  # Engine queries leave through the same relay as everything else. Without this the
+  # searches would be attributable to this VPS's own address while every other request in
+  # the deployment went through the upstream proxy -- a hole in exactly the property the
+  # proxy-only design exists to provide. Verified by comparing exit IPs.
+  proxies:
+    all://:
+      - http://egress-relay:8888
+  request_timeout: 10.0
+  max_request_timeout: 20.0
+  pool_connections: 20
+  pool_maxsize: 10
+  # A search engine that blocks the upstream proxy's address fails closed on its own; it
+  # does not fall back to direct.
+  enable_http2: true
+
+engines:
+  # Engines that do not need an API key and tolerate a datacentre/proxy source address.
+  # Deliberately narrow: each extra engine is more outbound requests per query, and the
+  # relay's bandwidth is a metered budget.
+  - name: duckduckgo
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: startpage
+    disabled: false
+  - name: mojeek
+    disabled: false
+  # Image/video/map engines add cost and return nothing a text-lead crawler can use.
+  - name: google images
+    disabled: true
+  - name: youtube
+    disabled: true

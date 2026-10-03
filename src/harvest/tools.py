@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .extract import http_url
 from .models import TOOL_TARGET_PATTERN, LostLease, PolicyDenied
 from .network import Capture
 
@@ -174,46 +175,47 @@ def _assert_no_direct_egress(settings) -> None:
     )
 
 
-def _assert_spiderfoot_proxied(client, settings) -> None:
-    """Confirm SpiderFoot's own egress is routed through the same proxy.
+def _assert_spiderfoot_proxied(settings) -> None:
+    """Refuse a scan unless the deployment declares SpiderFoot's own egress is proxied.
 
-    SpiderFoot scans from its own container, so neither ``--proxy`` nor this
-    host's egress policy covers it.  It has a global SOCKS/HTTP proxy setting
-    (the ``_socks*`` config keys); read it back and refuse the scan unless it
-    matches HARVEST_EGRESS_PROXY.  Without this check a proxy-only deployment
-    would still send every SpiderFoot module request out directly.
+    SpiderFoot scans from its own container, so neither Harvest's proxy nor its egress probe
+    covers a single module request. This used to read SpiderFoot's `_socks*` global proxy
+    back over `GET /api/v1/config` and compare it to HARVEST_EGRESS_PROXY. That check was
+    worse than no check, for two independent reasons measured on SpiderFoot NG 6.1.0:
+
+      * It never passed. `save_config()` DOES persist `_socks*` to Postgres (configSerialize
+        filters `__`-prefixed keys, not `_`-prefixed ones -- the rows are there), but nothing
+        reloads them at startup, so the endpoint always answers with the hardcoded "" default.
+        With two uvicorn workers it is also nondeterministic: a read immediately after a
+        PATCH answers from whichever worker serves it, so the same value read twice differed.
+        The practical effect was that `spiderfoot` was permanently policy-denied -- the tool
+        had not run once since proxy-only mode was enabled.
+      * Had it passed, it would have proved nothing. The scanner ignores that setting. A scan
+        whose modules reached their targets moved 0 bytes through the relay, i.e. it egressed
+        directly from this host while the API happily reported a configured proxy.
+
+    So the value being asserted had no causal relationship to where the packets went.
+    What actually works is the standard `HTTP(S)_PROXY` environment on the scanner container
+    (its modules use `requests`, which honours it): measured exit IP becomes the upstream
+    proxy's instead of this host's. That is a container-level property, and this process
+    cannot read another container's environment -- so it is declared here and *verified* by
+    verify-deployment.sh, which has Docker access and checks the env var, the network
+    attachment, and the scanner's real exit IP.
+
+    Fail-closed: the default is "direct", so a deployment that has not opted in is refused
+    rather than silently scanning from this host's address.
     """
-    parsed = urlsplit(settings.proxy)
-    want_type = {"socks5": "5", "socks5h": "5", "http": "HTTP", "https": "HTTP"}.get(
-        parsed.scheme.lower()
+    declared = getattr(settings, "spiderfoot_egress", "direct")
+    if declared == "proxy-env":
+        return
+    raise PolicyDenied(
+        "HARVEST_EGRESS_MODE=proxy but HARVEST_SPIDERFOOT_EGRESS is "
+        f"{declared!r}; SpiderFoot's modules run in their own container and would egress "
+        "directly. Give the scanner container HTTP_PROXY/HTTPS_PROXY pointing at "
+        "HARVEST_EGRESS_PROXY, attach it to the egress network, then set "
+        "HARVEST_SPIDERFOOT_EGRESS=proxy-env. Do not rely on SpiderFoot's own _socks* "
+        "config: it is not reloaded at startup and its scanner ignores it."
     )
-    if not want_type:
-        raise PolicyDenied("HARVEST_EGRESS_PROXY scheme is not supported by SpiderFoot")
-
-    got = client.get("/api/v1/config")
-    if got.status_code in (401, 403):
-        raise PolicyDenied("SpiderFoot rejected HARVEST_SPIDERFOOT_API_KEY")
-    got.raise_for_status()
-    config = got.json()
-    if isinstance(config, dict) and isinstance(config.get("config"), dict):
-        config = config["config"]
-
-    actual = (
-        str(config.get("_socks1type") or "").upper(),
-        str(config.get("_socks2addr") or ""),
-        str(config.get("_socks3port") or ""),
-    )
-    expected = (
-        want_type.upper(),
-        parsed.hostname or "",
-        str(parsed.port or (1080 if want_type == "5" else 8080)),
-    )
-    if actual != expected:
-        raise PolicyDenied(
-            "HARVEST_EGRESS_MODE=proxy but SpiderFoot's global proxy does not match "
-            "HARVEST_EGRESS_PROXY; set its _socks1type/_socks2addr/_socks3port "
-            "(PATCH /api/v1/config) so its modules do not egress directly"
-        )
 
 
 def _maigret_confidence(site: dict) -> float:
@@ -554,6 +556,159 @@ def _ghunt(
     return records
 
 
+def _assert_spiderfoot_target_is_scannable(target: str) -> None:
+    """Refuse a bare username, which SpiderFoot NG cannot scan correctly through its API.
+
+    `POST /api/v1/scans` derives the target type from the target STRING and then uses that
+    same string as the target VALUE, with no way to pass the type separately
+    (`ScanRequest` has no such field). SpiderFoot's own convention for "this is a username"
+    is to wrap it in double quotes -- and that is where the two uses collide:
+
+      * unquoted "Snaxxwax"   -> typed INTERNET_NAME. Measured: a 5-module, 476-second scan
+        produced zero events, because every identity module consumes USERNAME and nothing
+        ever emitted one.
+      * quoted '"Snaxxwax"'   -> typed USERNAME correctly, but the quotes stay in the value,
+        so modules build URLs like https://%22snaxxwax%22.weebly.com/ and every request dies
+        on a malformed host.
+
+    Either way a username scan burns a full module sweep and returns nothing, so this refuses
+    up front instead. maigret already covers username-to-accounts, over a far larger site
+    set, and it works today -- so the denial names it rather than leaving the operator to
+    guess. Email and domain targets are unaffected: SpiderFoot types those from their own
+    shape and the value survives intact.
+
+    ponytail: shape test, not a resolver call. "no @ and no dot" cannot be an address or a
+    hostname, which is exactly the case that mistypes. A dotted handle (jane.doe) is still
+    sent through as a hostname; fixing that needs an explicit target type, which needs the
+    upstream patch below.
+
+    The real fix is one field on ScanRequest plus stripping the quotes before use, in the
+    fork at github.com/Snaxxwax/spiderfoot. Until then this is a documented capability gap.
+    """
+    if "@" not in target and "." not in target:
+        raise PolicyDenied(
+            f"spiderfoot cannot scan the bare username {target!r}: its API infers the target "
+            "type from the target string, so an unquoted handle is typed INTERNET_NAME and no "
+            "identity module consumes it, while a quoted one carries the quotes into every "
+            "request URL. Use maigret for username-to-account discovery, or give spiderfoot "
+            "an email address or domain."
+        )
+
+
+# One scan can emit tens of thousands of events. Pagination stops here rather than holding
+# an unbounded list in memory; dedup below usually collapses the kept set far below this.
+# ponytail: a flat cap, not a per-type quota -- add one only if a real scan starves a type.
+_SPIDERFOOT_MAX_EVENTS = 5000
+
+# SpiderFoot event types that are NOT an observation about the target, whatever module
+# emitted them. The prefixes are SpiderFoot's own vocabulary for "related to, but not, the
+# thing you asked about": an AFFILIATE_ is someone else's address on the same infrastructure,
+# a SIMILAR_ is explicitly a near-miss handle, a CO_HOSTED_ is a neighbour on shared hosting.
+# Promoting any of these to a confirmed identity is how an unrelated person ends up in a
+# dossier, so they are kept -- they are useful leads -- and labelled.
+_SF_CANDIDATE_PREFIXES = ("AFFILIATE_", "SIMILAR_", "CO_HOSTED_", "DARKNET_", "LEAKSITE_")
+
+# Modules whose output is derived rather than observed. sfp_names infers human names from the
+# local part of an address ("errlybird49" -> plausible first/last names); that is a guess
+# about a person, and it is exactly the kind of guess that must never read as confirmed.
+_SF_CANDIDATE_MODULES = frozenset({"sfp_names"})
+
+# Event types that carry no claim about the subject: the scan's own input, echoed back.
+_SF_NOISE_TYPES = frozenset({"ROOT"})
+
+
+def _spiderfoot_identity_basis(event_type: str, module: str) -> str:
+    """ "confirmed" for an observation about the target, "candidate" for anything inferred."""
+    if module in _SF_CANDIDATE_MODULES:
+        return "candidate"
+    if event_type.startswith(_SF_CANDIDATE_PREFIXES):
+        return "candidate"
+    return "confirmed"
+
+
+def _spiderfoot_confidence(event: dict, basis: str) -> float:
+    """SpiderFoot's own 0-100 confidence, rescaled, with candidates held below confirmed.
+
+    The ceiling on candidates is the point: without it an inferred HUMAN_NAME arrives at
+    SpiderFoot's default confidence of 100 and outranks a profile that was actually read.
+    Coarse on purpose -- these rank evidence, they do not estimate a probability.
+    """
+    raw = event.get("confidence")
+    value = raw / 100 if isinstance(raw, (int, float)) and not isinstance(raw, bool) else 1.0
+    value = max(0.0, min(1.0, value))
+    return round(min(value, 0.5), 2) if basis == "candidate" else round(value, 2)
+
+
+def _spiderfoot_records(events: list, target: str) -> list[dict]:
+    """Flatten SpiderFoot events into deduplicated, queryable records.
+
+    Raw events were being returned verbatim, which had the same defect maigret's `status.ids`
+    and GHunt's nested containers had: the useful part was addressable only as opaque JSON,
+    so no dossier field_map could reach it. Each event becomes flat fields instead.
+
+    Three things are dropped. ROOT is the scan's own input. The echo of the target itself
+    (same value as the target, by any module) is the input restated, not a finding. And an
+    event with no `data` has nothing to claim.
+
+    Deduplication is by (type, data): a dozen modules reporting the same address is one fact
+    found a dozen ways, not a dozen facts. The strongest record survives and names the other
+    modules in `related_modules`, so collapsing the duplicate entity never discards the
+    evidence that another module saw it too -- the same shape as `_merge_maigret_hosts`.
+    """
+    normalized = (target or "").strip().lower()
+    groups: dict[tuple, dict] = {}
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        event_type = str(event.get("type") or "").strip()
+        data = event.get("data")
+        if event_type in _SF_NOISE_TYPES or not event_type:
+            continue
+        if not isinstance(data, str) or not data.strip():
+            continue
+        data = data.strip()
+        if data.lower() == normalized:
+            continue  # the scan's own target, echoed back as an event
+        module = str(event.get("module") or "").strip()
+        basis = _spiderfoot_identity_basis(event_type, module)
+        record = {
+            "event_type": event_type,
+            "data": data,
+            "module": module or None,
+            # Whether this is an observation about the target or an inference near it. Flat
+            # and queryable so a dossier can map it, and so a reader never has to know
+            # SpiderFoot's type vocabulary to tell the two apart.
+            "identity_basis": basis,
+            "risk": event.get("risk"),
+            "visibility": event.get("visibility"),
+            "generated": event.get("generated"),
+            "_confidence": _spiderfoot_confidence(event, basis),
+        }
+        # A URL-valued event is the one lead worth following. `url` is also what record_key
+        # prefers, so these keep a stable entity across reruns instead of a content hash.
+        link = http_url(data)
+        if link:
+            record["url"] = link
+        key = (event_type, data)
+        existing = groups.get(key)
+        if existing is None:
+            groups[key] = record
+            continue
+        # Same fact, another module. Keep the stronger record; remember both modules.
+        strongest, weaker = (
+            (existing, record)
+            if existing["_confidence"] >= record["_confidence"]
+            else (record, existing)
+        )
+        seen = set(strongest.get("related_modules") or [])
+        seen.update(weaker.get("related_modules") or [])
+        if weaker.get("module"):
+            seen.add(weaker["module"])
+        strongest["related_modules"] = sorted(seen - {strongest.get("module")})
+        groups[key] = strongest
+    return list(groups.values())
+
+
 # SpiderFoot NG speaks HTTP rather than argv, so it does not go through _exec. The
 # service is infrastructure on a private network, not a scan target, so these calls
 # deliberately bypass the fetcher's budgets and robots handling -- the scan SpiderFoot
@@ -577,6 +732,7 @@ def _spiderfoot(
         raise PolicyDenied("HARVEST_SPIDERFOOT_API_KEY is not configured")
     if not modules:
         raise PolicyDenied("HARVEST_SPIDERFOOT_MODULES is empty; no scan would run")
+    _assert_spiderfoot_target_is_scannable(target)
 
     # The key authenticates every call; it must never reach a log or a persisted error.
     headers = {"X-API-Key": key, "content-type": "application/json"}
@@ -585,7 +741,7 @@ def _spiderfoot(
     with httpx.Client(base_url=base, headers=headers, timeout=30.0) as client:
         try:
             if getattr(settings, "proxy_only", False):
-                _assert_spiderfoot_proxied(client, settings)
+                _assert_spiderfoot_proxied(settings)
             created = client.post(
                 "/api/v1/scans",
                 json={
@@ -630,8 +786,14 @@ def _spiderfoot(
                 records.extend(events)
                 if not payload.get("has_next") or not events:
                     break
+                if len(records) >= _SPIDERFOOT_MAX_EVENTS:
+                    log.warning(
+                        "spiderfoot scan produced >= %d events; stopping pagination",
+                        _SPIDERFOOT_MAX_EVENTS,
+                    )
+                    break
                 page += 1
-            return records
+            return _spiderfoot_records(records, target)
         except httpx.HTTPError as exc:
             # Never surface the response body: it can echo the request headers.
             raise ValueError(f"spiderfoot request failed: {type(exc).__name__}") from None
