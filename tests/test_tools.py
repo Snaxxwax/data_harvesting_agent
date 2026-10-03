@@ -299,8 +299,9 @@ def test_missing_binary_is_a_policy_denial(monkeypatch):
 def test_plan_suggests_maigret_for_a_username():
     plan = plan_investigation("@janedoe")
     assert plan.tools == [{"name": "maigret", "target": "janedoe"}]
-    # A tool is never suggested for an input it cannot consume.
-    assert plan_investigation("jane@example.org").tools == []
+    # A tool is never suggested for an input it cannot consume: maigret takes a username,
+    # so an email plan must not offer it (it may offer email-consuming tools instead).
+    assert "maigret" not in {t["name"] for t in plan_investigation("jane@example.org").tools}
 
 
 def test_submit_rejects_a_tool_the_deployment_has_not_enabled(tmp_path):
@@ -910,3 +911,217 @@ def test_spiderfoot_http_proxy_maps_to_sf_http_type():
     match = {"_socks1type": "HTTP", "_socks2addr": "198.51.100.7", "_socks3port": "8080"}
     client = type("C", (), {"get": lambda self, url, **k: _FakeResponse(match)})()
     tools._assert_spiderfoot_proxied(client, settings)
+
+
+GHUNT_REPORT = {
+    "PROFILE_CONTAINER": {
+        "profile": {"personId": "109274296986499857531", "name": "Jane Doe"},
+        "maps": {"reviews": []},
+    }
+}
+
+
+@pytest.fixture
+def fake_ghunt(monkeypatch, tmp_path):
+    """Stand in for the binary but keep the real contract: ghunt writes the --json path
+    and prints nothing the adapter reads. HOME is redirected so the creds precheck has
+    something to find without touching the developer's own ~/.malfrats."""
+    (tmp_path / ".malfrats" / "ghunt").mkdir(parents=True)
+    (tmp_path / ".malfrats" / "ghunt" / "creds.m").write_text("x", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    calls = _Created()
+    calls.envs = []
+
+    def fake_exec(argv, timeout, cwd, cancelled=None, env=None):
+        calls.append(argv)
+        calls.envs.append(env)
+        report = argv[argv.index("--json") + 1]
+        with open(report, "w", encoding="utf-8") as handle:
+            json.dump(GHUNT_REPORT, handle)
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    monkeypatch.setattr(tools, "_exec", fake_exec)
+    return calls
+
+
+def ghunt_enabled(**kwargs):
+    return Settings(tools=frozenset({"ghunt"}), **kwargs)
+
+
+def test_ghunt_yields_one_entity_keyed_by_gaia_id(fake_ghunt):
+    capture = tools.run("ghunt", "jane.doe@gmail.com", ghunt_enabled())
+    assert capture.url == "tool://ghunt/jane.doe@gmail.com"
+    body = json.loads(capture.body)
+    assert body["tool"] == "ghunt" and body["target"] == "jane.doe@gmail.com"
+    assert len(body["results"]) == 1
+    record = body["results"][0]
+    # `id` is what keeps record_key off a content fingerprint, so the account survives
+    # a rerun as one entity instead of forking on any changed profile detail.
+    assert record["id"] == "109274296986499857531"
+    assert record["email"] == "jane.doe@gmail.com"
+    assert record["container"] == "PROFILE_CONTAINER"
+    assert record["profile"]["name"] == "Jane Doe"
+    argv = fake_ghunt[0]
+    assert argv[:3] == ["ghunt", "email", "jane.doe@gmail.com"]
+
+
+def test_ghunt_refuses_without_credentials(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with pytest.raises(PolicyDenied, match="no credentials"):
+        tools.run("ghunt", "jane.doe@gmail.com", ghunt_enabled())
+
+
+def test_ghunt_receives_the_proxy_through_the_environment(fake_ghunt):
+    # GHunt has no --proxy flag, so the env IS the route; a dropped variable would mean
+    # silent direct egress rather than a visible failure.
+    capture = tools.run("ghunt", "jane.doe@gmail.com", ghunt_enabled(proxy="http://relay:8888"))
+    assert capture.status == 200
+    env = fake_ghunt.envs[0]
+    assert env["HTTPS_PROXY"] == env["https_proxy"] == "http://relay:8888"
+    assert "--proxy" not in fake_ghunt[0]
+
+
+def test_ghunt_in_proxy_only_mode_refuses_when_direct_egress_works(fake_ghunt, monkeypatch):
+    monkeypatch.setattr(
+        tools,
+        "_assert_no_direct_egress",
+        lambda s: (_ for _ in ()).throw(PolicyDenied("direct egress succeeded")),
+    )
+    settings = ghunt_enabled(proxy="http://relay:8888", egress_mode="proxy")
+    with pytest.raises(PolicyDenied, match="direct egress"):
+        tools.run("ghunt", "jane.doe@gmail.com", settings)
+    assert not fake_ghunt  # refused before launch, not after a leaked request
+
+
+def test_email_plan_suggests_ghunt():
+    plan = plan_investigation("jane.doe@gmail.com")
+    assert plan.kind == "email"
+    assert {"name": "ghunt", "target": "jane.doe@gmail.com"} in plan.tools
+
+
+# -- Maigret result quality ------------------------------------------------
+#
+# These run against tests/data/maigret_snaxxwax_simple.json: six sites trimmed out of a real
+# saved `--all-sites` scan (capture 212 on the ovh-vps deployment) for the handle Snaxxwax.
+# Real output rather than a hand-written shape, because every defect below was something the
+# hand-written fixture above was too clean to show: an error page reported as a claimed
+# account, probe sentinels promoted to evidence, unexpanded {username} templates reaching the
+# crawler, and one forum counted twice because it answers on two hosts.
+
+SNAXXWAX_REPORT = json.loads(
+    (Path(__file__).parent / "data" / "maigret_snaxxwax_simple.json").read_text(encoding="utf-8")
+)
+
+
+@pytest.fixture
+def saved_snaxxwax_scan(monkeypatch):
+    """Replay the saved scan instead of spending another ~45 MiB of proxy allowance."""
+
+    def fake_exec(argv, timeout, cwd, cancelled=None, env=None):
+        workdir = argv[argv.index("--folderoutput") + 1]
+        report = Path(workdir) / f"report_{argv[1]}_simple.json"
+        report.write_text(json.dumps(SNAXXWAX_REPORT), encoding="utf-8")
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    monkeypatch.setattr(tools, "_exec", fake_exec)
+
+
+def _snaxxwax_records():
+    capture = tools.run("maigret", "Snaxxwax", Settings(tools=frozenset({"maigret"})))
+    return {r["sitename"]: r for r in json.loads(capture.body)["results"]}
+
+
+def test_claimed_verdicts_are_graded_not_all_certain(saved_snaxxwax_scan):
+    """Maigret says "Claimed" for very different evidence; the claims must not."""
+    records = _snaxxwax_records()
+    # GitHub's checker parsed real profile data off the response.
+    assert records["GitHub"]["_confidence"] == 0.9
+    # Amperka answered 403 -- the "presence" string it matched is on a login wall, not a
+    # profile. This is the error page that was reported as a claimed account.
+    assert records["Amperka"]["http_status"] == 403
+    assert records["Amperka"]["_confidence"] == 0.3
+    # heroesworld.ru is a bare status-code check with nothing parsed: weak, but not an error.
+    assert records["heroesworld.ru"]["_confidence"] == 0.4
+
+
+def test_profile_ids_become_queryable_top_level_fields(saved_snaxxwax_scan):
+    """status.ids held the useful evidence as one opaque blob; it is flat fields now."""
+    github = _snaxxwax_records()["GitHub"]
+    assert github["uid"] == "105263527"
+    assert github["created_at"] == "2022-05-10T04:32:39Z"
+    assert github["status"] == "Claimed"  # the verdict, not the nested object
+    assert "ids" not in github
+    # The Threads hit is an unverified handle match -- only github.com/Snaxxwax is ground
+    # truth here -- so the real display name it reported is redacted in the fixture. The
+    # point is that a name arrives as its own sourced field, not that it is correct.
+    assert _snaxxwax_records()["Threads"]["fullname"] == "Redacted Name"
+    # The extractor's own metadata is not an observation about the subject.
+    assert "_extractor" not in github
+
+
+def test_site_definition_sentinels_and_templates_never_become_evidence(saved_snaxxwax_scan):
+    """usernameClaimed/usernameUnclaimed are probe fixtures and {username} is a template."""
+    body = json.dumps(_snaxxwax_records())
+    assert "noonewouldeverusethis7" not in body
+    assert "usernameClaimed" not in body
+    assert "{username}" not in body
+    assert "regexCheck" not in body
+    # The site's own front page is navigation, not profile enrichment.
+    records = _snaxxwax_records()
+    assert "url_main" not in records["GitHub"]
+    # maigret's "unranked" is sys.maxsize, which as a claim reads as a real 19-digit rank.
+    assert records["GitHub"]["rank"] == 10
+    assert "rank" not in records["Amperka"]
+
+
+def test_one_forum_on_two_hosts_is_one_account(saved_snaxxwax_scan):
+    """antichat.io and forum.antichat.io share a vBulletin definition and one account."""
+    records = _snaxxwax_records()
+    assert "forum.antichat.io" not in records
+    kept = records["antichat.io"]
+    # Nothing is discarded: the merged host stays on the record as evidence.
+    assert kept["related_sites"] == [
+        "forum.antichat.io: https://forum.antichat.io/member.php?username=Snaxxwax"
+    ]
+    # A shared path alone must never merge two unrelated domains.
+    assert "heroesworld.ru" in records and "GitHub" in records
+
+
+def test_only_profiles_are_offered_as_crawl_leads(saved_snaxxwax_scan):
+    """The leads a saved scan produces, which is what follow-up crawling would fetch."""
+    from harvest.extract import JsonAdapter
+
+    capture = tools.run("maigret", "Snaxxwax", Settings(tools=frozenset({"maigret"})))
+    leads = {lead.url for lead in JsonAdapter().extract(capture.body, capture.url).leads}
+    assert "https://github.com/Snaxxwax" in leads  # the profile
+    assert "https://api.github.com/users/Snaxxwax" in leads  # its enrichment endpoint
+    # Front pages, unexpanded templates and avatars are all wasted fetches.
+    assert not any(u in leads for u in ("https://www.github.com/", "https://github.com/"))
+    assert not any("{" in u for u in leads)
+    assert not any("avatars.githubusercontent.com" in u for u in leads)
+
+
+def test_top_sites_trades_breadth_for_a_smaller_scan(saved_snaxxwax_scan, monkeypatch):
+    argv = []
+    monkeypatch.setattr(tools, "_exec", lambda a, *r, **k: argv.append(a) or _write(a))
+    settings = Settings(tools=frozenset({"maigret"}))
+    tools.run("maigret", "Snaxxwax", settings, top_sites=100)
+    assert "--top-sites" in argv[0] and argv[0][argv[0].index("--top-sites") + 1] == "100"
+    assert "--all-sites" not in argv[0]
+    argv.clear()
+    tools.run("maigret", "Snaxxwax", settings)
+    assert "--all-sites" in argv[0] and "--top-sites" not in argv[0]
+    # Breadth never relaxes the two unconditional flags.
+    assert "--no-autoupdate" in argv[0]
+
+
+def _write(argv):
+    report = Path(argv[argv.index("--folderoutput") + 1]) / f"report_{argv[1]}_simple.json"
+    report.write_text(json.dumps(SNAXXWAX_REPORT), encoding="utf-8")
+
+
+def test_an_unexpanded_template_is_not_a_valid_url():
+    from harvest.models import canonical_url
+
+    with pytest.raises(ValueError, match="template placeholder"):
+        canonical_url("https://t.me/{username}")

@@ -32,6 +32,18 @@ def http_url(value, base=None):
         return None
 
 
+# Fields whose value names a binary asset rather than a page. A crawl lead to one is always
+# a wasted request: no adapter accepts image bytes, so the extract task fails on an
+# unsupported content type and the failure reads as a broken source. The value is still kept
+# as a claim -- an avatar URL shared across two sites is real corroborating evidence, it is
+# just not somewhere to crawl.
+# ponytail: a field-name list, not content sniffing. Promote to a HEAD request only if a
+# source turns up that names an image something not in here.
+ASSET_FIELDS = frozenset(
+    {"image", "image_url", "avatar", "avatar_url", "thumbnail", "photo", "logo", "icon"}
+)
+
+
 def record_key(record, url, index):
     for field in ("@id", "url", "html_url"):
         value = record.get(field)
@@ -62,6 +74,21 @@ def records_extraction(records, url, prefix="", extractor="json/1", single=False
                 warnings.append("non-object records skipped")
             continue
         key = record_key(record, url, index)
+        # A record may declare how strong its own evidence is. Our tool adapters set this
+        # (see tools.py) because only the tool knows whether a "found" verdict came from
+        # parsed profile data or from a bare status code, and a generic JSON reader cannot
+        # tell. An arbitrary third-party source could also set it, but the value is clamped
+        # and the default is already 1.0, so it can only ever LOWER a claim's confidence --
+        # never inflate one. Kept out of the claims themselves: it is adapter metadata about
+        # the record, not an observation of the subject.
+        declared = record.get("_confidence")
+        confidence = (
+            float(declared)
+            if isinstance(declared, (int, float))
+            and not isinstance(declared, bool)
+            and 0 <= declared <= 1
+            else 1.0
+        )
         if len(record) > 100 and "field limit: first 100 fields per record" not in warnings:
             warnings.append("field limit: first 100 fields per record")
         for field, value in list(record.items())[:100]:
@@ -69,7 +96,7 @@ def records_extraction(records, url, prefix="", extractor="json/1", single=False
                 if "response limit: first 5000 observations" not in warnings:
                     warnings.append("response limit: first 5000 observations")
                 break
-            if value is None or field == "@context":
+            if value is None or field in ("@context", "_confidence"):
                 continue
             evidence = packed(value)
             if len(evidence) > 20000:
@@ -85,10 +112,12 @@ def records_extraction(records, url, prefix="", extractor="json/1", single=False
                     evidence=evidence,
                     locator=f"{record_path}/{str(field).replace('~', '~0').replace('/', '~1')}",
                     method="structured",
-                    confidence=1,
+                    confidence=confidence,
                 )
             )
             # Relationships and identifiers become leads, never implicit cross-source merges.
+            if str(field).lower() in ASSET_FIELDS:
+                continue
             values = value if isinstance(value, list) else [value]
             for candidate in values[:20]:
                 if isinstance(candidate, dict):

@@ -11,6 +11,13 @@ def canonical_url(value: str) -> str:
     """Preserve query order and path semantics; remove fragments and default ports."""
     if len(value) > 4096 or any(ord(c) < 32 or c.isspace() for c in value):
         raise ValueError("invalid URL characters or length")
+    # "{" and "}" are excluded from URI syntax, so a literal one is never a real address --
+    # it is an unexpanded template such as https://t.me/{username}. Rejected here rather
+    # than in one caller because every seed, lead and declared source routes through this
+    # function, and a template that reaches a lead becomes a wasted fetch of a nonexistent
+    # page whose 404 then reads as evidence.
+    if "{" in value or "}" in value:
+        raise ValueError("URL contains an unexpanded template placeholder")
     p = urlsplit(value)
     if p.scheme.lower() not in {"http", "https"} or not p.hostname or p.username or p.password:
         raise ValueError("an HTTP(S) URL without credentials is required")
@@ -20,6 +27,25 @@ def canonical_url(value: str) -> str:
     port = p.port
     authority = host if port in (None, 443 if p.scheme == "https" else 80) else f"{host}:{port}"
     return urlunsplit((p.scheme.lower(), authority, p.path or "/", p.query, ""))
+
+
+_TOOL_SOURCE_RE = re.compile(r"^tool://([a-z0-9_-]{1,40})/(.+)$")
+
+
+def canonical_source_url(value: str) -> str:
+    """A declared source is an HTTP(S) URL, or the capture URL of a tool run.
+
+    `tools.run` names its capture `tool://<name>/<target>`, and `dossier.reconcile` matches
+    a source rule to an observation by exact `source_url`. Accepting only HTTP(S) here meant
+    a tool's observations could never have a rule, so reconcile dropped every one of them and
+    a job whose only evidence came from a tool produced an empty "completed" dossier.
+    """
+    match = _TOOL_SOURCE_RE.match(value)
+    if match is None:
+        return canonical_url(value)
+    if re.fullmatch(TOOL_TARGET_PATTERN, match.group(2)) is None:
+        raise ValueError("tool:// source URL target is not a valid tool target")
+    return value
 
 
 class StrictModel(BaseModel):
@@ -84,6 +110,16 @@ class ToolRun(StrictModel):
 
     name: str = Field(pattern=r"^[a-z0-9_-]{1,40}$")
     target: str = Field(pattern=TOOL_TARGET_PATTERN, min_length=1, max_length=254)
+    # Whether the tool's own findings may become fetch tasks. A tool run is useful on its
+    # own -- the capture and its claims are the evidence -- so crawling every profile URL it
+    # reports is a separate, much larger decision than running the tool. Default True keeps
+    # existing behaviour; False gives a scan whose request cost is exactly the tool's own.
+    crawl: bool = True
+    # Maigret only: check this many top-ranked sites instead of --all-sites. None (the
+    # default) keeps the full database, which is the documented default breadth. Other
+    # tools ignore it; it lives here rather than in Settings because breadth is a
+    # per-run authorization and cost decision, not a deployment-wide one.
+    top_sites: int | None = Field(default=None, ge=1, le=10_000)
 
 
 class SourceRule(StrictModel):
@@ -96,7 +132,7 @@ class SourceRule(StrictModel):
     @field_validator("url")
     @classmethod
     def canonical(cls, value: str) -> str:
-        return canonical_url(value)
+        return canonical_source_url(value)
 
     @field_validator("identifier_fields")
     @classmethod
@@ -131,6 +167,14 @@ class SourceRule(StrictModel):
             raise ValueError("source rule needs identifier_fields, field_map, or document_target")
         if bool(self.document_target) != bool(self.document_fields):
             raise ValueError("document_target and document_fields must be set together")
+        if self.document_target and self.url.startswith("tool://"):
+            # Document binding matches the entity whose key is "url:" + rule.url, and a tool
+            # capture never produces such an entity -- its records are per-account. Rejected
+            # rather than accepted as a rule that silently binds nothing.
+            raise ValueError(
+                "a tool:// source cannot use document_target; its records are per-account, "
+                "so bind them with identifier_fields instead"
+            )
         return self
 
 

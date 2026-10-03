@@ -250,6 +250,17 @@ function renderPlanPreview(node, plan, onSeedsChange) {
   const toolBoxes = offered.map((t) =>
     el("input", { type: "checkbox", class: "tool-box", "data-tool": t.name, "data-target": t.target })
   );
+  // Follow-up crawling and scan breadth are separate decisions from running the tool: the
+  // tool's own capture is already the evidence, while crawling what it reports spends the
+  // fetcher's request budget, and --all-sites is roughly ten times the outbound requests of
+  // a top-sites scan. Defaults match the server's (crawl on, full site database).
+  const crawlBox = el("input", { type: "checkbox", class: "tool-crawl" });
+  crawlBox.checked = true;
+  const breadthSelect = el("select", { class: "tool-breadth" }, [
+    el("option", { value: "", text: "All sites (default)" }),
+    el("option", { value: "500", text: "Top 500 sites (smaller scan)" }),
+    el("option", { value: "100", text: "Top 100 sites (smallest scan)" }),
+  ]);
   if (offered.length) {
     node.appendChild(el("label", { text: "External tools (opt-in; each runs outside request budgets)" }));
     node.appendChild(
@@ -259,6 +270,13 @@ function renderPlanPreview(node, plan, onSeedsChange) {
         offered.map((t, i) => el("label", { class: "chip" }, [toolBoxes[i], ` ${t.name}: ${t.target}`]))
       )
     );
+    node.appendChild(
+      el("label", { class: "chip" }, [crawlBox, " Follow up on tool findings (fetch the profiles it reports)"])
+    );
+    if (offered.some((t) => t.name === "maigret")) {
+      node.appendChild(el("label", { text: "Maigret scan breadth" }));
+      node.appendChild(breadthSelect);
+    }
   }
   const seedsLabel = el("label", { text: "Seed URLs (editable, one per line; no search required)" });
   const seedsInput = el("textarea", { class: "plan-edit-seeds", rows: "3" });
@@ -279,7 +297,14 @@ function renderPlanPreview(node, plan, onSeedsChange) {
     tools: () =>
       toolBoxes
         .filter((box) => box.checked)
-        .map((box) => ({ name: box.dataset.tool, target: box.dataset.target })),
+        .map((box) => {
+          const run = { name: box.dataset.tool, target: box.dataset.target, crawl: crawlBox.checked };
+          // Only maigret reads top_sites; sending it for another tool would be noise.
+          if (box.dataset.tool === "maigret" && breadthSelect.value) {
+            run.top_sites = Number(breadthSelect.value);
+          }
+          return run;
+        }),
   };
 }
 

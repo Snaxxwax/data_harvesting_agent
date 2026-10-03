@@ -69,7 +69,12 @@ class Engine:
                 {
                     "kind": "tool",
                     "key": f"{tool.name}:{tool.target}",
-                    "payload": {"tool": tool.name, "target": tool.target},
+                    "payload": {
+                        "tool": tool.name,
+                        "target": tool.target,
+                        "crawl": tool.crawl,
+                        "top_sites": tool.top_sites,
+                    },
                 }
             )
         for url in seeds:
@@ -199,7 +204,14 @@ class Engine:
                         0, Lead(url=candidate, reason="pagination", priority=50)
                     )
         offline = task["execution"] == "offline_replay"
-        leads = [] if offline else self.select_leads(task, extraction.leads)
+        crawl = task["payload"].get("crawl", True)
+        accepted = [] if offline or not crawl else self.select_leads(task, extraction.leads)
+        # Every lead the extraction produced that did not become a task: already seen, out of
+        # scope, over the depth limit, deduplicated, past the per-task cap, or not crawled at
+        # all. Previously this was reported as 0 for every online task, so a job that threw
+        # away most of its leads looked like one that had none.
+        suppressed = len(extraction.leads) - len(accepted)
+        leads = list(accepted)
         found_fields = {c.field for c in extraction.claims}
         if batch is not None and batch.done:
             with self.store.connection() as db:
@@ -241,9 +253,10 @@ class Engine:
             leads=leads,
             details={
                 "extracted_claims": len(extraction.claims),
-                "accepted_leads": len(leads),
+                "accepted_leads": len(accepted),
                 "offline": offline,
-                "suppressed_leads": len(extraction.leads) if offline else 0,
+                "crawl": crawl,
+                "suppressed_leads": suppressed,
             },
         )
 
@@ -362,8 +375,17 @@ class Engine:
             return
         if task["kind"] == "tool":
             cap = run_tool(
-                task["payload"]["tool"], task["payload"]["target"], self.settings, cancelled
+                task["payload"]["tool"],
+                task["payload"]["target"],
+                self.settings,
+                cancelled,
+                top_sites=task["payload"].get("top_sites"),
             )
+            # `crawl` rides on the extract task because that is where leads are selected.
+            # A tool run is useful without it: the capture and its claims are the evidence,
+            # while crawling every profile it reports is a separate and much larger request
+            # budget than running the tool once.
+            crawl = task["payload"].get("crawl", True)
             self.store.finish(
                 task,
                 response=cap,
@@ -371,13 +393,13 @@ class Engine:
                     {
                         "kind": "extract",
                         "key": "capture",
-                        "payload": {},
+                        "payload": {} if crawl else {"crawl": False},
                         "depth": task["depth"],
                         "priority": 100,
                         "reason": "interpret tool output",
                     }
                 ],
-                details={"tool": task["payload"]["tool"], "acquired": True},
+                details={"tool": task["payload"]["tool"], "acquired": True, "crawl": crawl},
             )
             return
         fetcher = self.fetcher_factory(self.store, self.settings, task)
