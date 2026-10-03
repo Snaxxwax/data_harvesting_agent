@@ -39,8 +39,15 @@ log = logging.getLogger("harvest")
 _TARGET_RE = re.compile(TOOL_TARGET_PATTERN)
 
 
-def _tool_env(proxy: str | None) -> dict[str, str]:
-    """Remove ambient proxies; Maigret receives the configured route via --proxy."""
+def _tool_env(proxy: str | None, inject: bool = False) -> dict[str, str]:
+    """Remove ambient proxies; Maigret receives the configured route via --proxy.
+
+    `inject` puts the validated proxy back as HTTP(S)_PROXY instead, for a tool that
+    offers no proxy flag at all. GHunt builds its httpx client without one and leaves
+    trust_env at its default, so the environment is the only route it reads. Stripping
+    first and re-adding the validated value (rather than passing os.environ through)
+    keeps an unvalidated ambient proxy from reaching any tool.
+    """
     env = {
         k: v
         for k, v in os.environ.items()
@@ -58,6 +65,9 @@ def _tool_env(proxy: str | None) -> dict[str, str]:
         valid = False
     if not valid:
         raise PolicyDenied("HARVEST_EGRESS_PROXY is not a supported proxy URL")
+    if inject:
+        env["HTTP_PROXY"] = env["HTTPS_PROXY"] = proxy
+        env["http_proxy"] = env["https_proxy"] = proxy
     return env
 
 
@@ -294,6 +304,68 @@ def _maigret(
     ]
 
 
+def _ghunt(
+    target: str,
+    workdir: str,
+    timeout: float,
+    cancelled: threading.Event | None = None,
+    settings=None,
+) -> list[dict]:
+    """`ghunt email <addr> --json <file>` writes one object per account container.
+
+    Returned as one record per container (normally just PROFILE_CONTAINER) so the JSON
+    adapter yields one entity for the Google account rather than one entity per nested
+    section. `personId` is surfaced as `id` because record_key would otherwise fall back to
+    a content fingerprint, which would mint a new entity every time any profile detail
+    changed; the Gaia ID keeps the account's identity stable across reruns.
+    """
+    # GHunt derives its credential path from Path.home() with no override, so the creds
+    # must exist under the worker's own HOME. Checked before launch because `ghunt email`
+    # on missing creds exits asking for interactive login, which would read as a scan
+    # failure rather than a configuration one.
+    creds = Path(os.environ.get("HOME", "")) / ".malfrats" / "ghunt" / "creds.m"
+    if not creds.is_file():
+        raise PolicyDenied(
+            f"ghunt has no credentials at {creds}; it requires an authenticated Google "
+            "account (run `ghunt login` and mount the resulting creds.m into the worker)"
+        )
+    report = Path(workdir) / "ghunt.json"
+    argv = ["ghunt", "email", target, "--json", str(report)]
+    proxy = getattr(settings, "proxy", None)
+    proxy_only = bool(getattr(settings, "proxy_only", False))
+    # Unlike Maigret there is no --proxy flag: GHunt's get_httpx_client() takes no proxy
+    # argument, so the environment is the only route. That makes the env the whole of the
+    # application-side guarantee, which is weaker than a flag, so proxy-only mode still
+    # requires the host to block direct egress and verifies it rather than assuming it.
+    env = _tool_env(proxy, inject=bool(proxy))
+    if proxy_only:
+        _assert_no_direct_egress(settings)
+    elif proxy:
+        log.warning("ghunt is proxied only through HTTP(S)_PROXY, which it may ignore")
+    _exec(argv, timeout, workdir, cancelled, env=env)
+    if not report.exists():
+        raise ValueError("ghunt exited cleanly but wrote no JSON report")
+    data = json.loads(report.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("ghunt JSON report was not an object keyed by container")
+    records = []
+    for name, container in data.items():
+        if not isinstance(container, dict):
+            continue
+        profile = container.get("profile")
+        profile = profile if isinstance(profile, dict) else {}
+        person = profile.get("personId")
+        records.append(
+            {
+                "container": name,
+                "email": target,
+                **({"id": person} if isinstance(person, str) and person else {}),
+                **container,
+            }
+        )
+    return records
+
+
 # SpiderFoot NG speaks HTTP rather than argv, so it does not go through _exec. The
 # service is infrastructure on a private network, not a scan target, so these calls
 # deliberately bypass the fetcher's budgets and robots handling -- the scan SpiderFoot
@@ -386,6 +458,7 @@ def _spiderfoot(
 # kinds: the planning investigation types whose normalized value is a valid target.
 TOOLS: dict[str, dict] = {
     "maigret": {"kinds": ("username",), "run": _maigret},
+    "ghunt": {"kinds": ("email",), "run": _ghunt},
     "spiderfoot": {"kinds": ("domain", "organization"), "run": _spiderfoot},
 }
 
