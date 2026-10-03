@@ -453,7 +453,8 @@ def _ghunt(
     if not creds.is_file():
         raise PolicyDenied(
             f"ghunt has no credentials at {creds}; it requires an authenticated Google "
-            "account (run `ghunt login` and mount the resulting creds.m into the worker)"
+            "account. Run `ghunt login` inside this worker, with HOME on persistent "
+            "storage so the session survives a restart"
         )
     report = Path(workdir) / "ghunt.json"
     argv = ["ghunt", "email", target, "--json", str(report)]
