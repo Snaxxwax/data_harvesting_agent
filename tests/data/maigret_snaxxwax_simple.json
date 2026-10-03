@@ -1,0 +1,255 @@
+{
+ "Amperka": {
+  "cookies": null,
+  "http_status": 403,
+  "is_similar": false,
+  "keywords": [],
+  "parsing_enabled": true,
+  "rank": 9223372036854775807,
+  "site": {
+   "checkType": "message",
+   "engine": "XenForo",
+   "ignore403": true,
+   "tags": [
+    "forum",
+    "ru"
+   ],
+   "url": "{urlMain}{urlSubpath}/members/?username={username}",
+   "urlMain": "http://forum.amperka.ru",
+   "usernameClaimed": "adam",
+   "usernameUnclaimed": "noonewouldeverusethis7"
+  },
+  "status": {
+   "ids": {},
+   "keyword_match_status": "No Keywords",
+   "keywords": [],
+   "site_name": "Amperka",
+   "status": "Claimed",
+   "tags": [
+    "forum",
+    "ru"
+   ],
+   "url": "http://forum.amperka.ru/members/?username=Snaxxwax",
+   "username": "Snaxxwax"
+  },
+  "url_main": "http://forum.amperka.ru",
+  "url_probe": "http://forum.amperka.ru/members/?username=Snaxxwax",
+  "url_user": "http://forum.amperka.ru/members/?username=Snaxxwax",
+  "username": "Snaxxwax"
+ },
+ "GitHub": {
+  "cookies": null,
+  "http_status": 200,
+  "ids_links": [],
+  "ids_usernames": {},
+  "is_similar": false,
+  "keywords": [],
+  "parsing_enabled": true,
+  "rank": 10,
+  "site": {
+   "alexaRank": 10,
+   "checkType": "status_code",
+   "regexCheck": "^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$",
+   "tags": [
+    "business",
+    "coding",
+    "networking"
+   ],
+   "url": "https://github.com/{username}",
+   "urlMain": "https://www.github.com/",
+   "urlProbe": "https://api.github.com/users/{username}",
+   "usernameClaimed": "blue",
+   "usernameUnclaimed": "noonewouldeverusethis7"
+  },
+  "status": {
+   "ids": {
+    "_extractor": "GitHub API",
+    "created_at": "2022-05-10T04:32:39Z",
+    "follower_count": "2",
+    "following_count": "6",
+    "image": "https://avatars.githubusercontent.com/u/105263527?v=4",
+    "public_gists_count": "0",
+    "public_repos_count": "19",
+    "uid": "105263527"
+   },
+   "keyword_match_status": "No Keywords",
+   "keywords": [],
+   "site_name": "GitHub",
+   "status": "Claimed",
+   "tags": [
+    "business",
+    "coding",
+    "networking"
+   ],
+   "url": "https://github.com/Snaxxwax",
+   "username": "Snaxxwax"
+  },
+  "url_main": "https://www.github.com/",
+  "url_probe": "https://api.github.com/users/Snaxxwax",
+  "url_user": "https://github.com/Snaxxwax",
+  "username": "Snaxxwax"
+ },
+ "Threads": {
+  "cookies": null,
+  "http_status": 200,
+  "ids_links": [],
+  "ids_usernames": {
+   "snaxxwax": "username"
+  },
+  "is_similar": false,
+  "keywords": [],
+  "parsing_enabled": true,
+  "rank": 409,
+  "site": {
+   "alexaRank": 409,
+   "checkType": "message",
+   "tags": [
+    "social"
+   ],
+   "url": "https://www.threads.com/@{username}",
+   "urlMain": "https://www.threads.com/",
+   "usernameClaimed": "zuck",
+   "usernameUnclaimed": "noonewouldeverusethis7"
+  },
+  "status": {
+   "ids": {
+    "_extractor": "Threads",
+    "follower_count": "40",
+    "fullname": "Redacted Name",
+    "posts_count": "0",
+    "username": "snaxxwax"
+   },
+   "keyword_match_status": "No Keywords",
+   "keywords": [],
+   "site_name": "Threads",
+   "status": "Claimed",
+   "tags": [
+    "social"
+   ],
+   "url": "https://www.threads.com/@Snaxxwax",
+   "username": "Snaxxwax"
+  },
+  "url_main": "https://www.threads.com/",
+  "url_probe": "https://www.threads.com/@Snaxxwax",
+  "url_user": "https://www.threads.com/@Snaxxwax",
+  "username": "Snaxxwax"
+ },
+ "antichat.io": {
+  "cookies": null,
+  "http_status": 200,
+  "is_similar": false,
+  "keywords": [],
+  "parsing_enabled": true,
+  "rank": 9223372036854775807,
+  "site": {
+   "checkType": "message",
+   "engine": "vBulletin",
+   "tags": [
+    "discussion",
+    "forum",
+    "hacking",
+    "ru"
+   ],
+   "url": "{urlMain}{urlSubpath}/member.php?username={username}",
+   "urlMain": "https://antichat.io",
+   "usernameClaimed": "___Roman___",
+   "usernameUnclaimed": "noonewouldeverusethis7"
+  },
+  "status": {
+   "ids": {},
+   "keyword_match_status": "No Keywords",
+   "keywords": [],
+   "site_name": "antichat.io",
+   "status": "Claimed",
+   "tags": [
+    "discussion",
+    "forum",
+    "hacking",
+    "ru"
+   ],
+   "url": "https://antichat.io/member.php?username=Snaxxwax",
+   "username": "Snaxxwax"
+  },
+  "url_main": "https://antichat.io",
+  "url_probe": "https://antichat.io/member.php?username=Snaxxwax",
+  "url_user": "https://antichat.io/member.php?username=Snaxxwax",
+  "username": "Snaxxwax"
+ },
+ "forum.antichat.io": {
+  "cookies": null,
+  "http_status": 200,
+  "is_similar": false,
+  "keywords": [],
+  "parsing_enabled": true,
+  "rank": 9223372036854775807,
+  "site": {
+   "checkType": "message",
+   "engine": "vBulletin",
+   "tags": [
+    "discussion",
+    "forum",
+    "hacking",
+    "ru"
+   ],
+   "url": "{urlMain}{urlSubpath}/member.php?username={username}",
+   "urlMain": "https://forum.antichat.io",
+   "usernameClaimed": "___Roman___",
+   "usernameUnclaimed": "noonewouldeverusethis7"
+  },
+  "status": {
+   "ids": {},
+   "keyword_match_status": "No Keywords",
+   "keywords": [],
+   "site_name": "forum.antichat.io",
+   "status": "Claimed",
+   "tags": [
+    "discussion",
+    "forum",
+    "hacking",
+    "ru"
+   ],
+   "url": "https://forum.antichat.io/member.php?username=Snaxxwax",
+   "username": "Snaxxwax"
+  },
+  "url_main": "https://forum.antichat.io",
+  "url_probe": "https://forum.antichat.io/member.php?username=Snaxxwax",
+  "url_user": "https://forum.antichat.io/member.php?username=Snaxxwax",
+  "username": "Snaxxwax"
+ },
+ "heroesworld.ru": {
+  "cookies": null,
+  "http_status": 200,
+  "is_similar": false,
+  "keywords": [],
+  "parsing_enabled": true,
+  "rank": 9223372036854775807,
+  "site": {
+   "checkType": "status_code",
+   "tags": [
+    "forum",
+    "ru"
+   ],
+   "url": "https://heroesworld.ru/user/{username}/",
+   "urlMain": "https://heroesworld.ru",
+   "usernameClaimed": "hwkeeper",
+   "usernameUnclaimed": "noonewouldeverusethis7"
+  },
+  "status": {
+   "ids": {},
+   "keyword_match_status": "No Keywords",
+   "keywords": [],
+   "site_name": "heroesworld.ru",
+   "status": "Claimed",
+   "tags": [
+    "forum",
+    "ru"
+   ],
+   "url": "https://heroesworld.ru/user/Snaxxwax/",
+   "username": "Snaxxwax"
+  },
+  "url_main": "https://heroesworld.ru",
+  "url_probe": "https://heroesworld.ru/user/Snaxxwax/",
+  "url_user": "https://heroesworld.ru/user/Snaxxwax/",
+  "username": "Snaxxwax"
+ }
+}

@@ -1,8 +1,10 @@
 """Dossier reconciliation unit + integration tests."""
 
 import json
+import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 
@@ -345,3 +347,223 @@ class TestDossierAPI:
         md = render_markdown(dossier)
         assert "# Dossier for job `test-job`" in md
         assert "## Target: A Target" in md
+
+
+class TestToolEvidenceReachesTheDossier:
+    """A tool capture's source URL is `tool://<name>/<target>`, which source rules used to
+    reject, so reconcile found no rule for any tool observation and dropped every one of
+    them in silence: a job whose only evidence was a tool scan produced an empty dossier
+    that nonetheless reported "completed"."""
+
+    def test_a_tool_capture_can_be_declared_as_a_source(self):
+        rule = SourceRule(
+            url="tool://maigret/Snaxxwax",
+            identifier_fields={"username": "username"},
+            field_map={"fullname": "display_name"},
+        )
+        assert rule.url == "tool://maigret/Snaxxwax"
+
+    def test_a_tool_source_cannot_claim_a_document_binding(self):
+        """It would bind nothing: a tool's records are per-account, never one document."""
+        with pytest.raises(Exception, match="document_target"):
+            SourceRule(
+                url="tool://maigret/Snaxxwax",
+                document_target="alpha",
+                document_fields=["status"],
+            )
+
+    def test_observations_with_no_rule_are_counted_not_dropped(self):
+        from harvest.dossier import reconcile
+
+        obs = [
+            _obs(id=1, source_url="tool://maigret/Snaxxwax", entity_key="url:https://x/a"),
+            _obs(id=2, source_url="tool://maigret/Snaxxwax", entity_key="url:https://x/a"),
+            _obs(id=3, source_url="tool://maigret/Snaxxwax", entity_key="url:https://x/b"),
+        ]
+        r = reconcile(_inv(), obs)
+        assert not r["targets"][0]["fields"]
+        assert r["excluded"] == [
+            {
+                "source_url": "tool://maigret/Snaxxwax",
+                "reason": "no_source_rule",
+                "observations": 3,
+                "entities": 2,
+                "entity_keys": ["url:https://x/a", "url:https://x/b"],
+            }
+        ]
+
+    def test_an_identifier_match_is_not_a_verified_identity(self):
+        """A handle overlapping says an account by that name exists. The dossier has to
+        carry the strength of the observation that matched, and say what it does not mean."""
+        from harvest.dossier import reconcile, render_markdown
+
+        targets = [Target(key="s", label="Snaxxwax", identifiers={"username": ["Snaxxwax"]})]
+        sources = [
+            SourceRule(
+                url="tool://maigret/Snaxxwax",
+                identifier_fields={"username": "username"},
+                field_map={"url": "profile_url"},
+            )
+        ]
+        obs = [
+            _obs(
+                id=1,
+                source_url="tool://maigret/Snaxxwax",
+                entity_key="url:https://heroesworld.ru/user/Snaxxwax/",
+                field="username",
+                value="Snaxxwax",
+                confidence=0.4,
+            ),
+            _obs(
+                id=2,
+                source_url="tool://maigret/Snaxxwax",
+                entity_key="url:https://heroesworld.ru/user/Snaxxwax/",
+                field="url",
+                value="https://heroesworld.ru/user/Snaxxwax/",
+                confidence=0.4,
+            ),
+        ]
+        r = reconcile(_inv(targets=targets, sources=sources), obs)
+        target = r["targets"][0]
+        assert target["fields"]["profile_url"]["value"] == "https://heroesworld.ru/user/Snaxxwax/"
+        # The weak status-code check that admitted it is visible, not flattened to 1.0.
+        assert target["matched_entities"][0]["match"]["confidence"] == 0.4
+        text = render_markdown({**r, "job_id": "j", "dataset": "d", "sources": []})
+        assert "identity not verified" in text
+        assert "at confidence 0.4" in text
+
+    def test_saved_snaxxwax_scan_reaches_a_dossier(self, tmp_path, monkeypatch):
+        """End to end on the real saved scan: tool -> capture -> claims -> dossier.
+
+        Replays tests/data/maigret_snaxxwax_simple.json rather than running a scan, so this
+        costs no proxy allowance. `crawl=False` keeps it to the tool's own evidence, which is
+        also what makes it hermetic -- no follow-up fetch is attempted.
+        """
+        import time
+
+        from harvest import tools
+        from harvest.models import Limits, ToolRun
+
+        report = json.loads(
+            (Path(__file__).parent / "data" / "maigret_snaxxwax_simple.json").read_text()
+        )
+
+        def fake_exec(argv, timeout, cwd, cancelled=None, env=None):
+            path = Path(argv[argv.index("--folderoutput") + 1]) / f"report_{argv[1]}_simple.json"
+            path.write_text(json.dumps(report), encoding="utf-8")
+            return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+        monkeypatch.setattr(tools, "_exec", fake_exec)
+        settings = Settings(
+            database=str(tmp_path / "h.sqlite"),
+            api_token="test-operator-token-at-least-24-characters",
+            tools=frozenset({"maigret"}),
+        )
+
+        def no_network(*args, **kwargs):
+            raise AssertionError("crawl=False must not acquire anything over the network")
+
+        # Not just asserted after the fact: with a real fetcher a crawl regression would send
+        # live requests to every site the saved scan names before the assertion could fail.
+        eng = Engine(settings, fetcher_factory=no_network)
+        inv = Investigation(
+            targets=[Target(key="s", label="Snaxxwax", identifiers={"username": ["Snaxxwax"]})],
+            sources=[
+                SourceRule(
+                    url="tool://maigret/Snaxxwax",
+                    identifier_fields={"username": "username"},
+                    field_map={
+                        "url": "profile_url",
+                        "fullname": "display_name",
+                        "uid": "account_id",
+                        "created_at": "account_created",
+                    },
+                )
+            ],
+        )
+        jid = eng.submit(
+            JobSpec(
+                objective="Investigate Snaxxwax",
+                investigation=inv,
+                tools=[ToolRun(name="maigret", target="Snaxxwax", crawl=False)],
+                limits=Limits(),
+            )
+        )
+        deadline = time.time() + 30
+        while eng.store.job(jid)["status"] in {"queued", "running"} and time.time() < deadline:
+            eng.step(jid)
+        dossier = eng.store.dossier(jid)
+        target = dossier["targets"][0]
+
+        # The whole point: tool evidence is in the dossier, not silently excluded.
+        assert not dossier["excluded"], dossier["excluded"]
+        assert target["fields"]["profile_url"]["candidates"], "tool evidence never arrived"
+        urls = {c["value"] for c in target["fields"]["profile_url"]["candidates"]}
+        assert "https://github.com/Snaxxwax" in urls
+
+        # Fields that used to be buried in status.ids are now their own sourced claims.
+        assert target["fields"]["account_id"]["value"] == "105263527"
+        assert target["fields"]["account_created"]["value"] == "2022-05-10T04:32:39Z"
+
+        # Account existence is not identity attribution: every site that answered to the
+        # handle was admitted, including ones with nothing but a status code behind them,
+        # and the confidence of each is what distinguishes them.
+        strengths = {
+            c["extraction_confidence"] for c in target["fields"]["profile_url"]["candidates"]
+        }
+        assert strengths != {1.0}, "every account still looks equally certain"
+        assert min(strengths) <= 0.4 and max(strengths) == 0.9
+
+        # No scan artefact became evidence, and nothing was queued to crawl.
+        body = json.dumps(dossier)
+        assert "noonewouldeverusethis7" not in body and "{username}" not in body
+        with eng.store.connection() as db:
+            assert not db.execute(
+                "SELECT count(*) FROM tasks WHERE job_id=? AND kind='fetch'", (jid,)
+            ).fetchone()[0]
+
+
+def test_suppressed_leads_are_counted_on_live_jobs_too(tmp_path, monkeypatch):
+    """`suppressed_leads` was hardcoded to 0 for every non-replay task, so a job that threw
+    away most of its leads was indistinguishable from one that found none. It is now the
+    difference between what the extraction produced and what became a task -- here, a tool
+    run with crawl off, where everything the scan found is suppressed by definition."""
+    import time
+
+    from harvest import tools
+    from harvest.models import Limits, ToolRun
+
+    report = json.loads(
+        (Path(__file__).parent / "data" / "maigret_snaxxwax_simple.json").read_text()
+    )
+
+    def fake_exec(argv, timeout, cwd, cancelled=None, env=None):
+        path = Path(argv[argv.index("--folderoutput") + 1]) / f"report_{argv[1]}_simple.json"
+        path.write_text(json.dumps(report), encoding="utf-8")
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    monkeypatch.setattr(tools, "_exec", fake_exec)
+    settings = Settings(
+        database=str(tmp_path / "h.sqlite"),
+        api_token="test-operator-token-at-least-24-characters",
+        tools=frozenset({"maigret"}),
+    )
+    eng = Engine(settings, fetcher_factory=lambda *a, **k: pytest.fail("no network expected"))
+    jid = eng.submit(
+        JobSpec(
+            objective="Investigate Snaxxwax",
+            tools=[ToolRun(name="maigret", target="Snaxxwax", crawl=False)],
+            limits=Limits(),
+        )
+    )
+    deadline = time.time() + 30
+    while eng.store.job(jid)["status"] in {"queued", "running"} and time.time() < deadline:
+        eng.step(jid)
+    extract = [
+        e["details"]
+        for e in eng.store.events(jid, 0, 500)
+        if e["type"] == "task_done" and "suppressed_leads" in e["details"]
+    ]
+    assert extract and extract[0]["crawl"] is False
+    assert extract[0]["accepted_leads"] == 0
+    assert extract[0]["suppressed_leads"] > 0, "the scan's own findings were not counted"
