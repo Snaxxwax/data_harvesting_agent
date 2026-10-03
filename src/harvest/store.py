@@ -640,8 +640,15 @@ class Store:
                 item = {**lead, "parent": task["id"]}
                 if item.get("kind") in {"extract", "reason"} and capture_id is not None:
                     reading_pass = item.get("payload", {}).get("pass")
+                    # Carried across the rewrite below, like `pass`: the acquisition task is
+                    # what knows whether its findings may be crawled (ToolRun.crawl), and the
+                    # extract task is where leads are selected. Dropping it here silently
+                    # restored crawling for every tool run that asked not to be crawled.
+                    crawl = item.get("payload", {}).get("crawl")
                     item["payload"] = {"capture_id": capture_id}
                     item["key"] = str(capture_id)
+                    if crawl is not None:
+                        item["payload"]["crawl"] = crawl
                     if item["kind"] == "reason":
                         item["payload"]["extraction_id"] = extraction_id
                     if reading_pass:

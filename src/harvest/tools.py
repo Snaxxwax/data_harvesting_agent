@@ -216,17 +216,140 @@ def _assert_spiderfoot_proxied(client, settings) -> None:
         )
 
 
+def _maigret_confidence(site: dict) -> float:
+    """How strong one "Claimed" verdict actually is.
+
+    Maigret reports the same word for very different evidence: a page whose profile data it
+    parsed, a page containing an expected string, and a URL that merely returned 200. They
+    were all landing as confidence 1.0, which is how a login-required 403 page ended up in a
+    dossier as a claimed account. The numbers are deliberately coarse -- they rank evidence,
+    they do not estimate a probability.
+    """
+    status = site.get("status") or {}
+    http = site.get("http_status")
+    if isinstance(http, int) and not isinstance(http, bool) and not 200 <= http < 300:
+        # The verdict came off a non-success response: an error, login wall or block page
+        # that happened to contain one of the site definition's "presence" strings.
+        return 0.3
+    if status.get("ids"):
+        return 0.9  # profile data was parsed off the page, not merely its existence
+    check = str((site.get("site") or {}).get("checkType") or "").lower()
+    base = {"message": 0.6, "response_url": 0.5, "status_code": 0.4}.get(check, 0.4)
+    # A "similar" hit is maigret's own flag that the handle is not the one searched for.
+    return round(base - 0.1, 2) if site.get("is_similar") else base
+
+
+def _maigret_record(name: str, site: dict, target: str) -> dict:
+    """One found account as a flat record of individually-sourced fields.
+
+    Three things are deliberately dropped. `site` is maigret's own site *definition* -- url
+    templates, regexes and the `usernameClaimed`/`usernameUnclaimed` probe sentinels -- which
+    is configuration, not evidence about the subject; emitting it turned "blue" and
+    "noonewouldeverusethis7" into claims and sent unexpanded `{username}` templates to the
+    crawler. `url_main` is the site's front page, which is a navigation page rather than
+    profile enrichment. The nested `status` blob is flattened, because `status.ids` is where
+    the genuinely useful evidence (fullname, account id, creation date) was buried -- as one
+    opaque JSON value it could not be queried, mapped to a dossier field, or corroborated
+    against another source.
+    """
+    status = site.get("status") or {}
+    ids = status.get("ids") if isinstance(status.get("ids"), dict) else {}
+    record = {
+        "sitename": name,
+        "username": site.get("username"),
+        # The profile URL. Also the entity key (record_key prefers "url") and the one lead
+        # worth following for enrichment.
+        "url": site.get("url_user"),
+        "url_probe": site.get("url_probe"),
+        "status": status.get("status"),
+        "http_status": site.get("http_status"),
+        "is_similar": site.get("is_similar"),
+        # maigret uses sys.maxsize as "unranked". Recorded verbatim it is a 19-digit claim
+        # that looks like real data; None drops it, which is what "unranked" means.
+        "rank": None if site.get("rank") == 9223372036854775807 else site.get("rank"),
+        "tags": status.get("tags") or None,
+        "_confidence": _maigret_confidence(site),
+    }
+    # Promote the parsed profile fields to top level under maigret's own names, so each is
+    # its own claim with its own locator instead of one unqueryable blob. Keys starting with
+    # "_" are the extractor's metadata, not observations.
+    for key, value in ids.items():
+        if key.startswith("_") or key in record:
+            continue
+        record[str(key)] = value
+    # ids_usernames echoes handles found on the page. The target's own handle is the input,
+    # not a finding: as a claim it reads as the account corroborating itself.
+    others = {
+        handle: kind
+        for handle, kind in (site.get("ids_usernames") or {}).items()
+        if isinstance(handle, str) and handle.casefold() != target.casefold()
+    }
+    if others:
+        record["ids_usernames"] = others
+    if site.get("ids_links"):
+        record["ids_links"] = site["ids_links"]
+    return {k: v for k, v in record.items() if v is not None}
+
+
+def _merge_subdomain_duplicates(records: list[dict]) -> list[dict]:
+    """Collapse one account reported once per host in the same domain family.
+
+    Maigret's database holds separate entries for a forum reachable at both its apex and a
+    subdomain (antichat.io and forum.antichat.io share one vBulletin definition), so a single
+    account is reported as two claimed accounts and corroborates itself in the dossier. Two
+    records merge only when their profile paths and queries are identical AND one host is a
+    suffix of the other, which is exact rather than a guess at a registrable domain -- it can
+    never merge two unrelated sites. The strongest record survives and names the others, so
+    the merge removes a duplicate entity without discarding the evidence.
+    """
+    groups: list[list[dict]] = []
+    for record in records:
+        parts = urlsplit(record.get("url") or "")
+        host, shape = (parts.hostname or ""), (parts.path, parts.query)
+        for group in groups:
+            other = urlsplit(group[0]["url"])
+            other_host = other.hostname or ""
+            if (other.path, other.query) == shape and (
+                host == other_host
+                or host.endswith("." + other_host)
+                or other_host.endswith("." + host)
+            ):
+                group.append(record)
+                break
+        else:
+            groups.append([record])
+    merged = []
+    for group in groups:
+        if len(group) == 1:
+            merged.append(group[0])
+            continue
+        # Strongest evidence wins; the shortest host breaks a tie, preferring the apex.
+        keep = min(group, key=lambda r: (-r["_confidence"], len(urlsplit(r["url"]).hostname or "")))
+        best = dict(keep)
+        # The merged-away hosts stay on the record as a claim: the duplicate entity is gone,
+        # the evidence that maigret saw the account at those hosts is not.
+        best["related_sites"] = sorted(
+            f"{r['sitename']}: {r['url']}" for r in group if r is not keep
+        )
+        merged.append(best)
+    return merged
+
+
 def _maigret(
     target: str,
     workdir: str,
     timeout: float,
     cancelled: threading.Event | None = None,
     settings=None,
+    top_sites: int | None = None,
 ) -> list[dict]:
     """`--json simple` writes report_<username>_simple.json: an object keyed by sitename,
     holding only CLAIMED accounts. Flattened to a list so the JSON adapter yields one entity
     per account rather than one entity with 500 nested fields, and `url_user` is surfaced as
     `url` so each found profile becomes both a stable entity key and a crawlable lead.
+
+    See `_maigret_record` for what each record keeps and drops, and `_maigret_confidence`
+    for why they do not all arrive as confidence 1.0.
     """
     argv = [
         "maigret",
@@ -235,8 +358,9 @@ def _maigret(
         # so roughly ten times the outbound requests, none of which pass through the
         # fetcher's budgets. Measured at 309 MiB peak against the worker's 512 MB limit.
         # Some site definitions in the full set raise internally without changing the exit
-        # code, so a clean exit with a report remains the success signal.
-        "--all-sites",
+        # code, so a clean exit with a report remains the success signal. ToolRun.top_sites
+        # trades that breadth for a smaller scan when a run does not need all of it.
+        *(["--top-sites", str(top_sites)] if top_sites else ["--all-sites"]),
         "--json",
         "simple",
         "--folderoutput",
@@ -297,11 +421,13 @@ def _maigret(
     data = json.loads(report.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("maigret JSON report was not an object keyed by sitename")
-    return [
-        {"sitename": name, **site, "url": site.get("url_user")}
-        for name, site in data.items()
-        if isinstance(site, dict)
-    ]
+    return _merge_subdomain_duplicates(
+        [
+            _maigret_record(name, site, target)
+            for name, site in data.items()
+            if isinstance(site, dict) and site.get("url_user")
+        ]
+    )
 
 
 def _ghunt(
@@ -463,7 +589,13 @@ TOOLS: dict[str, dict] = {
 }
 
 
-def run(name: str, target: str, settings, cancelled: threading.Event | None = None) -> Capture:
+def run(
+    name: str,
+    target: str,
+    settings,
+    cancelled: threading.Event | None = None,
+    top_sites: int | None = None,
+) -> Capture:
     """Run one allowlisted tool and return its output as an immutable capture."""
     tool = TOOLS.get(name)
     if tool is None:
@@ -478,8 +610,10 @@ def run(name: str, target: str, settings, cancelled: threading.Event | None = No
     started = time.time()
     with tempfile.TemporaryDirectory(prefix=f"harvest-{name}-") as workdir:
         # Every tool takes the same arguments and reads what it needs off settings,
-        # so adding one does not mean another branch here.
-        records = tool["run"](target, workdir, settings.tool_timeout, cancelled, settings)
+        # so adding one does not mean another branch here. `top_sites` is maigret's scan
+        # breadth; a tool whose run function does not take it simply does not see it.
+        kwargs = {"top_sites": top_sites} if top_sites and name == "maigret" else {}
+        records = tool["run"](target, workdir, settings.tool_timeout, cancelled, settings, **kwargs)
     body = json.dumps({"tool": name, "target": target, "results": records}).encode()
     url = f"tool://{name}/{target}"
     return Capture(

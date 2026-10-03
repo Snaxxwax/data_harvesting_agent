@@ -358,6 +358,46 @@ for Webshare (same shape: HTTP proxy, `user:pass@host:port`):
 
 Only the relay's `Upstream` line changes for the real Webshare endpoint.
 
+## ghunt — built and configurable, NOT yet enabled
+
+`HARVEST_TOOLS` on this host is `maigret,spiderfoot`. ghunt is **not** in it, so the tool is
+refused at submit and nothing about this deployment changes until all three of the following
+are true:
+
+1. `ghunt` is in the worker image — add it to the build arg:
+   `HARVEST_TOOL_PACKAGES="maigret==0.6.6 ghunt==2.2.0" docker compose build`
+2. `ghunt` is added to `HARVEST_TOOLS` in `/opt/harvest/.env`.
+3. A credential exists at `$HOME/.malfrats/ghunt/creds.m` inside the worker.
+
+Step 3 is the one that cannot be automated. GHunt authenticates as a real Google account and
+`ghunt login` is interactive, so it needs a Google account the operator owns and is willing
+to have attributed to this deployment's traffic. Harvest checks for the file before launching
+the binary, so until then an enabled-but-unconfigured ghunt reports
+`ghunt has no credentials at /home/harvest/.malfrats/ghunt/creds.m` as a policy denial rather
+than a failed scan.
+
+Persistence is handled by the opt-in `compose.ghunt.yaml` (tracked under `deploy/ovh-vps/`),
+which moves the worker's `HOME` to `/home/harvest` on a named volume. The base compose sets
+`HOME=/tmp`, which is a tmpfs, and GHunt rewrites `creds.m` when it refreshes its session —
+so without that overlay the credential would be destroyed on every restart and would have to
+be obtained interactively again. See the header of that file for the one-time setup and the
+restart check.
+
+### Proxy posture
+
+GHunt has no `--proxy` flag: its `get_httpx_client()` takes no proxy argument and leaves
+`trust_env` default, so `HTTP(S)_PROXY` is the only route it reads. Harvest strips ambient
+proxy variables and re-injects the *validated* `HARVEST_EGRESS_PROXY` value.
+
+| Path | Mechanism | Covered in proxy-only mode? |
+|---|---|---|
+| ghunt API calls | `HTTP(S)_PROXY` (no flag exists) | Env only — weaker than an argv flag |
+| everything else | — | Mode requires *and verifies* network-level blocking |
+
+Because an environment variable is a weaker promise than a flag, proxy-only mode keeps
+requiring the host to block direct egress and verifies it with the same
+`HARVEST_EGRESS_PROBE` TCP probe used for maigret. Enabling ghunt does not relax that.
+
 ## Cloudflare bypass — still disabled
 
 `HARVEST_MAIGRET_CLOUDFLARE_BYPASS=false`. FlareSolverr runs but is **not** wired to
