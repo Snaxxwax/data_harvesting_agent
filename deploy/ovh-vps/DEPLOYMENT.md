@@ -317,14 +317,77 @@ in that position: the VPS host (`172.18.0.1:8000`, `:80`) and the Tailscale addr
 (`100.118.181.47:8000`) are **unreachable** — the host firewall denies the Docker subnet —
 but a **sibling container on `harvest-platform_default` is reachable** (`172.18.0.2:8000`,
 the Harvest API). So a rebinding name aimed at a sibling container's address would resolve
-and connect in that misconfigured state. After any change to `tinyproxy.conf`, confirm the
-relay still egresses through the upstream:
+and connect in that misconfigured state. The entrypoint now refuses to start without a
+credential, which removes the "removed" half of this risk; after any change to the secret
+or the template, still confirm the relay egresses through the upstream:
 
     docker exec harvest-platform-worker-1 python -c "import urllib.request as u; \
       print(u.build_opener(u.ProxyHandler({'https':'http://egress-relay:8888'})) \
       .open('https://ipv4.webshare.io/',timeout=30).read().decode())"
 
 That must print the upstream proxy's address, never the VPS public address.
+
+#### Upstream proxy credential
+
+**The credential is not in any tracked file, any command argument, or the container's
+environment.** It lives in one place on the host:
+
+    /opt/harvest/egress-relay/upstream.secret     # 0600 root:root, untracked, OUTSIDE the repo
+    HARVEST_EGRESS_UPSTREAM=user:password@host:port
+
+`egress-relay/entrypoint.sh` reads that file at container start, appends the `Upstream` line
+to the tracked template, and writes the assembled config to a **tmpfs** at
+`/run/tinyproxy/tinyproxy.conf` (mode 600), then `exec`s `tinyproxy -d -c` on it. So the only
+at-rest copy inside the container is in memory and disappears with the container.
+
+It used to be a literal `Upstream http user:pass@host:port` line in
+`/opt/harvest/egress-relay/tinyproxy.conf`, **mode 0644** — readable by every user on the
+host, and trivially captured by anything that `cat`s the file, which is how it leaked into a
+work transcript on 2026-10-03.
+
+Why each exposure route is closed, and not just the tracked-file one:
+
+| Route | Why it is a problem | How it is avoided |
+|---|---|---|
+| tracked file | ends up on GitHub | template carries no `Upstream` line; `verify-deployment.sh` greps `deploy/` for a credentialed one |
+| command argument | `/proc/<pid>/cmdline` is world-readable for the life of the process, and `ps` shows it | read with the `read` builtin, written with a heredoc — never `sed "s/X/$PASS/"` |
+| environment | visible in `docker inspect`, `docker compose config`, `/proc/1/environ` | passed as a 0600 bind-mounted file, not an env var |
+| logs | persists in the journal / json-file driver | nothing echoes the value; failure messages name only the path or the missing key; `LogLevel Info` does not log it |
+
+Verified in the running container: `tinyproxy`'s argv is `tinyproxy -d -c
+/run/tinyproxy/tinyproxy.conf`, `docker inspect` shows no credential-shaped value in
+`Env`/`Cmd`/`Entrypoint`, and `docker logs` contains none.
+
+**It fails closed, deliberately.** tinyproxy with no `Upstream` line does not error — it runs
+and connects to destinations *directly from this VPS's address*, silently defeating
+proxy-only egress while Harvest's own `HARVEST_EGRESS_PROBE` still passes (that probe proves
+the **worker** has no route, not that the **relay** uses an upstream). So the entrypoint
+refuses to start when the secret is missing, empty, or not in `user:password@host:port`
+form, and `verify-deployment.sh` separately asserts the running config has an `Upstream`
+line. Tested: all four bad-input cases exit 1 and print no credential.
+
+The template is mounted at `/etc/tinyproxy/tinyproxy.conf.template`, **not** at tinyproxy's
+default config path, so that mounting it as the real config — which would produce exactly
+the silent-direct-egress state above — is not an easy mistake to make.
+
+**Moving the credential did not rotate it.** See "Rotating the upstream credential".
+
+#### Rotating the upstream credential
+
+Storage and rotation are separate. The value that was in the 0644 config is the same value
+now in the secret file, and it was exposed while that file was world-readable, so it should
+be **rotated at the provider**:
+
+1. Webshare dashboard → Proxy → Settings → reset the proxy password (or delete and recreate
+   the proxy user). This is the only step that invalidates the old credential; nothing on
+   this host can do it.
+2. Update `/opt/harvest/egress-relay/upstream.secret` with the new value (keep mode 0600).
+3. `docker compose up -d --force-recreate egress-relay` — the entrypoint reassembles the
+   config from the new secret; no rebuild is needed, since nothing is baked into an image.
+4. `./verify-deployment.sh`, then confirm the exit IP is the upstream's and not this VPS's.
+
+Also delete any stale copy once rotation is done:
+`/opt/harvest/egress-relay/tinyproxy.conf.bak` held the credential at 0644 as well.
 
 #### Enabling proxy-only egress
 
@@ -338,9 +401,13 @@ network**, so its absence can never stop sf-api from starting — verified by re
 network entirely and recreating sf-api, which came up healthy. The trade-off is that
 sf-api must be attached manually at enable time (step 3 below).
 
-Set the `Upstream` line in `/opt/harvest/egress-relay/tinyproxy.conf`:
+Write the credential to the untracked secret file (see the next subsection for why it
+lives there rather than in the config):
 
-    Upstream http USER:PASSWORD@HOST:PORT
+    install -m 600 -o root -g root /dev/null /opt/harvest/egress-relay/upstream.secret
+    # then, without putting the value in your shell history or in a command argument:
+    #   printf 'HARVEST_EGRESS_UPSTREAM=user:password@host:port\n' >> ...upstream.secret
+    # or edit it with `install -m 600` already applied and no other process watching.
 
 Then bring the stack up with the opt-in file:
 
@@ -394,7 +461,8 @@ for Webshare (same shape: HTTP proxy, `user:pass@host:port`):
 - Reverted to direct mode afterwards; final regression check — maigret 209 records,
   SpiderFoot completed with 8 records.
 
-Only the relay's `Upstream` line changes for the real Webshare endpoint.
+Only `/opt/harvest/egress-relay/upstream.secret` changes for the real Webshare endpoint;
+the tracked template never carries a credential.
 
 ## ghunt
 

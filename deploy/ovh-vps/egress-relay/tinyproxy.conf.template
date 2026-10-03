@@ -1,0 +1,31 @@
+# Egress relay for proxy-only mode -- TEMPLATE, NOT A USABLE CONFIG.
+#
+# Listens on the internal harvest-egress network, where the worker has no route of its own,
+# and forwards everything to the upstream ISP proxy. The worker cannot reach the internet
+# except through this process, so "proxy-only" is a property of the Docker routing, not of a
+# firewall rule somebody has to remember to load.
+#
+# THE `Upstream` LINE IS NOT HERE ON PURPOSE. It carries a username and password, so it must
+# never live in a tracked file. entrypoint.sh appends it at container start, reading the
+# credential from a 0600 untracked file bind-mounted at /run/secrets/egress-upstream and
+# writing the assembled config to a tmpfs. See "Upstream proxy credential" in DEPLOYMENT.md.
+#
+# This file is mounted at /etc/tinyproxy/tinyproxy.conf.template, NOT at tinyproxy's default
+# config path, and that rename matters: with no `Upstream` line tinyproxy still runs happily
+# and connects to destinations DIRECTLY from this VPS's own address, which silently defeats
+# proxy-only egress while every other check still passes. Mounting this file as the real
+# config would produce exactly that. entrypoint.sh instead refuses to start when the
+# credential is absent, so the failure is loud rather than a quiet attribution leak.
+User nobody
+Group nogroup
+Port 8888
+Timeout 600
+# Only the internal network can reach this; it is not published anywhere.
+Allow 0.0.0.0/0
+ConnectPort 443
+ConnectPort 80
+# Info does not log request URLs or the upstream credential. Raising this to Connect logs
+# every destination, and LogLevel Debug can echo header material -- neither is wanted on a
+# host whose whole point is reducing what is attributable to it.
+LogLevel Info
+DisableViaHeader Yes

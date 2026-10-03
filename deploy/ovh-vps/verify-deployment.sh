@@ -76,6 +76,18 @@ for f in compose.override.yaml compose.egress-proxy.yaml compose.ghunt.yaml; do
     fi
 done
 
+# The relay's template and entrypoint are bind-mounted from /opt/harvest/egress-relay, which
+# is deliberately outside the repo (it is where the 0600 credential lives). They still have
+# to match the tracked originals, or the running relay is not what the repo describes. The
+# credential file itself is NOT compared -- it has no tracked counterpart by design.
+for f in tinyproxy.conf.template entrypoint.sh; do
+    if diff -q "/opt/harvest/egress-relay/$f" "deploy/ovh-vps/egress-relay/$f" >/dev/null 2>&1; then
+        ok "egress-relay/$f matches deploy/ovh-vps/egress-relay/$f"
+    else
+        bad "egress-relay/$f has DRIFTED from deploy/ovh-vps/egress-relay/$f"
+    fi
+done
+
 section "Tailscale-only exposure"
 # An interface-bound publish, not a ufw rule, is what keeps this off the public internet:
 # docker writes its own DOCKER-USER iptables rules, which bypass ufw entirely.
@@ -126,6 +138,78 @@ case "$DIRECT" in
     open)    bad "direct egress from the worker WORKS -- proxy-only mode is a fiction" ;;
     *)       bad "could not test direct egress from the worker" ;;
 esac
+
+section "Upstream proxy credential (never prints the value)"
+SECRET=/opt/harvest/egress-relay/upstream.secret
+TEMPLATE=/opt/harvest/egress-relay/tinyproxy.conf.template
+
+# The credential must exist outside the repo. /opt/harvest/app IS the git checkout, so a
+# secret placed under it could be committed by a careless `git add -A`.
+case "$SECRET" in
+    /opt/harvest/app/*) bad "the secret path is inside the git repo -- move it out of /opt/harvest/app" ;;
+    *) ok "secret lives outside the git checkout" ;;
+esac
+
+if [[ -f "$SECRET" ]]; then
+    ok "upstream secret file is present"
+    PERM=$(stat -c '%a' "$SECRET" 2>/dev/null)
+    OWNER=$(stat -c '%U:%G' "$SECRET" 2>/dev/null)
+    case "$PERM" in
+        600|400) ok "its mode is $PERM, owner $OWNER (not group- or world-readable)" ;;
+        *)       bad "its mode is $PERM, owner $OWNER -- must be 600; it was 644 before 2026-10-03, readable by every user on this host" ;;
+    esac
+else
+    bad "upstream secret $SECRET is ABSENT -- the relay will refuse to start (by design: without it, it would egress directly from this VPS)"
+fi
+
+# A credential must never reappear in a tracked file. Checked by shape, not by comparing
+# against the real value, so this never needs the secret to run.
+if [[ -f "$TEMPLATE" ]]; then
+    if grep -qE '^[[:space:]]*Upstream[[:space:]]' "$TEMPLATE"; then
+        bad "the TRACKED template has an active Upstream line -- credentials belong only in $SECRET"
+    else
+        ok "tracked template is placeholder-only (no active Upstream line)"
+    fi
+else
+    bad "config template $TEMPLATE is missing"
+fi
+if git -C /opt/harvest/app grep -qIE '^[[:space:]]*Upstream[[:space:]]+http[[:space:]]+[^[:space:]]+:[^[:space:]]+@' -- deploy 2>/dev/null; then
+    bad "a tracked file under deploy/ contains a credentialed Upstream line"
+else
+    ok "no tracked file under deploy/ carries a credentialed Upstream line"
+fi
+
+# THE check that the worker-side probe above cannot make. tinyproxy with no Upstream line
+# runs fine and connects straight out from this VPS's address, so proxy-only egress would be
+# silently defeated while every other check still passed. Counted, never printed.
+if [[ -n "$(docker ps -q -f name=harvest-egress-relay 2>/dev/null)" ]]; then
+    UP=$(docker exec harvest-egress-relay sh -c "grep -cE '^Upstream http ' /run/tinyproxy/tinyproxy.conf 2>/dev/null || echo 0" 2>/dev/null | tr -d '\r')
+    if [[ "${UP:-0}" -ge 1 ]]; then
+        ok "the relay's running config has an Upstream line (assembled at startup, on tmpfs)"
+    else
+        bad "the relay is running WITHOUT an upstream -- it is egressing directly from this VPS"
+    fi
+    # The assembled config holds the credential, so it must not be world-readable even
+    # inside the container, and it must not have been written to the image's disk layer.
+    CPERM=$(docker exec harvest-egress-relay stat -c '%a' /run/tinyproxy/tinyproxy.conf 2>/dev/null | tr -d '\r')
+    case "$CPERM" in
+        600|400) ok "its assembled config is mode $CPERM inside the container" ;;
+        *)       bad "the assembled config is mode ${CPERM:-unknown} inside the container (expected 600)" ;;
+    esac
+    if docker exec harvest-egress-relay sh -c 'mountpoint -q /run/tinyproxy || grep -q " /run/tinyproxy " /proc/mounts' 2>/dev/null; then
+        ok "/run/tinyproxy is a tmpfs (credential never lands on disk)"
+    else
+        bad "/run/tinyproxy is NOT a tmpfs -- the assembled credential is being written to disk"
+    fi
+    # The credential must not be recoverable from container metadata either.
+    if docker inspect harvest-egress-relay --format '{{json .Config.Env}} {{json .Config.Cmd}} {{json .Config.Entrypoint}}' 2>/dev/null | grep -qE '[^[:space:]:]+:[^[:space:]:]+@[0-9A-Za-z.-]+:[0-9]+'; then
+        bad "a credential-shaped value is exposed in the relay's env/cmd/entrypoint (docker inspect)"
+    else
+        ok "no credential-shaped value in the relay's env, cmd or entrypoint"
+    fi
+else
+    note "egress-relay is not running; skipping its runtime credential checks"
+fi
 
 section "Tools: allowlisted AND actually in the image"
 # These must agree. HARVEST_TOOLS naming a binary the image lacks fails every job of that
