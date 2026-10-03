@@ -1,9 +1,16 @@
 # Harvest OSINT stack — ovh-vps
 
-Deployed commit: `8865e48` (data_harvesting_agent main). The application change is PR #9
-(`feat/proxy-only-egress`); PR #10 is documentation and deployment config only. Checkout
-`/opt/harvest/app`, overrides in `compose.override.yaml` and the opt-in
-`compose.egress-proxy.yaml` — both tracked in the repo under `deploy/ovh-vps/`.
+Deployed commit: `aa8efd3` (data_harvesting_agent main), deployed 2026-10-03. It merges
+`feat/ghunt-tool` (ghunt implemented, **not** enabled — see "ghunt" below) and
+`feat/tool-evidence-quality` (tool evidence reaches dossiers, graded confidence, crawl
+relevance). Checkout `/opt/harvest/app`, overrides in `compose.override.yaml` and the opt-in
+`compose.egress-proxy.yaml` and `compose.ghunt.yaml` — all tracked in the repo under
+`deploy/ovh-vps/`.
+
+**The running stack loads `compose.egress-proxy.yaml`, so it is in proxy mode.** Bringing it
+up without that file recreates both containers in `direct` mode, silently, because
+`HARVEST_EGRESS_*` is defined only in that overlay and not in `.env`. Always use the full
+three-file invocation in "Operating" below.
 
 SpiderFoot NG: `/opt/harvest/spiderfoot-ng`, poppopjmp/spiderfoot **v6.1.0**, based on
 upstream `4b53ca68ea63548c25c4148a3a18bda8d9417c74`, **now patched**: deployed commit
@@ -12,7 +19,25 @@ upstream `4b53ca68ea63548c25c4148a3a18bda8d9417c74`, **now patched**: deployed c
 commits: two fixing connection recovery (see "Postgres restart recovery" below) and two
 on the `harvest-egress` network wiring for proxy-only mode.
 
-Last verified: 2026-10-02.
+Last verified: 2026-10-03.
+
+### Verified on the deployed commit (2026-10-03)
+
+Both checks spend no full sweep: one is an offline replay, the other a 25-site scan.
+
+| Check | Result |
+| --- | --- |
+| Saved capture 212 (`tool://maigret/Snaxxwax`) replayed with a tool source rule | **20 accounts admitted, 268 claims, `excluded: []`** — before this commit the same replay produced an empty "completed" dossier |
+| Live 25-site scan, `crawl: false` | `account_id` 105263527 and `account_created` 2022-05-10 promoted out of `status.ids` as their own sourced claims; confidence 0.9; `GitHubGist` merged into `GitHub` as `merged_hosts`; no sentinels, no `{username}` templates, 0 fetch tasks queued, `suppressed_leads` 2 (was always reported as 0) |
+| Egress posture | worker direct connect to `1.1.1.1:443` fails; the scan made 41 upstream connections through the relay, none direct |
+
+Note on the replay: capture 212's **body is immutable evidence**, recorded before this
+commit, so its claims still carry confidence 1.0 and no promoted fields. Replaying it proves
+the dossier-admission fix; grading and reshaping apply to captures taken from now on.
+
+Ground truth: only `https://github.com/Snaxxwax` is a confirmed account. The other 19 in the
+replay are **unverified handle matches** and the dossier says so — each is labelled
+"account matched on identifier overlap, identity not verified".
 
 ## Access
 
@@ -159,14 +184,29 @@ inside the fetcher's budgets or per-origin pacing.
 
 ### Egress — read before an engagement
 
-**CURRENT STATE: no proxy. `HARVEST_EGRESS_PROXY` is unset and `HARVEST_EGRESS_MODE` is
-`direct`,** so maigret and SpiderFoot reach every target **directly from this VPS's public
-address, `40.160.89.118`**. An `--all-sites` run is roughly 6,000 distinct destinations of
-conspicuous traffic attributable to that address. Treat it as an authorization question,
-not only a volume one.
+**CURRENT STATE (verified 2026-10-03): proxy mode.** The running containers are up with
+`compose.egress-proxy.yaml`, so `HARVEST_EGRESS_MODE=proxy`,
+`HARVEST_EGRESS_PROXY=http://egress-relay:8888`, and the relay chains to the upstream
+Webshare endpoint. Verified on the deployed commit: a raw TCP connect to `1.1.1.1:443` from
+the worker **fails** (it is on the internal-only `harvest-egress` network), and a 25-site
+maigret scan produced **41 upstream connections through the relay** and none direct.
 
-Proxy-only mode is **built, tested and ready**; it is not enabled because no upstream proxy
-exists yet. See "Enabling proxy-only egress" below.
+This section previously read "CURRENT STATE: no proxy ... `direct`", which was stale and
+actively misleading: the "Operating" rebuild command right below it has always included
+`-f compose.egress-proxy.yaml`, so a documented rebuild brings the stack up in **proxy**
+mode. Anyone trusting the old sentence and omitting that file silently moved the deployment
+to direct egress. It happened once during the 2026-10-03 deploy — one 25-site verification
+scan went out directly from `40.160.89.118` before the posture was restored.
+
+If you deliberately revert to `direct` mode, maigret and SpiderFoot reach every target
+**directly from this VPS's public address, `40.160.89.118`**. An `--all-sites` run is
+roughly 6,000 distinct destinations of conspicuous traffic attributable to that address.
+Treat it as an authorization question, not only a volume one.
+
+**Bandwidth.** The upstream allowance is 1 GB/month and a full `--all-sites` sweep costs
+roughly 41–50 MiB, so about twenty full sweeps per month. Prefer replaying a saved capture
+(`POST /replays`, no egress at all) or `ToolRun.top_sites` for a smaller scan; the 25-site
+verification above cost well under 1 MiB.
 
 #### Why setting a proxy is not enough
 
