@@ -220,15 +220,27 @@ service that answered with a redirect cannot carry its exemption to wherever it 
 
 ## SpiderFoot identity modules — and what does not work
 
-`HARVEST_SPIDERFOOT_MODULES` was `sfp_dnsresolve` alone. It is now the email-consuming set
-that was measured to execute cleanly:
+`HARVEST_SPIDERFOOT_MODULES` was `sfp_dnsresolve` alone. It is now:
 
-    sfp_dnsresolve,sfp_gravatar,sfp_hudsonrock,sfp_pgp,sfp_debounce,sfp_names,sfp_wikileaks
+    sfp_dnsresolve,sfp_accounts,sfp_tiktok_osint,sfp_gravatar,sfp_hudsonrock,sfp_pgp,
+    sfp_debounce,sfp_names,sfp_wikileaks
 
-Excluded, with reasons, from the 18 identity-consuming modules that need no API key:
-`sfp_threatcrowd` (its API domain is NXDOMAIN — the service is gone), `sfp_trumail`
-(retired), `sfp_myspace` (dead site), `sfp_ahmia` / `sfp_onionsearchengine` / `sfp_torch`
-(tor-flagged; there is no tor route through an HTTP proxy), and everything `apikey`-flagged.
+**`sfp_accounts` is the one that matters, and it was nearly left out.** The selection was
+first made by running candidate modules against an owned address and keeping whatever
+produced events — and it produced nothing, so a narrow set shipped. That was a selection
+error, not a result: `sfp_accounts` had only ever been tested against a *username* target,
+where the API's type bug (below) guarantees zero events for every module. Against an **email**
+target it works, and it is the highest-value module here — it derives the username from the
+local part and finds real accounts. Re-running **all 37 EMAILADDR-consuming modules** against
+the same address is what surfaced it, along with `sfp_tiktok_osint`.
+
+`sfp_tiktok_osint` also shows the `apikey` flag is not a reliable exclusion: it carries one
+and works anyway, because the key is optional enrichment. Filtering on that flag is what hid
+it. Select by running them, not by reading their metadata.
+
+Excluded with reasons: `sfp_threatcrowd` (its API domain is NXDOMAIN — the service is gone),
+`sfp_trumail` (retired), `sfp_myspace` (dead site), `sfp_ahmia` / `sfp_onionsearchengine` /
+`sfp_torch` (tor-flagged; there is no tor route through an HTTP proxy).
 
 ### The tool had never run once
 
@@ -293,6 +305,33 @@ nested containers had: the useful part was addressable only as opaque JSON, so n
 `field_map` could reach it. Each event is now flat fields — `event_type`, `data`, `module`,
 `identity_basis`, `risk`, `visibility` — plus `url` when the value is one, which is both the
 follow-up lead and a stable entity key across reruns.
+
+**URLs arrive wrapped in a tag, not bare.** SpiderFoot's highest-value identity events put
+a human label on the first line and the URL inside `<SFURL>…</SFURL>` on the second:
+
+    ACCOUNT_EXTERNAL_OWNED  "Pinterest (Category: social)\n<SFURL>https://pinterest.com/x/</SFURL>"
+
+Treating that whole string as the value cost two things at once — `http_url()` rejected it so
+the account produced **no follow-up lead**, and with no `url` the record fell back to a
+content fingerprint for its entity key, minting a new entity whenever the label changed. The
+URL is now extracted, the label stays as the queryable value, and dedup keys on the URL so
+one profile reported under two labels is one account.
+
+**`derived_from` is what makes an account bindable.** An account's own `data` is a label
+("Pinterest (Category: social)"), so a dossier has nothing on it to match an identifier
+against: the accounts land in `unresolved` — found, evidenced, and attached to nobody — while
+only the derived `USERNAME` itself binds. `derived_from` carries the parent event's *value*,
+so a source rule binds the whole set by the handle they were found under:
+
+    "identifier_fields": {"derived_from": "username"}
+
+**`derived_via` carries the provenance chain.** SpiderFoot links events by hash, and for an
+email target the chain is the whole story: `sfp_accounts` derives a `USERNAME` from the local
+part and the accounts hang off *that*. So an account reported for an address was reached **by
+handle**, not by anything tying the address to the profile. That is a different question from
+how strong the finding is, so it is its own field rather than folded into `identity_basis`:
+expect `ACCOUNT_EXTERNAL_OWNED` with `identity_basis: confirmed` (the profile was fetched and
+exists) and `derived_via: USERNAME` (the attribution rests on the handle matching).
 
 **`identity_basis` is `confirmed` or `candidate`.** SpiderFoot reports both at its default
 confidence of 100, so without this an inferred name ties with a profile that was actually

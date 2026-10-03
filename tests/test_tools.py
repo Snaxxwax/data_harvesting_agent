@@ -696,6 +696,81 @@ def test_spiderfoot_marks_inferred_findings_as_candidates():
     assert by_type["ACCOUNT_EXTERNAL_OWNED"]["_confidence"] > 0.5
 
 
+def test_spiderfoot_extracts_sfurl_links_and_records_provenance():
+    """Real sfp_accounts output: a label, then the URL inside an <SFURL> tag.
+
+    Shaped from the actual rows a scan of an owned address produced. Treating the whole
+    string as the value cost two things at once -- `http_url()` rejected it so the account
+    produced NO follow-up lead, and with no `url` the record fell back to a content
+    fingerprint, minting a new entity whenever the label changed.
+
+    `derived_via` is the other half: for an EMAIL target sfp_accounts derives a USERNAME from
+    the local part and hangs the accounts off THAT, so an account reported for an address was
+    reached by handle. The chain is the only thing that says so.
+    """
+    events = [
+        {"type": "ROOT", "data": "me@x.test", "hash": "ROOT", "source_event_hash": "ROOT"},
+        {
+            "type": "EMAILADDR",
+            "data": "me@x.test",
+            "module": "SpiderFoot UI",
+            "hash": "H_E",
+            "source_event_hash": "ROOT",
+        },
+        {
+            "type": "USERNAME",
+            "data": "me",
+            "module": "sfp_accounts",
+            "hash": "H_U",
+            "source_event_hash": "H_E",
+        },
+        {
+            "type": "ACCOUNT_EXTERNAL_OWNED",
+            "data": "Pinterest (Category: social)\n<SFURL>https://www.pinterest.com/me/</SFURL>",
+            "module": "sfp_accounts",
+            "hash": "H_P",
+            "source_event_hash": "H_U",
+        },
+    ]
+    by_type = {r["event_type"]: r for r in tools._spiderfoot_records(events, "me@x.test")}
+
+    account = by_type["ACCOUNT_EXTERNAL_OWNED"]
+    # The URL is extracted, so it becomes a lead and a stable entity key...
+    assert account["url"] == "https://www.pinterest.com/me/"
+    # ...and the label survives as the queryable value, without the tag soup.
+    assert account["data"] == "Pinterest (Category: social)"
+    assert "SFURL" not in account["data"]
+    # Provenance: reached via a handle, not via anything tying the address to the profile.
+    assert account["derived_via"] == "USERNAME"
+    assert by_type["USERNAME"]["derived_via"] == "EMAILADDR"
+    # And the parent's VALUE, which is the only field on an account a dossier can match an
+    # identifier against -- its own `data` is a label. Without it the accounts land in the
+    # dossier's `unresolved` list: found, evidenced, and attached to nobody.
+    assert account["derived_from"] == "me"
+    assert by_type["USERNAME"]["derived_from"] == "me@x.test"
+
+
+def test_spiderfoot_dedupes_the_same_profile_under_two_labels():
+    """One profile reported with different labels is one account, keyed on its URL."""
+    events = [
+        {
+            "type": "ACCOUNT_EXTERNAL_OWNED",
+            "data": "Pinterest (Category: social)\n<SFURL>https://pin.test/me</SFURL>",
+            "module": "sfp_accounts",
+            "confidence": 80,
+        },
+        {
+            "type": "ACCOUNT_EXTERNAL_OWNED",
+            "data": "Pinterest\n<SFURL>https://pin.test/me</SFURL>",
+            "module": "sfp_social",
+            "confidence": 100,
+        },
+    ]
+    records = tools._spiderfoot_records(events, "me@x.test")
+    assert len(records) == 1
+    assert records[0]["related_modules"] == ["sfp_accounts"]
+
+
 def test_spiderfoot_dedupes_one_fact_found_by_several_modules():
     """Same (type, data) from N modules is one record naming the others, not N records."""
     events = [
