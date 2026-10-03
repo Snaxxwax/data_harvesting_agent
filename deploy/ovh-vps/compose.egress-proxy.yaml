@@ -10,14 +10,31 @@
 # route cannot. Harvest additionally probes HARVEST_EGRESS_PROBE and refuses to
 # run Maigret if direct egress turns out to work, so a misconfiguration fails
 # closed instead of quietly leaking.
+#
+# Note the limit of that probe: it proves the WORKER has no route of its own, not
+# that the RELAY actually chains to an upstream. tinyproxy with no `Upstream` line
+# runs fine and connects directly from this VPS's address, so entrypoint.sh
+# refuses to start without the credential, and verify-deployment.sh asserts the
+# running config has an Upstream line.
 services:
   egress-relay:
     image: vimagick/tinyproxy
     container_name: harvest-egress-relay
     restart: unless-stopped
     init: true
+    # The upstream credential is NOT here, and not in `environment` either: an env var is
+    # readable from `docker inspect`, `docker compose config` and /proc/1/environ, which
+    # would only move a world-readable secret from one place to another. It arrives as a
+    # 0600 bind-mounted file that entrypoint.sh reads, and the assembled config is written
+    # to the tmpfs below so the only at-rest copy inside the container never touches disk.
+    entrypoint: ["/usr/local/bin/egress-entrypoint.sh"]
     volumes:
-      - /opt/harvest/egress-relay/tinyproxy.conf:/etc/tinyproxy/tinyproxy.conf:ro
+      - /opt/harvest/egress-relay/tinyproxy.conf.template:/etc/tinyproxy/tinyproxy.conf.template:ro
+      - /opt/harvest/egress-relay/entrypoint.sh:/usr/local/bin/egress-entrypoint.sh:ro
+      # 0600 root-owned on the host. Keep it OUT of /opt/harvest/app (the git repo).
+      - /opt/harvest/egress-relay/upstream.secret:/run/secrets/egress-upstream:ro
+    tmpfs:
+      - /run/tinyproxy:mode=0700
     # harvest-egress: where the worker reaches it. default: how it reaches the
     # upstream proxy. Nothing is published; it is not reachable from outside.
     networks: [harvest-egress, default]
