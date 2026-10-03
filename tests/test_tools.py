@@ -299,8 +299,9 @@ def test_missing_binary_is_a_policy_denial(monkeypatch):
 def test_plan_suggests_maigret_for_a_username():
     plan = plan_investigation("@janedoe")
     assert plan.tools == [{"name": "maigret", "target": "janedoe"}]
-    # A tool is never suggested for an input it cannot consume.
-    assert plan_investigation("jane@example.org").tools == []
+    # A tool is never suggested for an input it cannot consume: maigret takes a username,
+    # so an email plan must not offer it (it may offer email-consuming tools instead).
+    assert "maigret" not in {t["name"] for t in plan_investigation("jane@example.org").tools}
 
 
 def test_submit_rejects_a_tool_the_deployment_has_not_enabled(tmp_path):
@@ -910,3 +911,89 @@ def test_spiderfoot_http_proxy_maps_to_sf_http_type():
     match = {"_socks1type": "HTTP", "_socks2addr": "198.51.100.7", "_socks3port": "8080"}
     client = type("C", (), {"get": lambda self, url, **k: _FakeResponse(match)})()
     tools._assert_spiderfoot_proxied(client, settings)
+
+
+GHUNT_REPORT = {
+    "PROFILE_CONTAINER": {
+        "profile": {"personId": "109274296986499857531", "name": "Jane Doe"},
+        "maps": {"reviews": []},
+    }
+}
+
+
+@pytest.fixture
+def fake_ghunt(monkeypatch, tmp_path):
+    """Stand in for the binary but keep the real contract: ghunt writes the --json path
+    and prints nothing the adapter reads. HOME is redirected so the creds precheck has
+    something to find without touching the developer's own ~/.malfrats."""
+    (tmp_path / ".malfrats" / "ghunt").mkdir(parents=True)
+    (tmp_path / ".malfrats" / "ghunt" / "creds.m").write_text("x", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    calls = _Created()
+    calls.envs = []
+
+    def fake_exec(argv, timeout, cwd, cancelled=None, env=None):
+        calls.append(argv)
+        calls.envs.append(env)
+        report = argv[argv.index("--json") + 1]
+        with open(report, "w", encoding="utf-8") as handle:
+            json.dump(GHUNT_REPORT, handle)
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    monkeypatch.setattr(tools, "_exec", fake_exec)
+    return calls
+
+
+def ghunt_enabled(**kwargs):
+    return Settings(tools=frozenset({"ghunt"}), **kwargs)
+
+
+def test_ghunt_yields_one_entity_keyed_by_gaia_id(fake_ghunt):
+    capture = tools.run("ghunt", "jane.doe@gmail.com", ghunt_enabled())
+    assert capture.url == "tool://ghunt/jane.doe@gmail.com"
+    body = json.loads(capture.body)
+    assert body["tool"] == "ghunt" and body["target"] == "jane.doe@gmail.com"
+    assert len(body["results"]) == 1
+    record = body["results"][0]
+    # `id` is what keeps record_key off a content fingerprint, so the account survives
+    # a rerun as one entity instead of forking on any changed profile detail.
+    assert record["id"] == "109274296986499857531"
+    assert record["email"] == "jane.doe@gmail.com"
+    assert record["container"] == "PROFILE_CONTAINER"
+    assert record["profile"]["name"] == "Jane Doe"
+    argv = fake_ghunt[0]
+    assert argv[:3] == ["ghunt", "email", "jane.doe@gmail.com"]
+
+
+def test_ghunt_refuses_without_credentials(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with pytest.raises(PolicyDenied, match="no credentials"):
+        tools.run("ghunt", "jane.doe@gmail.com", ghunt_enabled())
+
+
+def test_ghunt_receives_the_proxy_through_the_environment(fake_ghunt):
+    # GHunt has no --proxy flag, so the env IS the route; a dropped variable would mean
+    # silent direct egress rather than a visible failure.
+    capture = tools.run("ghunt", "jane.doe@gmail.com", ghunt_enabled(proxy="http://relay:8888"))
+    assert capture.status == 200
+    env = fake_ghunt.envs[0]
+    assert env["HTTPS_PROXY"] == env["https_proxy"] == "http://relay:8888"
+    assert "--proxy" not in fake_ghunt[0]
+
+
+def test_ghunt_in_proxy_only_mode_refuses_when_direct_egress_works(fake_ghunt, monkeypatch):
+    monkeypatch.setattr(
+        tools,
+        "_assert_no_direct_egress",
+        lambda s: (_ for _ in ()).throw(PolicyDenied("direct egress succeeded")),
+    )
+    settings = ghunt_enabled(proxy="http://relay:8888", egress_mode="proxy")
+    with pytest.raises(PolicyDenied, match="direct egress"):
+        tools.run("ghunt", "jane.doe@gmail.com", settings)
+    assert not fake_ghunt  # refused before launch, not after a leaked request
+
+
+def test_email_plan_suggests_ghunt():
+    plan = plan_investigation("jane.doe@gmail.com")
+    assert plan.kind == "email"
+    assert {"name": "ghunt", "target": "jane.doe@gmail.com"} in plan.tools

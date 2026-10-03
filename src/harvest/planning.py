@@ -201,6 +201,7 @@ def plan_investigation(value: str, kind: str | None = None) -> Plan:
             normalized=email,
             discovery_queries=queries,
             fields=DEFAULT_FIELDS["email"],
+            tools=[{"name": name, "target": email} for name in tools_for("email")],
         )
     if detected == "phone":
         digits = re.sub(r"[^0-9+]", "", value)
