@@ -1,0 +1,183 @@
+{
+ "arm": "claude",
+ "phase": "interrupted",
+ "root_job": "bf3d22b5d8fc411699e3a0fc989a8824",
+ "limits": {
+  "requests": 10,
+  "bytes": 3000000,
+  "seconds": 3600,
+  "depth": 0,
+  "tool_runs": 0,
+  "tasks": 60
+ },
+ "capture": 212,
+ "wall_seconds": 59.2,
+ "final_statuses": [
+  "completed",
+  "completed",
+  "failed",
+  "failed",
+  "failed",
+  "completed",
+  "failed"
+ ],
+ "answer_parsed": true,
+ "run": {
+  "answer": {
+   "owned": 1,
+   "not_owned": 0,
+   "undetermined": 19
+  },
+  "sessions": [
+   {
+    "session": 1,
+    "exit": -9,
+    "killed": true,
+    "seconds": 18.8,
+    "answer": null,
+    "usage": null,
+    "command": [
+     "claude",
+     "-p",
+     "<prompt>",
+     "--output-format",
+     "json",
+     "--model",
+     "sonnet",
+     "--strict-mcp-config",
+     "--mcp-config",
+     "/tmp/hc-claude-7cxsthn_/mcp.json",
+     "--allowedTools",
+     "mcp__harvest",
+     "--disallowedTools",
+     "Bash,WebFetch,WebSearch"
+    ]
+   },
+   {
+    "session": 2,
+    "exit": 0,
+    "killed": false,
+    "seconds": 38.6,
+    "answer": {
+     "owned": 1,
+     "not_owned": 0,
+     "undetermined": 19
+    },
+    "usage": {
+     "total_cost_usd": 0.3103648,
+     "num_turns": 20,
+     "models": [
+      "claude-sonnet-5-5"
+     ],
+     "usage": {
+      "input_tokens": 18,
+      "cache_creation_input_tokens": 50376,
+      "cache_read_input_tokens": 381824,
+      "output_tokens": 3246,
+      "output_tokens_details": {
+       "thinking_tokens": 387
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 50376,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+       {
+        "input_tokens": 2,
+        "output_tokens": 1007,
+        "cache_read_input_tokens": 60721,
+        "cache_creation_input_tokens": 2030,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 2030
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    },
+    "command": [
+     "claude",
+     "-p",
+     "<prompt>",
+     "--output-format",
+     "json",
+     "--model",
+     "sonnet",
+     "--strict-mcp-config",
+     "--mcp-config",
+     "/tmp/hc-claude-7cxsthn_/mcp.json",
+     "--allowedTools",
+     "mcp__harvest",
+     "--disallowedTools",
+     "Bash,WebFetch,WebSearch"
+    ]
+   }
+  ]
+ },
+ "score": {
+  "root_id": "bf3d22b5d8fc411699e3a0fc989a8824",
+  "jobs": 7,
+  "statuses": [
+   "completed",
+   "failed"
+  ],
+  "followups": 6,
+  "useful_followups": 2,
+  "followup_targets": 6,
+  "observations": 315,
+  "captures": 3,
+  "citation_presence": 1.0,
+  "evidence_support": 1.0,
+  "evidence_checked": 275,
+  "derived_claims": 40,
+  "attribution_harvest": {
+   "asserted": 0,
+   "correct": 0,
+   "incorrect": 0,
+   "unsupported": 0,
+   "missed_owned": 1,
+   "errors": 0
+  },
+  "attribution_answer": {
+   "asserted": 1,
+   "correct": 1,
+   "incorrect": 0,
+   "unsupported": 0,
+   "missed_owned": 0,
+   "errors": 0
+  },
+  "unnecessary_calls": 0,
+  "repeated_followups": 0,
+  "cost_enforced": {
+   "requests": 4,
+   "bytes": 235564,
+   "model_calls": 0,
+   "model_tokens": 0,
+   "cost_usd": 0.0,
+   "tool_runs": 0,
+   "tasks": 9,
+   "seconds": 1045.7
+  },
+  "budget_limits": {
+   "requests": 10,
+   "bytes": 3000000,
+   "model_calls": 10,
+   "model_tokens": 150000,
+   "cost_usd": 2.0,
+   "tool_runs": 0,
+   "tasks": 60,
+   "seconds": 3600
+  },
+  "external_tool_runs": []
+ },
+ "rescored": "2026-10-04, harness_eval scalar/entity-aware support check"
+}
