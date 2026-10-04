@@ -19,7 +19,7 @@ from fastapi import (
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import planning, sessions
+from . import capabilities, planning, sessions
 from .config import Settings
 from .engine import Engine
 from .export import render_csv
@@ -27,30 +27,6 @@ from .models import JobSpec, ReplaySpec
 from .tools import TOOLS
 
 VERSION = "0.5.0"
-
-
-def _spiderfoot_blocker(settings) -> str:
-    """The single reason spiderfoot would refuse to run, in the order the tool checks them.
-
-    Written as a sentence for the UI rather than a code, because the failure this exists to
-    surface -- a tool sitting in HARVEST_TOOLS and being policy-denied on every single run --
-    is indistinguishable from "the scan found nothing" unless somebody reads a task error.
-    """
-    if "spiderfoot" not in settings.tools:
-        return "not in HARVEST_TOOLS"
-    if not settings.spiderfoot_url:
-        return "HARVEST_SPIDERFOOT_URL is not set"
-    if not settings.spiderfoot_api_key:
-        return "HARVEST_SPIDERFOOT_API_KEY is not set"
-    if not settings.spiderfoot_modules:
-        return "HARVEST_SPIDERFOOT_MODULES is empty, so no scan would run"
-    if settings.egress_mode == "proxy" and settings.spiderfoot_egress != "proxy-env":
-        return (
-            "HARVEST_EGRESS_MODE=proxy but HARVEST_SPIDERFOOT_EGRESS="
-            f"{settings.spiderfoot_egress}: its modules run in another container and would "
-            "egress directly, so every run is refused"
-        )
-    return ""
 
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -70,6 +46,14 @@ class DatasetPlanRequest(BaseModel):
     description: str
     fields: list[str] | None = None
     seeds: list[str] | None = None
+
+
+class FollowUpRequest(BaseModel):
+    # Exactly one of url / tool. A URL follows a discovered source; a tool scans a discovered
+    # identifier. Both are gated to the parent's scope, budget and own evidence in the engine.
+    url: str | None = None
+    tool: str | None = None
+    target: str | None = None
 
 
 def create_app(settings: Settings | None = None):
@@ -160,39 +144,17 @@ def create_app(settings: Settings | None = None):
 
     @protected.get("/meta")
     def meta():
-        # Capability reporting is deliberately split into "configured" and "ready".
-        # Configured is cheap and local. Ready is what the operator actually needs to know,
-        # because every way these features fail is a configuration gap that looks identical
-        # to "no results": a discovery job with no HARVEST_SEARCH_URL silently skips search
-        # when seeds exist, and `spiderfoot` in HARVEST_TOOLS was policy-denied on every run
-        # for weeks because its container egress was never declared. Both now say so here.
-        sf_ready = bool(
-            "spiderfoot" in settings.tools
-            and settings.spiderfoot_url
-            and settings.spiderfoot_api_key
-            and settings.spiderfoot_modules
-            and (settings.egress_mode != "proxy" or settings.spiderfoot_egress == "proxy-env")
-        )
+        # One capability registry (capabilities.py) is the source of truth for what this
+        # deployment can do and, per capability, the single reason it cannot. Every way these
+        # features fail looks identical to "no results" otherwise: a discovery job with no
+        # HARVEST_SEARCH_URL silently skips search when seeds exist, and `spiderfoot` in
+        # HARVEST_TOOLS was policy-denied on every run for weeks because its container egress
+        # was never declared. The agent interface reports this same structure.
         return {
             "version": VERSION,
             "search_configured": bool(settings.search_url),
             "model_configured": engine.reasoner.configured(),
-            # Why a tool in tools_enabled may still refuse to run, so the UI can say which.
-            "capabilities": {
-                "discovery_search": {
-                    "ready": bool(settings.search_url),
-                    "detail": "HARVEST_SEARCH_URL is not set; discovery from an objective "
-                    "is unavailable and jobs with seeds skip search silently"
-                    if not settings.search_url
-                    else "",
-                },
-                "spiderfoot": {
-                    "ready": sf_ready,
-                    "modules": list(settings.spiderfoot_modules),
-                    "egress": settings.spiderfoot_egress,
-                    "detail": _spiderfoot_blocker(settings),
-                },
-            },
+            "capabilities": capabilities.readiness(settings),
             # Which external tools this deployment actually permits. The UI offers only
             # these, so a plan can suggest a tool without the operator being able to
             # submit a job that submit() would reject.
@@ -230,6 +192,26 @@ def create_app(settings: Settings | None = None):
                 status_code=409 if "idempotency" in str(exc) else 422, detail=str(exc)
             ) from exc
         return engine.store.job(job)
+
+    @protected.post("/jobs/{job_id}/followup", status_code=202)
+    def followup(job_id: str, body: FollowUpRequest):
+        from .models import AuthorizationRequired
+
+        try:
+            new_id = engine.follow_up(
+                job_id, url=body.url, tool=body.tool, target=body.target
+            )
+        except AuthorizationRequired as exc:
+            # Materially exceeds the operator's authorization: 403 with the concrete thing
+            # they would have to authorize, so an agent gets a structured "ask" not a start.
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "authorization_required", "reason": exc.reason,
+                        "suggestion": exc.suggestion},
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return engine.store.job(new_id)
 
     @protected.post("/jobs/{job_id}/rerun", status_code=202)
     def rerun(job_id: str):

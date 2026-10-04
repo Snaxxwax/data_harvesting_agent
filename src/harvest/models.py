@@ -327,6 +327,21 @@ class PolicyDenied(Exception):
     pass
 
 
+class AuthorizationRequired(ValueError):
+    """A proposed agent action materially exceeds the authorization the operator gave.
+
+    A ValueError subclass so the existing API error handling returns it as a 422 with the
+    message, while the agent interface can catch it specifically and return a structured
+    "ask the operator" result instead of starting work. `suggestion` is the concrete thing
+    the operator would have to authorize.
+    """
+
+    def __init__(self, reason: str, suggestion: str = ""):
+        super().__init__(reason)
+        self.reason = reason
+        self.suggestion = suggestion
+
+
 class RetryLater(Exception):
     def __init__(self, reason: str, delay: float = 1):
         super().__init__(reason)

@@ -20,8 +20,15 @@ dependencies = [
   "socid-extractor==0.1.1",
 ]
 
+[project.optional-dependencies]
+# The MCP adapter (harvest.mcp_server) is the only thing that needs the MCP SDK and its
+# dependency tree, so it stays out of the core runtime image. Install with
+# `pip install harvest-platform[agent]` where an agent will connect.
+agent = ["mcp>=1.0"]
+
 [project.scripts]
 harvest = "harvest.cli:main"
+harvest-mcp = "harvest.mcp_server:main"
 
 [project.entry-points."harvest.adapters"]
 socid = "harvest.socid_adapter:SocidHtmlAdapter"
