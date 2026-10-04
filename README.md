@@ -251,8 +251,11 @@ Register it with each agent (the binary path is your venv's `harvest-mcp`):
 ```bash
 # Claude Code
 claude mcp add harvest -e HARVEST_API_URL=$HARVEST_API_URL -e HARVEST_API_TOKEN=$HARVEST_API_TOKEN -- /path/to/.venv/bin/harvest-mcp
-# Codex (note: Codex defers MCP tools unless features.tool_search_always_defer_mcp_tools=false,
-# and requires tool approval in non-interactive exec)
+# Codex. Headless `codex exec` (tested: codex-cli 0.160.0) denies every MCP call under its
+# default approval policy "never" unless the server's tools are pre-approved, waits on stdin
+# unless it is closed, and always defers MCP tools behind tool search. Supported settings:
+#   codex exec ... -c 'mcp_servers.harvest.default_tools_approval_mode="approve"' "<prompt>" </dev/null
+# (or approval_mode per tool under [mcp_servers.harvest.tools.<name>]).
 codex mcp add harvest --env HARVEST_API_URL=$HARVEST_API_URL --env HARVEST_API_TOKEN=$HARVEST_API_TOKEN -- /path/to/.venv/bin/harvest-mcp
 # Hermes
 hermes mcp add harvest --command /path/to/.venv/bin/harvest-mcp --env HARVEST_API_URL=$HARVEST_API_URL HARVEST_API_TOKEN=$HARVEST_API_TOKEN
@@ -264,7 +267,14 @@ Tools: `list_capabilities`, `plan_investigation`, `start_investigation`,
 
 - **The request is the authorization.** `start_investigation`'s targets (seeds/tools) and
   scope (`allowed_domains`) are persisted with the job as its authorization. A follow-up is a
-  *child* job that inherits that scope, budget and declared targets; `request_followup` can
+  *child* job that inherits that scope and declared targets and spends from the
+  investigation's **one shared budget**: requests, bytes, model spend, tool runs, tasks and
+  wall clock are summed over the root and every follow-up (however deeply chained, however
+  many run at once) and checked against the root's limits, so follow-ups, retries and reruns
+  of follow-ups cannot multiply it. An exhausted investigation answers
+  `{"error": "budget_exhausted"}`. `investigation_status` reports `investigation.enforced`
+  (hard limits) separately from `external_tool_runs`, whose network cost Harvest cannot meter
+  and labels as an estimate; `request_followup` can
   only pursue a URL or identifier the investigation **already discovered** (`Store.discovered`)
   and that is in scope. Anything wider returns `{"error": "authorization_required", ...}` for
   the operator to decide, rather than expanding into unrelated people on its own.
