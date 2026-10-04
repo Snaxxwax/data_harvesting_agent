@@ -226,6 +226,56 @@ existing bearer-authenticated API, `JobSpec` validation/round-trips, or the sing
 SQLite architecture; `discovery_queries` is an optional additive `JobSpec` field that old
 specs simply don't set.
 
+## Agent interface (MCP)
+
+Harvest exposes a small authenticated [MCP](https://modelcontextprotocol.io) interface so
+agents (Hermes, Claude Code, Codex) can drive it. It is a thin stdio adapter
+(`src/harvest/mcp_server.py`, console script `harvest-mcp`) that calls the **same
+authenticated HTTP API** as everything else — it owns no evidence, scope logic or secrets,
+so Harvest stays authoritative for authentication, scope, budgets, cancellation and
+credentials. An agent calling these tools has exactly the reach of an operator holding the
+bearer token, no more.
+
+The adapter needs the MCP SDK, which is an **optional** dependency kept out of the core
+runtime image. Install it where an agent runs:
+
+```bash
+pip install "harvest-platform[agent]"       # or: uv sync --extra agent
+export HARVEST_API_URL=http://<harvest-host>:8000
+export HARVEST_API_TOKEN=<the operator token>
+harvest-mcp                                   # stdio MCP server
+```
+
+Register it with each agent (the binary path is your venv's `harvest-mcp`):
+
+```bash
+# Claude Code
+claude mcp add harvest -e HARVEST_API_URL=$HARVEST_API_URL -e HARVEST_API_TOKEN=$HARVEST_API_TOKEN -- /path/to/.venv/bin/harvest-mcp
+# Codex (note: Codex defers MCP tools unless features.tool_search_always_defer_mcp_tools=false,
+# and requires tool approval in non-interactive exec)
+codex mcp add harvest --env HARVEST_API_URL=$HARVEST_API_URL --env HARVEST_API_TOKEN=$HARVEST_API_TOKEN -- /path/to/.venv/bin/harvest-mcp
+# Hermes
+hermes mcp add harvest --command /path/to/.venv/bin/harvest-mcp --env HARVEST_API_URL=$HARVEST_API_URL HARVEST_API_TOKEN=$HARVEST_API_TOKEN
+```
+
+Tools: `list_capabilities`, `plan_investigation`, `start_investigation`,
+`investigation_status`, `get_dossier`, `get_evidence`, `request_followup`,
+`cancel_investigation`. Two properties matter:
+
+- **The request is the authorization.** `start_investigation`'s targets (seeds/tools) and
+  scope (`allowed_domains`) are persisted with the job as its authorization. A follow-up is a
+  *child* job that inherits that scope, budget and declared targets; `request_followup` can
+  only pursue a URL or identifier the investigation **already discovered** (`Store.discovered`)
+  and that is in scope. Anything wider returns `{"error": "authorization_required", ...}` for
+  the operator to decide, rather than expanding into unrelated people on its own.
+- **Returned evidence is untrusted data, not instructions.** Dossiers, observations and page
+  text are collected from third parties; an agent must not act on directives embedded in them.
+  Harvest's collection and egress controls apply to every tool call because every call is just
+  the authenticated API underneath.
+
+State is persistent: another session or agent continues an investigation by its `job_id`
+(status, dossier, evidence, follow-up lineage) without repeating scans.
+
 ## What works
 
 | Capability | Implemented behavior |
