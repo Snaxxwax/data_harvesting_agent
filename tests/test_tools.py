@@ -1359,18 +1359,23 @@ def test_spiderfoot_plan_differs_by_input_type():
     host = tools.spiderfoot_plan("INTERNET_NAME", s)
     assert set(email) == set(_DEPLOYED_SF) - {"sfp_dnsresolve"}
     assert user == ["sfp_accounts", "sfp_hudsonrock", "sfp_tiktok_osint"]
-    assert host["modules"] == [
-        "sfp_accounts",
-        "sfp_dnsresolve",
-        "sfp_hudsonrock",
-        "sfp_pgp",
-        "sfp_wikileaks",
-    ]
-    # Dependency: these fire on a domain only because sfp_dnsresolve produces DOMAIN_NAME.
-    assert host["consumes"]["sfp_wikileaks"] == ["DOMAIN_NAME"]
-    assert host["consumes"]["sfp_accounts"] == ["DOMAIN_NAME"]
-    # A domain's addresses are other people: email-only modules are not reached through pgp.
+    # Host target: infrastructure modules only. The rest would be fed sfp_pgp's addresses --
+    # other people at the domain -- inside the scan, so they are left out with that reason.
+    assert host["modules"] == ["sfp_dnsresolve", "sfp_pgp"]
+    for module in ("sfp_accounts", "sfp_hudsonrock", "sfp_wikileaks"):
+        assert "EMAILADDR from sfp_pgp" in host["excluded"][module], module
     assert "consumes nothing reachable" in host["excluded"]["sfp_gravatar"]
+    # Without pgp there is no such hand-off, and DOMAIN_NAME (from dnsresolve) is what lets
+    # the DOMAIN_NAME-only modules fire: dependency, not just direct input.
+    no_pgp = tools.spiderfoot_plan(
+        "INTERNET_NAME", _sf_settings(spiderfoot_modules=tuple(set(_DEPLOYED_SF) - {"sfp_pgp"}))
+    )
+    assert no_pgp["consumes"]["sfp_wikileaks"] == ["DOMAIN_NAME"]
+    assert "sfp_accounts" in no_pgp["modules"]
+    # Non-unique names still pass between person modules: disclosed, not hidden.
+    assert {"from": "sfp_names", "event": "HUMAN_NAME", "to": "sfp_accounts"} in (
+        tools.spiderfoot_plan("EMAILADDR", s)["cascades"]
+    )
 
 
 def test_spiderfoot_plan_gates_keyed_modules_on_declared_credentials():
@@ -1392,14 +1397,13 @@ def test_spiderfoot_plan_gates_keyed_modules_on_declared_credentials():
 
 def test_spiderfoot_plan_discloses_unknown_untested_and_not_enabled():
     plan = tools.spiderfoot_plan(
-        "USERNAME", _sf_settings(spiderfoot_modules=("sfp_accounts", "sfp_nope"))
+        "USERNAME", _sf_settings(spiderfoot_modules=("sfp_github", "sfp_nope"))
     )
     assert "unknown" in plan["excluded"]["sfp_nope"]
-    assert plan["tested"] == {"sfp_accounts": "untested"}
-    assert "sfp_github" in plan["not_enabled"]
-    assert tools.spiderfoot_plan("EMAILADDR", _sf_settings(spiderfoot_modules=("sfp_accounts",)))[
-        "tested"
-    ] == {"sfp_accounts": "events"}
+    assert plan["tested"] == {"sfp_github": "untested"}
+    assert "sfp_keybase" in plan["not_enabled"]
+    email = tools.spiderfoot_plan("EMAILADDR", _sf_settings(spiderfoot_modules=("sfp_accounts",)))
+    assert email["tested"] == {"sfp_accounts": "events"}
 
 
 def test_spiderfoot_scan_sends_the_input_plan_and_records_it(fake_sf, monkeypatch):

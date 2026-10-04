@@ -56,7 +56,8 @@ and GitHub Actions major tags are not digest-pinned.
 | `HARVEST_MAIGRET_CLOUDFLARE_BYPASS` | Pass Maigret `--cloudflare-bypass` when true; default false; requires a separately configured local bypass service |
 | `HARVEST_SPIDERFOOT_URL` | SpiderFoot NG REST base URL on a private network; empty disables the tool |
 | `HARVEST_SPIDERFOOT_API_KEY` | Bearer credential sent as `X-API-Key` on every SpiderFoot call |
-| `HARVEST_SPIDERFOOT_MODULES` | Modules one scan may run; default `sfp_dnsresolve` (passive) |
+| `HARVEST_SPIDERFOOT_MODULES` | Allowlist of modules a scan may use; each scan sends only the subset that can fire for its target type (`/meta` → `capabilities.spiderfoot.plans`); default `sfp_dnsresolve` (passive) |
+| `HARVEST_SPIDERFOOT_KEYED_MODULES` | Allowlisted modules flagged `apikey` whose key is configured inside SpiderFoot; others are left out and reported, unless observed working keyless |
 | `HARVEST_MODEL_URL` | Trusted Chat Completions base URL ending in `/v1` where appropriate |
 | `HARVEST_MODEL_NAME` | Model identifier accepted by that endpoint |
 | `HARVEST_MODEL_KEY` | Optional bearer secret; never stored in a job or capture |
@@ -298,9 +299,12 @@ The `spiderfoot` tool speaks HTTP rather than argv, so it does not go through th
 subprocess path. Harvest creates a scan, polls it to `FINISHED`, and stores the events as
 one capture. Those calls deliberately bypass the fetcher's budgets and robots handling:
 the SpiderFoot service is infrastructure on a private network, not a scan target. What the
-scan itself costs in outbound requests is bounded by SpiderFoot and by
-`HARVEST_SPIDERFOOT_MODULES`, which defaults to a single passive resolver because the full
-module set is active reconnaissance against the target. A scan that ends in any state other
+scan itself costs in outbound requests is bounded by SpiderFoot and by the module set,
+which is chosen per input: `HARVEST_SPIDERFOOT_MODULES` is an allowlist (default a single
+passive resolver, because the full module set is active reconnaissance), and
+`tools.spiderfoot_plan` sends only the allowlisted modules that can fire for the target type,
+from the deployed fork's watched/produced event metadata (`spiderfoot_modules.json`). The
+executed set, and every excluded module with its reason, is recorded in the capture. A scan that ends in any state other
 than `FINISHED` fails the task rather than storing a partial result set.
 
 ### ghunt
