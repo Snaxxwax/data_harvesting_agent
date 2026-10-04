@@ -23,7 +23,7 @@ from . import capabilities, planning, sessions
 from .config import Settings
 from .engine import Engine
 from .export import render_csv
-from .models import JobSpec, ReplaySpec
+from .models import BudgetExceeded, JobSpec, ReplaySpec
 from .tools import TOOLS
 
 VERSION = "0.5.0"
@@ -167,7 +167,17 @@ def create_app(settings: Settings | None = None):
             plan = planning.plan_investigation(body.value, body.kind)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return asdict(plan)
+        # Propose only what THIS deployment can run for this input; disclose the rest with
+        # the single reason, instead of a suggestion that submit() would then reject.
+        result = asdict(plan)
+        status = {c["name"]: c for c in capabilities.for_kind(plan.kind, settings)}
+        result["tools"] = [t for t in plan.tools if status.get(t["name"], {}).get("ready")]
+        result["unavailable_tools"] = [
+            {"name": t["name"], "detail": status.get(t["name"], {}).get("detail", "")}
+            for t in plan.tools
+            if t not in result["tools"]
+        ]
+        return result
 
     @protected.post("/plan/dataset")
     def plan_dataset_route(body: DatasetPlanRequest):
@@ -194,11 +204,23 @@ def create_app(settings: Settings | None = None):
         return engine.store.job(job)
 
     @protected.post("/jobs/{job_id}/followup", status_code=202)
-    def followup(job_id: str, body: FollowUpRequest):
+    def followup(
+        job_id: str,
+        body: FollowUpRequest,
+        idempotency_key: str | None = Header(default=None, max_length=200),
+    ):
         from .models import AuthorizationRequired
 
         try:
-            new_id = engine.follow_up(job_id, url=body.url, tool=body.tool, target=body.target)
+            new_id = engine.follow_up(
+                job_id, url=body.url, tool=body.tool, target=body.target, key=idempotency_key
+            )
+        except BudgetExceeded as exc:
+            # The investigation's shared balance is spent: a normal, final outcome an agent
+            # must report, not something a retry or a new follow-up can get around.
+            raise HTTPException(
+                status_code=409, detail={"error": "budget_exhausted", "reason": str(exc)}
+            ) from exc
         except AuthorizationRequired as exc:
             # Materially exceeds the operator's authorization: 403 with the concrete thing
             # they would have to authorize, so an agent gets a structured "ask" not a start.
@@ -218,6 +240,10 @@ def create_app(settings: Settings | None = None):
     def rerun(job_id: str):
         try:
             new_id = engine.rerun(job_id)
+        except BudgetExceeded as exc:
+            raise HTTPException(
+                status_code=409, detail={"error": "budget_exhausted", "reason": str(exc)}
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return engine.store.job(new_id)

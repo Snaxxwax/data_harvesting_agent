@@ -48,7 +48,7 @@ class Engine:
         self.fetcher_factory = fetcher_factory
         self.reasoner = reasoner or Reasoner(self.settings, self.store)
 
-    def submit(self, spec: JobSpec, key=None, parent=None):
+    def submit(self, spec: JobSpec, key=None, parent=None, root=None):
         if spec.use_model and not self.reasoner.configured():
             raise ValueError(
                 "use_model requires HARVEST_MODEL_URL, HARVEST_MODEL_NAME and HARVEST_MODEL_USD_PER_MILLION"
@@ -102,7 +102,7 @@ class Engine:
             raise ValueError(
                 "provide a seed URL or configure HARVEST_SEARCH_URL for discovery from an objective"
             )
-        return self.store.create(spec, initial, key, parent=parent)
+        return self.store.create(spec, initial, key, parent=parent, root=root)
 
     def follow_up(self, parent_id, *, url=None, tool=None, target=None, key=None):
         """Start a child job that INHERITS the parent investigation's authorization.
@@ -123,12 +123,16 @@ class Engine:
         Anything outside those raises AuthorizationRequired, which the agent interface turns
         into an "ask the operator" result rather than silently doing it.
 
-        ponytail: the child gets the parent's budget CEILINGS as a fresh budget, not a shared
-        per-investigation remaining balance. Follow-ups are bounded by the finite discovered
-        set and each child's own budget; add an investigation-wide budget only if aggregate
-        follow-up cost is shown to matter.
+        Budget is investigation-wide, not per child: every follow-up records the ROOT job of
+        its investigation, and Store.reserve checks the SUM of requests/bytes/model spend over
+        the root and all descendants against the root's limits (as are tool_runs, tasks and
+        the wall clock, in Store._admit_child). Siblings running concurrently and chains of
+        follow-ups-of-follow-ups therefore share one balance; a retried follow-up with the same
+        key returns the same child, and one without a key still spends from the same balance.
+        A child whose investigation is exhausted is refused with BudgetExceeded.
         """
         parent = self.store.job(parent_id)
+        root = parent.get("root_id") or parent_id
         pspec = JobSpec.model_validate(parent["spec"])
         if bool(url) == bool(tool):
             raise ValueError("follow_up takes exactly one of url= or tool=")
@@ -158,7 +162,7 @@ class Engine:
                     "refresh_seconds": None,
                 }
             )
-            return self.submit(child, key=key, parent=parent_id)
+            return self.submit(child, key=key, parent=parent_id, root=root)
 
         if tool not in self.settings.tools:
             raise AuthorizationRequired(
@@ -184,10 +188,15 @@ class Engine:
                 "refresh_seconds": None,
             }
         )
-        return self.submit(child, key=key, parent=parent_id)
+        return self.submit(child, key=key, parent=parent_id, root=root)
 
     def rerun(self, job_id):
-        """Resubmit a prior job's exact spec as a new durable job; never mutates old history."""
+        """Resubmit a prior job's exact spec as a new durable job; never mutates old history.
+
+        Rerunning a follow-up stays inside its investigation (same root, same shared balance),
+        so rerun is not a way to mint a fresh budget for an exhausted investigation. Rerunning
+        a root job is the operator re-authorizing the whole investigation and starts anew.
+        """
         job = self.store.job(job_id)
         spec = JobSpec.model_validate(job["spec"])
         if spec.mode == "continuous":
@@ -195,7 +204,9 @@ class Engine:
                 "continuous jobs refresh automatically through their schedule; "
                 "disable the schedule instead of rerunning, to avoid a duplicate schedule"
             )
-        return self.submit(spec)
+        return self.submit(
+            spec, parent=job["parent_id"] if job.get("root_id") else None, root=job.get("root_id")
+        )
 
     def context(self, job_id):
         observations = self.store.observations(job_id, limit=40)

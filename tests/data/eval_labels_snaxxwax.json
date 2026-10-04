@@ -1,0 +1,1 @@
+{"case": "Snaxxwax (capture 212, maigret, 20 handle matches)", "source": "operator ground truth recorded in DEPLOYMENT.md 2026-10-03: only the GitHub account is confirmed as the owner's; the other 19 are unverified handle matches, so asserting any of them is scored as unsupported", "owned": ["https://github.com/Snaxxwax"], "not_owned": []}

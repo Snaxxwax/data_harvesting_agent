@@ -94,6 +94,7 @@ class Store:
             db.executescript(SCHEMA)
         self._migrate()
         self._migrate_batches()
+        self._migrate_investigations()
 
     def _migrate(self):
         """Schema 1 -> 2, including existing evidence and in-flight reason tasks."""
@@ -144,6 +145,143 @@ class Store:
             db.execute("""UPDATE jobs SET claims_processed=(SELECT count(*) FROM assertions a
                 JOIN extractions x ON x.id=a.extraction_id WHERE x.job_id=jobs.id)""")
             db.execute("PRAGMA user_version=3")
+
+    def _migrate_investigations(self):
+        """Add jobs.root_id: the investigation a follow-up job spends against.
+
+        Not a user_version bump -- additive and idempotent, so it composes with the numbered
+        migrations above. Existing follow-up children (parent set, no schedule) are backfilled
+        so their historical spend is counted against their root from now on. Scheduled refresh
+        runs also carry parent_id but are deliberately NOT folded in: each refresh is a new,
+        operator-scheduled run with its own budget.
+        """
+        with self.transaction() as db:
+            columns = {r[1] for r in db.execute("PRAGMA table_info(jobs)")}
+            if "root_id" in columns:
+                return
+            db.execute("ALTER TABLE jobs ADD COLUMN root_id TEXT REFERENCES jobs(id)")
+            db.execute("CREATE INDEX IF NOT EXISTS job_root ON jobs(root_id)")
+            rows = db.execute(
+                "SELECT id,parent_id FROM jobs WHERE parent_id IS NOT NULL "
+                "AND schedule_key IS NULL ORDER BY created"
+            ).fetchall()
+            for row in rows:
+                parent = db.execute(
+                    "SELECT id,root_id FROM jobs WHERE id=?", (row["parent_id"],)
+                ).fetchone()
+                if parent:
+                    db.execute(
+                        "UPDATE jobs SET root_id=? WHERE id=?",
+                        (parent["root_id"] or parent["id"], row["id"]),
+                    )
+
+    # Counters that are summed across an investigation and checked against the ROOT job's
+    # limits. jobs column -> Limits attribute (cost is stored in micro-USD).
+    _SHARED = (
+        ("requests", "requests"),
+        ("bytes", "bytes"),
+        ("model_calls", "model_calls"),
+        ("model_tokens", "model_tokens"),
+        ("cost_microusd", "cost_usd"),
+    )
+
+    @staticmethod
+    def _ceiling(limits, attr):
+        value = getattr(limits, attr)
+        return int(value * 1_000_000) if attr == "cost_usd" else value
+
+    def _investigation_usage(self, db, root):
+        """(root limits, summed counters, task count, tool-run count, first start) for one
+        investigation: the root job plus every follow-up job, however deeply chained."""
+        root_row = db.execute("SELECT spec FROM jobs WHERE id=?", (root,)).fetchone()
+        limits = JobSpec.model_validate_json(root_row["spec"]).limits
+        cols = ",".join(f"coalesce(sum({c}),0)" for c, _ in self._SHARED)
+        totals = db.execute(
+            f"SELECT {cols},min(started) FROM jobs WHERE id=? OR root_id=?", (root, root)
+        ).fetchone()
+        used = {c: totals[i] for i, (c, _) in enumerate(self._SHARED)}
+        tasks, tools = db.execute(
+            """SELECT count(*),coalesce(sum(t.kind='tool'),0) FROM tasks t JOIN jobs j
+            ON j.id=t.job_id WHERE j.id=? OR j.root_id=?""",
+            (root, root),
+        ).fetchone()
+        return limits, used, tasks, tools, totals[len(self._SHARED)]
+
+    def _admit_child(self, db, root, initial):
+        """Refuse a follow-up the investigation can no longer afford, inside the creating
+        transaction so two concurrent follow-ups cannot both pass a check-then-insert."""
+        limits, used, tasks, tools, started = self._investigation_usage(db, root)
+        for column, attr in self._SHARED:
+            if used[column] >= self._ceiling(limits, attr):
+                raise BudgetExceeded(f"investigation {attr} budget exhausted")
+        if started is not None and time.time() - started >= limits.seconds:
+            raise BudgetExceeded("investigation wall-clock deadline reached")
+        new_tools = sum(1 for t in initial if t["kind"] == "tool")
+        if tools + new_tools > limits.tool_runs:
+            raise BudgetExceeded(
+                f"investigation tool_runs budget exhausted ({tools}/{limits.tool_runs} used)"
+            )
+        if tasks + len(initial) > limits.tasks:
+            raise BudgetExceeded("investigation task budget exhausted")
+
+    def investigation(self, job_id):
+        """Investigation-wide budget: what is ENFORCED, and what is only estimated.
+
+        Enforced counters are Harvest's own requests/bytes/model spend, summed over the root
+        and all follow-ups and checked against the root's limits on every reservation. External
+        tools (maigret, ghunt, spiderfoot) make their own network requests that Harvest does
+        not proxy-meter per run; only their NUMBER of runs is enforced (tool_runs). Their
+        network cost is reported as a documented estimate, with the measured size of the
+        output each run returned -- never presented as metered spend.
+        """
+        from .capabilities import _TOOL_NOTES
+
+        with self.connection() as db:
+            row = db.execute("SELECT id,root_id FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row:
+                raise KeyError(job_id)
+            root = row["root_id"] or row["id"]
+            limits, used, tasks, tools, started = self._investigation_usage(db, root)
+            job_ids = [
+                r[0]
+                for r in db.execute(
+                    "SELECT id FROM jobs WHERE id=? OR root_id=? ORDER BY created", (root, root)
+                )
+            ]
+            runs = db.execute(
+                """SELECT c.url,length(b.body) FROM captures c JOIN blobs b ON b.hash=c.body_hash
+                JOIN jobs j ON j.id=c.job_id WHERE c.url LIKE 'tool://%' AND (j.id=? OR j.root_id=?)
+                ORDER BY c.id""",
+                (root, root),
+            ).fetchall()
+        enforced = {
+            attr: {
+                "used": used[c] / 1_000_000 if attr == "cost_usd" else used[c],
+                "limit": getattr(limits, attr),
+            }
+            for c, attr in self._SHARED
+        }
+        enforced["tool_runs"] = {"used": tools, "limit": limits.tool_runs}
+        enforced["tasks"] = {"used": tasks, "limit": limits.tasks}
+        enforced["seconds"] = {
+            "used": round(time.time() - started, 1) if started else 0,
+            "limit": limits.seconds,
+        }
+        return {
+            "root_id": root,
+            "jobs": len(job_ids),
+            "job_ids": job_ids,
+            "enforced": enforced,
+            "external_tool_runs": [
+                {
+                    "tool": url.split("/")[2],
+                    "network_cost": "estimated, not metered: "
+                    + _TOOL_NOTES.get(url.split("/")[2], {}).get("cost", "unknown"),
+                    "measured_output_bytes": size,
+                }
+                for url, size in runs
+            ],
+        }
 
     def replay(self, request, key=None):
         """Create an offline revision, never a new retrieval or a refresh schedule."""
@@ -235,7 +373,12 @@ class Store:
         )
 
     def create(
-        self, spec: JobSpec, initial: list[dict], key: str | None = None, parent: str | None = None
+        self,
+        spec: JobSpec,
+        initial: list[dict],
+        key: str | None = None,
+        parent: str | None = None,
+        root: str | None = None,
     ) -> str:
         spec_json = packed(spec.model_dump())
         with self.transaction() as db:
@@ -252,7 +395,9 @@ class Store:
                             "idempotency key already belongs to a different job specification"
                         )
                     return old["id"]
-            job = self._create(db, spec, initial, key, parent)
+            if root:
+                self._admit_child(db, root, initial)
+            job = self._create(db, spec, initial, key, parent, root=root)
             if spec.mode == "continuous":
                 db.execute(
                     "INSERT INTO schedules VALUES(?,?,?,?,?,1)",
@@ -260,12 +405,12 @@ class Store:
                 )
             return job
 
-    def _create(self, db, spec, initial, key=None, parent=None, schedule_key=None):
+    def _create(self, db, spec, initial, key=None, parent=None, schedule_key=None, root=None):
         job = uuid.uuid4().hex
         data = packed(spec.model_dump())
         db.execute(
-            "INSERT INTO jobs(id,spec,spec_hash,idempotency_key,created,parent_id,schedule_key) VALUES(?,?,?,?,?,?,?)",
-            (job, data, digest(data), key, time.time(), parent, schedule_key),
+            "INSERT INTO jobs(id,spec,spec_hash,idempotency_key,created,parent_id,schedule_key,root_id) VALUES(?,?,?,?,?,?,?,?)",
+            (job, data, digest(data), key, time.time(), parent, schedule_key, root),
         )
         for task in initial:
             self.enqueue(db, job, task, spec)
@@ -281,6 +426,16 @@ class Store:
         ):
             self.event(db, job, "frontier_limit", {"limit": spec.limits.tasks})
             return False
+        row = db.execute("SELECT root_id FROM jobs WHERE id=?", (job,)).fetchone()
+        if row:
+            # Every frontier also counts against the whole investigation's task budget, so a
+            # root cannot keep expanding on the allowance its follow-ups already used.
+            limits, _, tasks, _, _ = self._investigation_usage(db, row[0] or job)
+            if tasks >= limits.tasks:
+                self.event(
+                    db, job, "frontier_limit", {"limit": limits.tasks, "scope": "investigation"}
+                )
+                return False
         cur = db.execute(
             """INSERT OR IGNORE INTO tasks(job_id,kind,key,payload,depth,priority,parent,reason)
             VALUES(?,?,?,?,?,?,?,?)""",
@@ -402,6 +557,16 @@ class Store:
                     raise ValueError("negative reservation")
                 if job[field] + delta > maxima[field]:
                     raise BudgetExceeded(f"{field} limit reached")
+            # Investigation-wide: the root's ceilings bound the SUM over the root and every
+            # follow-up, so N concurrent or chained children cannot spend N budgets. Checked
+            # in this same BEGIN IMMEDIATE transaction, which serialises sibling reservations.
+            root = job["root_id"] or job["id"]
+            ilimits, used, _, _, started = self._investigation_usage(db, root)
+            if started is not None and time.time() - started >= ilimits.seconds:
+                raise BudgetExceeded("investigation wall-clock deadline reached")
+            for column, attr in self._SHARED:
+                if used[column] + values[column] > self._ceiling(ilimits, attr):
+                    raise BudgetExceeded(f"investigation {column} limit reached")
             db.execute(
                 """UPDATE jobs SET requests=requests+?,bytes=bytes+?,model_calls=model_calls+?,
                 model_tokens=model_tokens+?,cost_microusd=cost_microusd+? WHERE id=?""",
@@ -783,6 +948,8 @@ class Store:
                 ).fetchall()
             )
             result["cost_reserved_usd"] = result["cost_microusd"] / 1_000_000
+        result["investigation"] = self.investigation(job_id)
+        with self.connection() as db:
             fields = self._satisfied_fields(result["spec"], self._fields(db, job_id))
             result["missing_fields"] = [f for f in result["spec"]["fields"] if f not in fields]
             result["coverage"] = (
