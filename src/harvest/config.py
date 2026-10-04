@@ -78,6 +78,18 @@ class Settings:
             if m.strip()
         )
     )
+    # Modules flagged `apikey` whose key the operator has configured INSIDE SpiderFoot. Harvest
+    # cannot read SpiderFoot's module config reliably (see spiderfoot_egress below for why
+    # its config API is not trustworthy on 6.1.0), so this is a declaration. A keyed module
+    # not declared here is left out of the scan and reported as unavailable, unless it has
+    # been observed producing events without a key (tools._SF_TESTED).
+    spiderfoot_keyed_modules: frozenset[str] = field(
+        default_factory=lambda: frozenset(
+            m.strip()
+            for m in os.getenv("HARVEST_SPIDERFOOT_KEYED_MODULES", "").split(",")
+            if m.strip()
+        )
+    )
     # How SpiderFoot's OWN egress is routed, which this process cannot observe: its modules
     # run in a different container, so neither Harvest's proxy nor its egress probe covers
     # them. "direct" (the default) means unproxied, and proxy-only mode then refuses to run

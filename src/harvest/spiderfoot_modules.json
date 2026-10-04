@@ -1,0 +1,4753 @@
+{
+"modules": {
+"sfp_4chan": {
+"flags": [],
+"produced": [
+"FOURCHAN_POST"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp__ai_threat_intel": {
+"flags": [
+"ai",
+"enterprise",
+"ml"
+],
+"produced": [
+"AI_ANOMALY_DETECTED",
+"AI_IOC_CORRELATION",
+"AI_NLP_ANALYSIS",
+"AI_THREAT_PREDICTION",
+"AI_THREAT_SCORE",
+"AI_THREAT_SIGNATURE"
+],
+"watched": [
+"*"
+]
+},
+"sfp__security_hardening": {
+"flags": [
+"deprecated",
+"enterprise",
+"security"
+],
+"produced": [
+"AUTHENTICATION_FAILURE",
+"AUTHORIZATION_DENIED",
+"SECURITY_AUDIT_EVENT",
+"SECURITY_VIOLATION",
+"SUSPICIOUS_ACTIVITY",
+"ZERO_TRUST_VIOLATION"
+],
+"watched": [
+"*"
+]
+},
+"sfp_abstractapi": {
+"flags": [
+"apikey"
+],
+"produced": [
+"COMPANY_NAME",
+"GEOINFO",
+"PHYSICAL_COORDINATES",
+"PROVIDER_TELCO",
+"RAW_RIR_DATA",
+"SOCIAL_MEDIA"
+],
+"watched": [
+"DOMAIN_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"PHONE_NUMBER"
+]
+},
+"sfp_abusech": {
+"flags": [],
+"produced": [
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_IPADDR",
+"CO_HOSTED_SITE",
+"INTERNET_NAME",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_abuseipdb": {
+"flags": [
+"apikey"
+],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_accounts": {
+"flags": [],
+"produced": [
+"ACCOUNT_EXTERNAL_OWNED",
+"SIMILAR_ACCOUNT_EXTERNAL",
+"USERNAME"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"HUMAN_NAME",
+"USERNAME"
+]
+},
+"sfp_adblock": {
+"flags": [],
+"produced": [
+"URL_ADBLOCKED_EXTERNAL",
+"URL_ADBLOCKED_INTERNAL"
+],
+"watched": [
+"LINKED_URL_EXTERNAL",
+"LINKED_URL_INTERNAL",
+"PROVIDER_JAVASCRIPT"
+]
+},
+"sfp_adguard_dns": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"INTERNET_NAME"
+]
+},
+"sfp_adsbexchange": {
+"flags": [
+"apikey"
+],
+"produced": [
+"GEOINFO",
+"PHYSICAL_COORDINATES",
+"RAW_RIR_DATA"
+],
+"watched": [
+"COMPANY_NAME",
+"COUNTRY_NAME",
+"GEOINFO"
+]
+},
+"sfp_advanced_correlation": {
+"flags": [],
+"produced": [
+"BEHAVIORAL_PATTERN",
+"CORRELATION_ANALYSIS",
+"ENTITY_RELATIONSHIP",
+"GEOSPATIAL_CLUSTER",
+"IDENTITY_RESOLUTION",
+"TEMPORAL_PATTERN"
+],
+"watched": [
+"*"
+]
+},
+"sfp_ahmia": {
+"flags": [
+"tor"
+],
+"produced": [
+"DARKNET_MENTION_CONTENT",
+"DARKNET_MENTION_URL"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"HUMAN_NAME"
+]
+},
+"sfp_alienvault": {
+"flags": [
+"apikey"
+],
+"produced": [
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"CO_HOSTED_SITE",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"LINKED_URL_INTERNAL",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"NETBLOCKV6_MEMBER",
+"NETBLOCKV6_OWNER",
+"NETBLOCK_MEMBER",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_alienvaultiprep": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_aparat": {
+"flags": [],
+"produced": [
+"APARAT_VIDEO"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_apileak": {
+"flags": [
+"apikey"
+],
+"produced": [
+"API_KEY_LEAK",
+"CREDENTIAL_LEAK"
+],
+"watched": [
+"COMPANY_NAME",
+"DOMAIN_NAME",
+"EMAILADDR"
+]
+},
+"sfp_apivoid": {
+"flags": [
+"apikey"
+],
+"produced": [
+"GEOINFO",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_apple_itunes": {
+"flags": [],
+"produced": [
+"AFFILIATE_INTERNET_NAME",
+"APPSTORE_ENTRY",
+"INTERNET_NAME",
+"LINKED_URL_INTERNAL",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_aprsfi": {
+"flags": [
+"apikey"
+],
+"produced": [
+"COUNTRY_NAME",
+"GEOINFO",
+"PHYSICAL_COORDINATES",
+"RAW_RIR_DATA"
+],
+"watched": [
+"COMPANY_NAME",
+"INTERNET_NAME",
+"USERNAME"
+]
+},
+"sfp_arbitrum": {
+"flags": [
+"apikey"
+],
+"produced": [
+"ARBITRUM_ADDRESS",
+"ARBITRUM_TX"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_archiveorg": {
+"flags": [
+"slow"
+],
+"produced": [
+"INTERESTING_FILE_HISTORIC",
+"URL_FLASH_HISTORIC",
+"URL_FORM_HISTORIC",
+"URL_JAVASCRIPT_HISTORIC",
+"URL_JAVA_APPLET_HISTORIC",
+"URL_PASSWORD_HISTORIC",
+"URL_STATIC_HISTORIC",
+"URL_UPLOAD_HISTORIC",
+"URL_WEB_FRAMEWORK_HISTORIC"
+],
+"watched": [
+"INTERESTING_FILE",
+"URL_FLASH",
+"URL_FORM",
+"URL_JAVASCRIPT",
+"URL_JAVA_APPLET",
+"URL_PASSWORD",
+"URL_STATIC",
+"URL_UPLOAD",
+"URL_WEB_FRAMEWORK"
+]
+},
+"sfp_arin": {
+"flags": [],
+"produced": [
+"HUMAN_NAME",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"HUMAN_NAME"
+]
+},
+"sfp_aviationstack": {
+"flags": [
+"apikey"
+],
+"produced": [
+"COMPANY_NAME",
+"GEOINFO",
+"PHYSICAL_COORDINATES",
+"RAW_RIR_DATA"
+],
+"watched": [
+"COMPANY_NAME",
+"COUNTRY_NAME",
+"DOMAIN_NAME",
+"GEOINFO",
+"INTERNET_NAME"
+]
+},
+"sfp_azureblobstorage": {
+"flags": [],
+"produced": [
+"CLOUD_STORAGE_BUCKET"
+],
+"watched": [
+"DOMAIN_NAME",
+"LINKED_URL_EXTERNAL"
+]
+},
+"sfp_bambenek": {
+"flags": [
+"slow"
+],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"BLACKLISTED_IPADDR",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_IPADDR",
+"CO_HOSTED_SITE",
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_base64": {
+"flags": [],
+"produced": [
+"BASE64_DATA"
+],
+"watched": [
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_bevigil": {
+"flags": [
+"apikey"
+],
+"produced": [
+"CLOUD_STORAGE_OPEN",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"LINKED_URL_EXTERNAL",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_bgpview": {
+"flags": [],
+"produced": [
+"BGP_AS_MEMBER",
+"NETBLOCKV6_MEMBER",
+"NETBLOCK_MEMBER",
+"PHYSICAL_ADDRESS",
+"RAW_RIR_DATA"
+],
+"watched": [
+"BGP_AS_MEMBER",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"NETBLOCKV6_MEMBER",
+"NETBLOCK_MEMBER"
+]
+},
+"sfp_binaryedge": {
+"flags": [
+"apikey"
+],
+"produced": [
+"CO_HOSTED_SITE",
+"DOMAIN_NAME",
+"EMAILADDR_COMPROMISED",
+"INTERNET_NAME",
+"MALICIOUS_IPADDR",
+"TCP_PORT_OPEN",
+"TCP_PORT_OPEN_BANNER",
+"UDP_PORT_OPEN",
+"UDP_PORT_OPEN_INFO",
+"VULNERABILITY_CVE_CRITICAL",
+"VULNERABILITY_CVE_HIGH",
+"VULNERABILITY_CVE_LOW",
+"VULNERABILITY_CVE_MEDIUM",
+"VULNERABILITY_GENERAL"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_bingsearch": {
+"flags": [
+"apikey"
+],
+"produced": [
+"LINKED_URL_INTERNAL",
+"RAW_RIR_DATA"
+],
+"watched": [
+"INTERNET_NAME"
+]
+},
+"sfp_bingsharedip": {
+"flags": [
+"apikey"
+],
+"produced": [
+"CO_HOSTED_SITE",
+"IP_ADDRESS",
+"RAW_RIR_DATA"
+],
+"watched": [
+"IP_ADDRESS",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_binstring": {
+"flags": [
+"errorprone"
+],
+"produced": [
+"RAW_FILE_META_DATA"
+],
+"watched": [
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_bitcoin": {
+"flags": [],
+"produced": [
+"BITCOIN_ADDRESS"
+],
+"watched": [
+"TARGET_WEB_CONTENT"
+]
+},
+"sfp_bitcoinwhoswho": {
+"flags": [
+"apikey"
+],
+"produced": [
+"MALICIOUS_BITCOIN_ADDRESS",
+"RAW_RIR_DATA"
+],
+"watched": [
+"BITCOIN_ADDRESS"
+]
+},
+"sfp_blockchain": {
+"flags": [],
+"produced": [
+"BITCOIN_BALANCE"
+],
+"watched": [
+"BITCOIN_ADDRESS"
+]
+},
+"sfp_blockchain_analytics": {
+"flags": [
+"apikey"
+],
+"produced": [
+"BLOCKCHAIN_ANALYSIS",
+"BLOCKCHAIN_TRANSACTION_FLOW",
+"CRYPTOCURRENCY_EXCHANGE_ATTRIBUTION",
+"CRYPTOCURRENCY_RISK_ASSESSMENT",
+"MONEY_LAUNDERING_INDICATOR",
+"RAW_RIR_DATA",
+"SANCTIONS_LIST_MATCH",
+"WALLET_CLUSTER"
+],
+"watched": [
+"BITCOIN_ADDRESS",
+"BITCOIN_TRANSACTION",
+"CRYPTOCURRENCY_ADDRESS",
+"ETHEREUM_ADDRESS",
+"ETHEREUM_TRANSACTION"
+]
+},
+"sfp_blocklistde": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"NETBLOCKV6_MEMBER",
+"NETBLOCKV6_OWNER",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_bluesky": {
+"flags": [
+"apikey"
+],
+"produced": [
+"BLUESKY_POST"
+],
+"watched": [
+"INTERNET_NAME",
+"ROOT"
+]
+},
+"sfp_bnb": {
+"flags": [
+"apikey",
+"experimental"
+],
+"produced": [
+"BNB_ADDRESS",
+"BNB_TX"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_botscout": {
+"flags": [
+"apikey"
+],
+"produced": [
+"BLACKLISTED_IPADDR",
+"MALICIOUS_EMAILADDR",
+"MALICIOUS_IPADDR"
+],
+"watched": [
+"EMAILADDR",
+"IP_ADDRESS"
+]
+},
+"sfp_botvrij": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"INTERNET_NAME"
+]
+},
+"sfp_bugbounty": {
+"flags": [
+"apikey"
+],
+"produced": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IP_ADDRESS",
+"NETBLOCK_OWNER",
+"RAW_RIR_DATA"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_builtwith": {
+"flags": [
+"apikey"
+],
+"produced": [
+"AFFILIATE_DOMAIN_NAME",
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"DOMAIN_NAME",
+"EMAILADDR",
+"EMAILADDR_GENERIC",
+"INTERNET_NAME",
+"IP_ADDRESS",
+"PHONE_NUMBER",
+"RAW_RIR_DATA",
+"WEBSERVER_TECHNOLOGY",
+"WEB_ANALYTICS_ID"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_c99": {
+"flags": [
+"apikey"
+],
+"produced": [
+"ACCOUNT_EXTERNAL_OWNED",
+"CO_HOSTED_SITE",
+"GEOINFO",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"IP_ADDRESS",
+"PHYSICAL_ADDRESS",
+"PHYSICAL_COORDINATES",
+"PROVIDER_DNS",
+"PROVIDER_HOSTING",
+"PROVIDER_TELCO",
+"RAW_RIR_DATA",
+"USERNAME",
+"WEBSERVER_TECHNOLOGY"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"IP_ADDRESS",
+"PHONE_NUMBER",
+"USERNAME"
+]
+},
+"sfp_callername": {
+"flags": [],
+"produced": [
+"GEOINFO",
+"MALICIOUS_PHONE_NUMBER"
+],
+"watched": [
+"PHONE_NUMBER"
+]
+},
+"sfp_censys": {
+"flags": [
+"apikey"
+],
+"produced": [
+"BGP_AS_MEMBER",
+"GEOINFO",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"NETBLOCKV6_MEMBER",
+"NETBLOCK_MEMBER",
+"OPERATING_SYSTEM",
+"RAW_RIR_DATA",
+"SOFTWARE_USED",
+"TCP_PORT_OPEN",
+"TCP_PORT_OPEN_BANNER",
+"UDP_PORT_OPEN",
+"WEBSERVER_HTTPHEADERS"
+],
+"watched": [
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"NETBLOCKV6_OWNER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_certspotter": {
+"flags": [
+"apikey"
+],
+"produced": [
+"CO_HOSTED_SITE",
+"CO_HOSTED_SITE_DOMAIN",
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"RAW_RIR_DATA",
+"SSL_CERTIFICATE_EXPIRED",
+"SSL_CERTIFICATE_EXPIRING",
+"SSL_CERTIFICATE_ISSUED",
+"SSL_CERTIFICATE_ISSUER",
+"SSL_CERTIFICATE_MISMATCH",
+"SSL_CERTIFICATE_RAW"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_cinsscore": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_circllu": {
+"flags": [
+"apikey"
+],
+"produced": [
+"CO_HOSTED_SITE",
+"IP_ADDRESS",
+"SSL_CERTIFICATE_ISSUED"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IP_ADDRESS",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_cisco_umbrella": {
+"flags": [
+"apikey"
+],
+"produced": [
+"CO_HOSTED_SITE",
+"DOMAIN_NAME",
+"DOMAIN_REGISTRAR",
+"DOMAIN_WHOIS",
+"GEOINFO",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_citadel": {
+"flags": [
+"apikey"
+],
+"produced": [
+"EMAILADDR_COMPROMISED"
+],
+"watched": [
+"EMAILADDR"
+]
+},
+"sfp_cleanbrowsing": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"INTERNET_NAME"
+]
+},
+"sfp_cleantalk": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_cloudflaredns": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"INTERNET_NAME"
+]
+},
+"sfp_cloudfront": {
+"flags": [],
+"produced": [
+"CLOUD_INSTANCE_TYPE",
+"CLOUD_PROVIDER",
+"RAW_DNS_RECORDS",
+"WEBSERVER_BANNER"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"DOMAIN_NAME",
+"INTERNET_NAME"
+]
+},
+"sfp_coinblocker": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"INTERNET_NAME"
+]
+},
+"sfp_commoncrawl": {
+"flags": [],
+"produced": [
+"LINKED_URL_INTERNAL"
+],
+"watched": [
+"INTERNET_NAME"
+]
+},
+"sfp_comodo": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"INTERNET_NAME"
+]
+},
+"sfp_company": {
+"flags": [],
+"produced": [
+"AFFILIATE_COMPANY_NAME",
+"COMPANY_NAME"
+],
+"watched": [
+"AFFILIATE_DOMAIN_WHOIS",
+"AFFILIATE_WEB_CONTENT",
+"DOMAIN_WHOIS",
+"NETBLOCK_WHOIS",
+"SSL_CERTIFICATE_ISSUED",
+"TARGET_WEB_CONTENT"
+]
+},
+"sfp_cookie": {
+"flags": [],
+"produced": [
+"TARGET_WEB_COOKIE"
+],
+"watched": [
+"WEBSERVER_HTTPHEADERS"
+]
+},
+"sfp_countryname": {
+"flags": [],
+"produced": [
+"COUNTRY_NAME"
+],
+"watched": [
+"AFFILIATE_DOMAIN_NAME",
+"AFFILIATE_DOMAIN_WHOIS",
+"CO_HOSTED_SITE_DOMAIN",
+"CO_HOSTED_SITE_DOMAIN_WHOIS",
+"DOMAIN_NAME",
+"DOMAIN_WHOIS",
+"GEOINFO",
+"IBAN_NUMBER",
+"PHONE_NUMBER",
+"PHYSICAL_ADDRESS",
+"SIMILARDOMAIN"
+]
+},
+"sfp_creditcard": {
+"flags": [
+"errorprone"
+],
+"produced": [
+"CREDIT_CARD_NUMBER"
+],
+"watched": [
+"DARKNET_MENTION_CONTENT",
+"LEAKSITE_CONTENT"
+]
+},
+"sfp_criminalip": {
+"flags": [
+"apikey"
+],
+"produced": [
+"COMPANY_NAME",
+"GEOINFO",
+"PHYSICAL_COORDINATES",
+"PROVIDER_TELCO",
+"RAW_RIR_DATA",
+"SOCIAL_MEDIA"
+],
+"watched": [
+"DOMAIN_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"PHONE_NUMBER"
+]
+},
+"sfp_crossref": {
+"flags": [],
+"produced": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_WEB_CONTENT"
+],
+"watched": [
+"CO_HOSTED_SITE",
+"DARKNET_MENTION_URL",
+"LINKED_URL_EXTERNAL",
+"SIMILARDOMAIN"
+]
+},
+"sfp_crt": {
+"flags": [],
+"produced": [
+"CO_HOSTED_SITE",
+"CO_HOSTED_SITE_DOMAIN",
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"RAW_RIR_DATA",
+"SSL_CERTIFICATE_RAW"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME"
+]
+},
+"sfp_customfeed": {
+"flags": [],
+"produced": [
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_IPADDR",
+"CO_HOSTED_SITE",
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_cybercrimetracker": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"BLACKLISTED_IPADDR",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_IPADDR",
+"CO_HOSTED_SITE",
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_datalastic": {
+"flags": [
+"apikey"
+],
+"produced": [
+"COMPANY_NAME",
+"COUNTRY_NAME",
+"GEOINFO",
+"PHYSICAL_COORDINATES",
+"RAW_RIR_DATA"
+],
+"watched": [
+"COMPANY_NAME",
+"COUNTRY_NAME",
+"DOMAIN_NAME",
+"GEOINFO",
+"INTERNET_NAME"
+]
+},
+"sfp_debounce": {
+"flags": [],
+"produced": [
+"EMAILADDR_DISPOSABLE",
+"RAW_RIR_DATA"
+],
+"watched": [
+"EMAILADDR"
+]
+},
+"sfp_deepinfo": {
+"flags": [
+"apikey"
+],
+"produced": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME"
+]
+},
+"sfp_dehashed": {
+"flags": [
+"apikey"
+],
+"produced": [
+"EMAILADDR",
+"EMAILADDR_COMPROMISED",
+"HASH_COMPROMISED",
+"PASSWORD_COMPROMISED",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR"
+]
+},
+"sfp_dideo": {
+"flags": [],
+"produced": [
+"DIDEO_VIDEO"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_digitaloceanspace": {
+"flags": [],
+"produced": [
+"CLOUD_STORAGE_BUCKET",
+"CLOUD_STORAGE_BUCKET_OPEN"
+],
+"watched": [
+"DOMAIN_NAME",
+"LINKED_URL_EXTERNAL"
+]
+},
+"sfp_discord": {
+"flags": [
+"apikey"
+],
+"produced": [
+"DISCORD_MESSAGE"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_dns_for_family": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"INTERNET_NAME"
+]
+},
+"sfp_dnsbrute": {
+"flags": [],
+"produced": [
+"INTERNET_NAME"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME"
+]
+},
+"sfp_dnscommonsrv": {
+"flags": [
+"slow"
+],
+"produced": [
+"AFFILIATE_INTERNET_NAME",
+"DNS_SRV",
+"INTERNET_NAME"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME"
+]
+},
+"sfp_dnsdumpster": {
+"flags": [],
+"produced": [
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME"
+]
+},
+"sfp_dnsneighbor": {
+"flags": [],
+"produced": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS"
+],
+"watched": [
+"IP_ADDRESS"
+]
+},
+"sfp_dnsraw": {
+"flags": [],
+"produced": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_INTERNET_NAME_UNRESOLVED",
+"DNS_SPF",
+"DNS_TEXT",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"PROVIDER_DNS",
+"PROVIDER_MAIL",
+"RAW_DNS_RECORDS"
+],
+"watched": [
+"DOMAIN_NAME",
+"DOMAIN_NAME_PARENT",
+"INTERNET_NAME"
+]
+},
+"sfp_dnsresolve": {
+"flags": [],
+"produced": [
+"AFFILIATE_DOMAIN_NAME",
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"CO_HOSTED_SITE_DOMAIN",
+"DOMAIN_NAME",
+"DOMAIN_NAME_PARENT",
+"INTERNAL_IP_ADDRESS",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+],
+"watched": [
+"AFFILIATE_DOMAIN_WHOIS",
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"BASE64_DATA",
+"CO_HOSTED_SITE",
+"CO_HOSTED_SITE_DOMAIN_WHOIS",
+"DOMAIN_WHOIS",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"LEAKSITE_CONTENT",
+"NETBLOCKV6_OWNER",
+"NETBLOCK_OWNER",
+"NETBLOCK_WHOIS",
+"RAW_DNS_RECORDS",
+"RAW_FILE_META_DATA",
+"RAW_RIR_DATA",
+"SIMILARDOMAIN_WHOIS",
+"SSL_CERTIFICATE_ISSUED",
+"SSL_CERTIFICATE_RAW",
+"TARGET_WEB_CONTENT",
+"TCP_PORT_OPEN_BANNER",
+"WEBSERVER_BANNER",
+"WEBSERVER_HTTPHEADERS"
+]
+},
+"sfp_dnszonexfer": {
+"flags": [],
+"produced": [
+"INTERNET_NAME",
+"RAW_DNS_RECORDS"
+],
+"watched": [
+"PROVIDER_DNS"
+]
+},
+"sfp_document_analyzer": {
+"flags": [
+"interactive",
+"slow"
+],
+"produced": [
+"BITCOIN_ADDRESS",
+"DOCUMENT_TEXT",
+"DOMAIN_NAME",
+"EMAILADDR",
+"ETHEREUM_ADDRESS",
+"HASH",
+"INTERNET_NAME",
+"IP_ADDRESS",
+"PHONE_NUMBER",
+"RAW_RIR_DATA",
+"TARGET_WEB_CONTENT",
+"URL_STATIC",
+"VULNERABILITY_CVE_CRITICAL",
+"VULNERABILITY_CVE_HIGH",
+"VULNERABILITY_CVE_LOW",
+"VULNERABILITY_CVE_MEDIUM"
+],
+"watched": [
+"DOCUMENT_UPLOAD",
+"REPORT_UPLOAD",
+"USER_DOCUMENT",
+"USER_INPUT_DATA"
+]
+},
+"sfp_douyin": {
+"flags": [],
+"produced": [
+"DOUYIN_VIDEO"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_dronebl": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET",
+"PROXY_HOST",
+"VPN_HOST"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_duckduckgo": {
+"flags": [],
+"produced": [
+"AFFILIATE_DESCRIPTION_ABSTRACT",
+"AFFILIATE_DESCRIPTION_CATEGORY",
+"DESCRIPTION_ABSTRACT",
+"DESCRIPTION_CATEGORY"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"DOMAIN_NAME",
+"DOMAIN_NAME_PARENT",
+"INTERNET_NAME"
+]
+},
+"sfp_email": {
+"flags": [],
+"produced": [
+"AFFILIATE_EMAILADDR",
+"EMAILADDR",
+"EMAILADDR_GENERIC"
+],
+"watched": [
+"AFFILIATE_DOMAIN_WHOIS",
+"BASE64_DATA",
+"CO_HOSTED_SITE_DOMAIN_WHOIS",
+"DOMAIN_WHOIS",
+"LEAKSITE_CONTENT",
+"NETBLOCK_WHOIS",
+"RAW_DNS_RECORDS",
+"RAW_FILE_META_DATA",
+"RAW_RIR_DATA",
+"SIMILARDOMAIN_WHOIS",
+"SSL_CERTIFICATE_ISSUED",
+"SSL_CERTIFICATE_RAW",
+"TARGET_WEB_CONTENT",
+"TCP_PORT_OPEN_BANNER",
+"WEBSERVER_BANNER",
+"WEBSERVER_HTTPHEADERS"
+]
+},
+"sfp_emailcrawlr": {
+"flags": [
+"apikey"
+],
+"produced": [
+"EMAILADDR",
+"EMAILADDR_GENERIC",
+"GEOINFO",
+"PHONE_NUMBER",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_emailformat": {
+"flags": [],
+"produced": [
+"EMAILADDR",
+"EMAILADDR_GENERIC"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME"
+]
+},
+"sfp_emailrep": {
+"flags": [
+"apikey"
+],
+"produced": [
+"EMAILADDR_COMPROMISED",
+"MALICIOUS_EMAILADDR",
+"RAW_RIR_DATA"
+],
+"watched": [
+"EMAILADDR"
+]
+},
+"sfp_emergingthreats": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_errors": {
+"flags": [],
+"produced": [
+"ERROR_MESSAGE"
+],
+"watched": [
+"TARGET_WEB_CONTENT"
+]
+},
+"sfp_ethereum": {
+"flags": [
+"apikey",
+"experimental"
+],
+"produced": [
+"ETHEREUM_ADDRESS",
+"ETHEREUM_TX"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_etherscan": {
+"flags": [
+"apikey"
+],
+"produced": [
+"ETHEREUM_BALANCE",
+"RAW_RIR_DATA"
+],
+"watched": [
+"ETHEREUM_ADDRESS"
+]
+},
+"sfp_example": {
+"flags": [],
+"produced": [],
+"watched": [
+"ROOT"
+]
+},
+"sfp_filemeta": {
+"flags": [],
+"produced": [
+"RAW_FILE_META_DATA",
+"SOFTWARE_USED"
+],
+"watched": [
+"INTERESTING_FILE",
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_flickr": {
+"flags": [
+"apikey"
+],
+"produced": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"EMAILADDR_GENERIC",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"LINKED_URL_INTERNAL"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_focsec": {
+"flags": [
+"apikey"
+],
+"produced": [
+"GEOINFO",
+"MALICIOUS_IPADDR",
+"PROXY_HOST",
+"RAW_RIR_DATA",
+"TOR_EXIT_NODE",
+"VPN_HOST"
+],
+"watched": [
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_fofa": {
+"flags": [
+"apikey"
+],
+"produced": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_fortinet": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_fraudguard": {
+"flags": [
+"apikey"
+],
+"produced": [
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"GEOINFO",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"NETBLOCKV6_MEMBER",
+"NETBLOCKV6_OWNER",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_fullcontact": {
+"flags": [
+"apikey"
+],
+"produced": [
+"EMAILADDR",
+"EMAILADDR_GENERIC",
+"GEOINFO",
+"PHONE_NUMBER",
+"PHYSICAL_ADDRESS",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR"
+]
+},
+"sfp_fullhunt": {
+"flags": [
+"apikey"
+],
+"produced": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_INTERNET_NAME_UNRESOLVED",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"PROVIDER_DNS",
+"PROVIDER_MAIL",
+"RAW_RIR_DATA",
+"TCP_PORT_OPEN"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_github": {
+"flags": [],
+"produced": [
+"GEOINFO",
+"PUBLIC_CODE_REPO",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"SOCIAL_MEDIA",
+"USERNAME"
+]
+},
+"sfp_gleif": {
+"flags": [],
+"produced": [
+"COMPANY_NAME",
+"LEI",
+"PHYSICAL_ADDRESS",
+"RAW_RIR_DATA"
+],
+"watched": [
+"COMPANY_NAME",
+"LEI"
+]
+},
+"sfp_google_tag_manager": {
+"flags": [],
+"produced": [
+"AFFILIATE_DOMAIN_NAME",
+"AFFILIATE_INTERNET_NAME",
+"DOMAIN_NAME",
+"INTERNET_NAME"
+],
+"watched": [
+"WEB_ANALYTICS_ID"
+]
+},
+"sfp_googlemaps": {
+"flags": [
+"apikey"
+],
+"produced": [
+"PHYSICAL_ADDRESS",
+"PHYSICAL_COORDINATES",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"PHYSICAL_ADDRESS"
+]
+},
+"sfp_googleobjectstorage": {
+"flags": [],
+"produced": [
+"CLOUD_STORAGE_BUCKET",
+"CLOUD_STORAGE_BUCKET_OPEN"
+],
+"watched": [
+"DOMAIN_NAME",
+"LINKED_URL_EXTERNAL"
+]
+},
+"sfp_googlesafebrowsing": {
+"flags": [
+"apikey",
+"slow"
+],
+"produced": [
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR",
+"RAW_RIR_DATA"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_IPADDR",
+"CO_HOSTED_SITE",
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_googlesearch": {
+"flags": [
+"apikey"
+],
+"produced": [
+"LINKED_URL_INTERNAL",
+"RAW_RIR_DATA"
+],
+"watched": [
+"INTERNET_NAME"
+]
+},
+"sfp_gravatar": {
+"flags": [],
+"produced": [
+"ACCOUNT_EXTERNAL_OWNED",
+"EMAILADDR",
+"EMAILADDR_GENERIC",
+"GEOINFO",
+"PHONE_NUMBER",
+"RAW_RIR_DATA",
+"SOCIAL_MEDIA",
+"USERNAME"
+],
+"watched": [
+"EMAILADDR"
+]
+},
+"sfp_grayhatwarfare": {
+"flags": [
+"apikey"
+],
+"produced": [
+"CLOUD_STORAGE_BUCKET",
+"CLOUD_STORAGE_BUCKET_OPEN",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_greensnow": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_grep_app": {
+"flags": [],
+"produced": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"EMAILADDR_GENERIC",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"LINKED_URL_INTERNAL",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_greynoise": {
+"flags": [
+"apikey"
+],
+"produced": [
+"BGP_AS_MEMBER",
+"COMPANY_NAME",
+"GEOINFO",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_ASN",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET",
+"OPERATING_SYSTEM",
+"RAW_RIR_DATA"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_greynoise_community": {
+"flags": [
+"apikey"
+],
+"produced": [
+"COMPANY_NAME",
+"MALICIOUS_IPADDR",
+"RAW_RIR_DATA"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_h1nobbdde": {
+"flags": [],
+"produced": [
+"VULNERABILITY_DISCLOSURE"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_hackertarget": {
+"flags": [],
+"produced": [
+"AFFILIATE_DOMAIN_NAME",
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_INTERNET_NAME_UNRESOLVED",
+"CO_HOSTED_SITE",
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"IP_ADDRESS",
+"RAW_DNS_RECORDS",
+"WEBSERVER_HTTPHEADERS"
+],
+"watched": [
+"DOMAIN_NAME_PARENT",
+"IP_ADDRESS",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_hashes": {
+"flags": [],
+"produced": [
+"HASH"
+],
+"watched": [
+"BASE64_DATA",
+"LEAKSITE_CONTENT",
+"RAW_DNS_RECORDS",
+"RAW_FILE_META_DATA",
+"TARGET_WEB_CONTENT"
+]
+},
+"sfp_haveibeenpwned": {
+"flags": [
+"apikey"
+],
+"produced": [
+"EMAILADDR_COMPROMISED",
+"LEAKSITE_CONTENT",
+"LEAKSITE_URL",
+"PHONE_NUMBER_COMPROMISED"
+],
+"watched": [
+"EMAILADDR",
+"PHONE_NUMBER"
+]
+},
+"sfp_honeypot": {
+"flags": [
+"apikey"
+],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_hosting": {
+"flags": [],
+"produced": [
+"PROVIDER_HOSTING"
+],
+"watched": [
+"IP_ADDRESS"
+]
+},
+"sfp_hostio": {
+"flags": [
+"apikey"
+],
+"produced": [
+"DESCRIPTION_ABSTRACT",
+"EMAILADDR",
+"GEOINFO",
+"IP_ADDRESS",
+"PHYSICAL_COORDINATES",
+"RAW_RIR_DATA",
+"WEBSERVER_TECHNOLOGY",
+"WEB_ANALYTICS_ID"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_httpx": {
+"flags": [
+"slow",
+"tool"
+],
+"produced": [
+"CDN_DETECTED",
+"HTTP_CODE",
+"LINKED_URL_INTERNAL",
+"RAW_RIR_DATA",
+"SSL_CERTIFICATE_RAW",
+"TCP_PORT_OPEN",
+"URL_WEB",
+"WEBSERVER_BANNER",
+"WEBSERVER_HTTPHEADERS",
+"WEBSERVER_TECHNOLOGY"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IP_ADDRESS",
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_hudsonrock": {
+"flags": [],
+"produced": [
+"EMAILADDR_COMPROMISED",
+"MALICIOUS_INTERNET_NAME",
+"PHONE_NUMBER_COMPROMISED",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"INTERNET_NAME",
+"PHONE_NUMBER",
+"USERNAME"
+]
+},
+"sfp_hunter": {
+"flags": [
+"apikey"
+],
+"produced": [
+"EMAILADDR",
+"EMAILADDR_GENERIC",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME"
+]
+},
+"sfp_hunterhow": {
+"flags": [
+"apikey"
+],
+"produced": [
+"BGP_AS_MEMBER",
+"GEOINFO",
+"INTERNET_NAME",
+"IP_ADDRESS",
+"OPERATING_SYSTEM",
+"RAW_RIR_DATA",
+"SOFTWARE_USED",
+"TCP_PORT_OPEN",
+"TCP_PORT_OPEN_BANNER",
+"UDP_PORT_OPEN",
+"WEBSERVER_HTTPHEADERS"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_hybrid_analysis": {
+"flags": [
+"apikey"
+],
+"produced": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"LINKED_URL_INTERNAL",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_iban": {
+"flags": [
+"errorprone"
+],
+"produced": [
+"IBAN_NUMBER"
+],
+"watched": [
+"DARKNET_MENTION_CONTENT",
+"LEAKSITE_CONTENT",
+"TARGET_WEB_CONTENT"
+]
+},
+"sfp_iknowwhatyoudownload": {
+"flags": [
+"apikey"
+],
+"produced": [
+"MALICIOUS_IPADDR"
+],
+"watched": [
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_instagram": {
+"flags": [
+"apikey",
+"experimental"
+],
+"produced": [
+"INSTAGRAM_POST"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_intelx": {
+"flags": [
+"apikey"
+],
+"produced": [
+"DARKNET_MENTION_URL",
+"DOMAIN_NAME",
+"EMAILADDR",
+"EMAILADDR_GENERIC",
+"INTERNET_NAME",
+"LEAKSITE_URL"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"BITCOIN_ADDRESS",
+"CO_HOSTED_SITE",
+"EMAILADDR",
+"INTERNET_NAME",
+"IP_ADDRESS",
+"PHONE_NUMBER"
+]
+},
+"sfp_internetdb": {
+"flags": [],
+"produced": [
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"RAW_RIR_DATA",
+"TCP_PORT_OPEN",
+"VULNERABILITY_CVE_CRITICAL",
+"VULNERABILITY_CVE_HIGH",
+"VULNERABILITY_CVE_LOW",
+"VULNERABILITY_CVE_MEDIUM",
+"VULNERABILITY_GENERAL",
+"WEBSERVER_TECHNOLOGY"
+],
+"watched": [
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_intfiles": {
+"flags": [],
+"produced": [
+"INTERESTING_FILE"
+],
+"watched": [
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_ipapico": {
+"flags": [],
+"produced": [
+"GEOINFO",
+"RAW_RIR_DATA"
+],
+"watched": [
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_ipapico_modern": {
+"flags": [],
+"produced": [
+"GEOINFO",
+"RAW_RIR_DATA"
+],
+"watched": [
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_ipapicom": {
+"flags": [
+"apikey"
+],
+"produced": [
+"GEOINFO",
+"PHYSICAL_COORDINATES",
+"RAW_RIR_DATA"
+],
+"watched": [
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_ipinfo": {
+"flags": [
+"apikey"
+],
+"produced": [
+"GEOINFO"
+],
+"watched": [
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_ipinfo_modern": {
+"flags": [
+"apikey"
+],
+"produced": [
+"GEOINFO"
+],
+"watched": [
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_ipqualityscore": {
+"flags": [
+"apikey"
+],
+"produced": [
+"EMAILADDR_COMPROMISED",
+"EMAILADDR_DISPOSABLE",
+"GEOINFO",
+"MALICIOUS_EMAILADDR",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR",
+"MALICIOUS_PHONE_NUMBER",
+"PHONE_NUMBER_TYPE",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"IP_ADDRESS",
+"PHONE_NUMBER"
+]
+},
+"sfp_ipregistry": {
+"flags": [
+"apikey"
+],
+"produced": [
+"GEOINFO",
+"MALICIOUS_IPADDR",
+"PHYSICAL_COORDINATES",
+"RAW_RIR_DATA"
+],
+"watched": [
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_ipstack": {
+"flags": [
+"apikey"
+],
+"produced": [
+"GEOINFO"
+],
+"watched": [
+"IP_ADDRESS"
+]
+},
+"sfp_isc": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_jsonwhoiscom": {
+"flags": [
+"apikey"
+],
+"produced": [
+"AFFILIATE_DOMAIN_UNREGISTERED",
+"AFFILIATE_DOMAIN_WHOIS",
+"AFFILIATE_EMAILADDR",
+"DOMAIN_REGISTRAR",
+"DOMAIN_WHOIS",
+"EMAILADDR",
+"EMAILADDR_GENERIC",
+"PHONE_NUMBER",
+"PHYSICAL_ADDRESS",
+"PROVIDER_DNS",
+"RAW_RIR_DATA"
+],
+"watched": [
+"AFFILIATE_DOMAIN_NAME",
+"DOMAIN_NAME"
+]
+},
+"sfp_junkfiles": {
+"flags": [
+"errorprone",
+"invasive",
+"slow"
+],
+"produced": [
+"JUNK_FILE"
+],
+"watched": [
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_keybase": {
+"flags": [],
+"produced": [
+"BITCOIN_ADDRESS",
+"GEOINFO",
+"PGP_KEY",
+"RAW_RIR_DATA",
+"SOCIAL_MEDIA",
+"USERNAME"
+],
+"watched": [
+"DOMAIN_NAME",
+"LINKED_URL_EXTERNAL",
+"USERNAME"
+]
+},
+"sfp_koodous": {
+"flags": [
+"apikey"
+],
+"produced": [
+"APPSTORE_ENTRY",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_leakcheck": {
+"flags": [
+"apikey"
+],
+"produced": [
+"ACCOUNT_EXTERNAL_OWNED_COMPROMISED",
+"COUNTRY_NAME",
+"DATE_HUMAN_DOB",
+"EMAILADDR",
+"EMAILADDR_COMPROMISED",
+"GEOINFO",
+"HUMAN_NAME",
+"IP_ADDRESS",
+"PASSWORD_COMPROMISED",
+"PHONE_NUMBER_COMPROMISED",
+"RAW_RIR_DATA",
+"USERNAME"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"PHONE_NUMBER"
+]
+},
+"sfp_leakix": {
+"flags": [
+"apikey"
+],
+"produced": [
+"GEOINFO",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"IP_ADDRESS",
+"LEAKSITE_CONTENT",
+"OPERATING_SYSTEM",
+"RAW_RIR_DATA",
+"SOFTWARE_USED",
+"TCP_PORT_OPEN",
+"WEBSERVER_BANNER"
+],
+"watched": [
+"DOMAIN_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_luminar": {
+"flags": [
+"apikey"
+],
+"produced": [
+"THREAT_INTELLIGENCE"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_maltiverse": {
+"flags": [],
+"produced": [
+"IP_ADDRESS",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"RAW_RIR_DATA"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_malwarepatrol": {
+"flags": [
+"apikey"
+],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"BLACKLISTED_IPADDR",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_IPADDR",
+"CO_HOSTED_SITE",
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_mandiant_ti": {
+"flags": [
+"apikey"
+],
+"produced": [
+"THREAT_INTELLIGENCE"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_mastodon": {
+"flags": [
+"apikey"
+],
+"produced": [
+"MASTODON_POST"
+],
+"watched": [
+"INTERNET_NAME",
+"ROOT"
+]
+},
+"sfp_matrix": {
+"flags": [
+"apikey"
+],
+"produced": [
+"MATRIX_MESSAGE"
+],
+"watched": [
+"INTERNET_NAME",
+"ROOT"
+]
+},
+"sfp_mattermost": {
+"flags": [
+"apikey"
+],
+"produced": [
+"MATTERMOST_MESSAGE"
+],
+"watched": [
+"INTERNET_NAME",
+"ROOT"
+]
+},
+"sfp_metadefender": {
+"flags": [
+"apikey"
+],
+"produced": [
+"BLACKLISTED_INTERNET_NAME",
+"BLACKLISTED_IPADDR",
+"GEOINFO",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR"
+],
+"watched": [
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_mnemonic": {
+"flags": [],
+"produced": [
+"CO_HOSTED_SITE",
+"DOMAIN_NAME",
+"INTERNAL_IP_ADDRESS",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_multiproxy": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_myspace": {
+"flags": [],
+"produced": [
+"GEOINFO",
+"SOCIAL_MEDIA"
+],
+"watched": [
+"EMAILADDR",
+"SOCIAL_MEDIA"
+]
+},
+"sfp_nameapi": {
+"flags": [
+"apikey"
+],
+"produced": [
+"EMAILADDR_DISPOSABLE",
+"RAW_RIR_DATA"
+],
+"watched": [
+"EMAILADDR"
+]
+},
+"sfp_names": {
+"flags": [
+"errorprone"
+],
+"produced": [
+"HUMAN_NAME"
+],
+"watched": [
+"DOMAIN_WHOIS",
+"EMAILADDR",
+"NETBLOCK_WHOIS",
+"RAW_FILE_META_DATA",
+"RAW_RIR_DATA",
+"TARGET_WEB_CONTENT"
+]
+},
+"sfp_netlas": {
+"flags": [
+"apikey"
+],
+"produced": [
+"GEOINFO",
+"PHYSICAL_COORDINATES",
+"PROVIDER_TELCO",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_networksdb": {
+"flags": [
+"apikey"
+],
+"produced": [
+"CO_HOSTED_SITE",
+"DOMAIN_NAME",
+"GEOINFO",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"NETBLOCKV6_MEMBER",
+"NETBLOCK_MEMBER",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_neutrinoapi": {
+"flags": [
+"apikey"
+],
+"produced": [
+"BLACKLISTED_IPADDR",
+"GEOINFO",
+"MALICIOUS_IPADDR",
+"PROXY_HOST",
+"RAW_RIR_DATA",
+"TOR_EXIT_NODE",
+"VPN_HOST"
+],
+"watched": [
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"PHONE_NUMBER"
+]
+},
+"sfp_nmap": {
+"flags": [
+"invasive",
+"slow"
+],
+"produced": [
+"OPERATING_SYSTEM",
+"RAW_RIR_DATA",
+"TCP_PORT_OPEN",
+"TCP_PORT_OPEN_BANNER",
+"UDP_PORT_OPEN",
+"WEBSERVER_BANNER"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_nuclei": {
+"flags": [
+"invasive",
+"slow"
+],
+"produced": [
+"RAW_RIR_DATA",
+"VULNERABILITY_CVE_CRITICAL",
+"VULNERABILITY_CVE_HIGH",
+"VULNERABILITY_CVE_LOW",
+"VULNERABILITY_CVE_MEDIUM",
+"VULNERABILITY_GENERAL",
+"WEBSERVER_TECHNOLOGY"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IP_ADDRESS",
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_numverify": {
+"flags": [
+"apikey"
+],
+"produced": [
+"GEOINFO",
+"PROVIDER_TELCO",
+"RAW_RIR_DATA"
+],
+"watched": [
+"PHONE_NUMBER"
+]
+},
+"sfp_onioncity": {
+"flags": [
+"apikey",
+"tor"
+],
+"produced": [
+"DARKNET_MENTION_CONTENT",
+"DARKNET_MENTION_URL",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME"
+]
+},
+"sfp_onionsearchengine": {
+"flags": [
+"tor"
+],
+"produced": [
+"DARKNET_MENTION_CONTENT",
+"DARKNET_MENTION_URL"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"HUMAN_NAME"
+]
+},
+"sfp_onyphe": {
+"flags": [
+"apikey"
+],
+"produced": [
+"GEOINFO",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"LEAKSITE_CONTENT",
+"MALICIOUS_IPADDR",
+"PHYSICAL_COORDINATES",
+"RAW_RIR_DATA",
+"VULNERABILITY_CVE_CRITICAL",
+"VULNERABILITY_CVE_HIGH",
+"VULNERABILITY_CVE_LOW",
+"VULNERABILITY_CVE_MEDIUM",
+"VULNERABILITY_GENERAL"
+],
+"watched": [
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_openbugbounty": {
+"flags": [],
+"produced": [
+"VULNERABILITY_DISCLOSURE"
+],
+"watched": [
+"INTERNET_NAME"
+]
+},
+"sfp_opencorporates": {
+"flags": [
+"apikey"
+],
+"produced": [
+"COMPANY_NAME",
+"PHYSICAL_ADDRESS",
+"RAW_RIR_DATA"
+],
+"watched": [
+"COMPANY_NAME"
+]
+},
+"sfp_opendns": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"INTERNET_NAME"
+]
+},
+"sfp_opennic": {
+"flags": [],
+"produced": [
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_INTERNET_NAME_UNRESOLVED",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED"
+]
+},
+"sfp_openphish": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"INTERNET_NAME"
+]
+},
+"sfp_openstreetmap": {
+"flags": [],
+"produced": [
+"PHYSICAL_COORDINATES"
+],
+"watched": [
+"PHYSICAL_ADDRESS"
+]
+},
+"sfp_openwifimap": {
+"flags": [
+"experimental"
+],
+"produced": [
+"OPENWIFIMAP_HOTSPOT"
+],
+"watched": [
+"GEOINFO",
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_pageinfo": {
+"flags": [],
+"produced": [
+"PROVIDER_JAVASCRIPT",
+"URL_FLASH",
+"URL_FORM",
+"URL_JAVASCRIPT",
+"URL_JAVA_APPLET",
+"URL_PASSWORD",
+"URL_STATIC",
+"URL_UPLOAD"
+],
+"watched": [
+"TARGET_WEB_CONTENT"
+]
+},
+"sfp_pastebin": {
+"flags": [
+"apikey"
+],
+"produced": [
+"LEAKSITE_CONTENT",
+"LEAKSITE_URL"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"INTERNET_NAME"
+]
+},
+"sfp_performance_optimizer": {
+"flags": [
+"deprecated"
+],
+"produced": [
+"CACHE_STATS",
+"OPTIMIZATION_SUGGESTION",
+"PERFORMANCE_STATS",
+"RESOURCE_USAGE"
+],
+"watched": [
+"*"
+]
+},
+"sfp_pgp": {
+"flags": [],
+"produced": [
+"AFFILIATE_EMAILADDR",
+"EMAILADDR",
+"EMAILADDR_GENERIC",
+"PGP_KEY"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"INTERNET_NAME"
+]
+},
+"sfp_phishtank": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"INTERNET_NAME"
+]
+},
+"sfp_phone": {
+"flags": [],
+"produced": [
+"PHONE_NUMBER",
+"PROVIDER_TELCO"
+],
+"watched": [
+"DOMAIN_WHOIS",
+"NETBLOCK_WHOIS",
+"PHONE_NUMBER",
+"TARGET_WEB_CONTENT"
+]
+},
+"sfp_portscan_tcp": {
+"flags": [
+"invasive",
+"slow"
+],
+"produced": [
+"TCP_PORT_OPEN",
+"TCP_PORT_OPEN_BANNER"
+],
+"watched": [
+"IP_ADDRESS",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_projectdiscovery": {
+"flags": [
+"apikey"
+],
+"produced": [
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_publicwww": {
+"flags": [
+"apikey"
+],
+"produced": [
+"AFFILIATE_INTERNET_NAME",
+"RAW_RIR_DATA"
+],
+"watched": [
+"WEB_ANALYTICS_ID"
+]
+},
+"sfp_pulsedive": {
+"flags": [
+"apikey"
+],
+"produced": [
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"TCP_PORT_OPEN"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"NETBLOCKV6_MEMBER",
+"NETBLOCKV6_OWNER",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_quad9": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"INTERNET_NAME"
+]
+},
+"sfp_rapiddns": {
+"flags": [],
+"produced": [
+"CO_HOSTED_SITE",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"IP_ADDRESS",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_recordedfuture": {
+"flags": [
+"apikey"
+],
+"produced": [
+"VULNERABILITY_DISCLOSURE"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_reddit": {
+"flags": [
+"apikey"
+],
+"produced": [
+"REDDIT_POST"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_reversewhois": {
+"flags": [],
+"produced": [
+"AFFILIATE_DOMAIN_NAME",
+"AFFILIATE_INTERNET_NAME",
+"DOMAIN_REGISTRAR"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_ripe": {
+"flags": [],
+"produced": [
+"BGP_AS_MEMBER",
+"BGP_AS_OWNER",
+"NETBLOCKV6_MEMBER",
+"NETBLOCKV6_OWNER",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER",
+"RAW_RIR_DATA"
+],
+"watched": [
+"BGP_AS_MEMBER",
+"BGP_AS_OWNER",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"NETBLOCKV6_MEMBER",
+"NETBLOCKV6_OWNER",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_rocketchat": {
+"flags": [
+"apikey"
+],
+"produced": [
+"ROCKETCHAT_MESSAGE"
+],
+"watched": [
+"INTERNET_NAME",
+"ROOT"
+]
+},
+"sfp_rocketreach": {
+"flags": [
+"apikey"
+],
+"produced": [
+"EMAILADDR",
+"PERSON_NAME",
+"PHONE_NUMBER",
+"RAW_RIR_DATA",
+"SOCIAL_MEDIA"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR"
+]
+},
+"sfp_rubika": {
+"flags": [
+"experimental"
+],
+"produced": [
+"RUBIKA_MESSAGE"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_s3bucket": {
+"flags": [],
+"produced": [
+"CLOUD_STORAGE_BUCKET",
+"CLOUD_STORAGE_BUCKET_OPEN"
+],
+"watched": [
+"DOMAIN_NAME",
+"LINKED_URL_EXTERNAL"
+]
+},
+"sfp_searchcode": {
+"flags": [],
+"produced": [
+"EMAILADDR",
+"EMAILADDR_GENERIC",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"LINKED_URL_INTERNAL",
+"PUBLIC_CODE_REPO",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_securitytrails": {
+"flags": [
+"apikey"
+],
+"produced": [
+"AFFILIATE_DOMAIN_NAME",
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"PROVIDER_HOSTING"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_seon": {
+"flags": [
+"apikey"
+],
+"produced": [
+"COMPANY_NAME",
+"EMAILADDR_COMPROMISED",
+"EMAILADDR_DELIVERABLE",
+"EMAILADDR_DISPOSABLE",
+"EMAILADDR_UNDELIVERABLE",
+"GEOINFO",
+"HUMAN_NAME",
+"MALICIOUS_EMAILADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_PHONE_NUMBER",
+"PHONE_NUMBER_TYPE",
+"PHYSICAL_COORDINATES",
+"PROVIDER_TELCO",
+"PROXY_HOST",
+"RAW_RIR_DATA",
+"SOCIAL_MEDIA",
+"TCP_PORT_OPEN",
+"TOR_EXIT_NODE",
+"VPN_HOST",
+"WEBSERVER_TECHNOLOGY"
+],
+"watched": [
+"EMAILADDR",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"PHONE_NUMBER"
+]
+},
+"sfp_shodan": {
+"flags": [
+"apikey"
+],
+"produced": [
+"BGP_AS_MEMBER",
+"DEVICE_TYPE",
+"GEOINFO",
+"IP_ADDRESS",
+"OPERATING_SYSTEM",
+"RAW_RIR_DATA",
+"SOFTWARE_USED",
+"TCP_PORT_OPEN",
+"TCP_PORT_OPEN_BANNER",
+"VULNERABILITY_CVE_CRITICAL",
+"VULNERABILITY_CVE_HIGH",
+"VULNERABILITY_CVE_LOW",
+"VULNERABILITY_CVE_MEDIUM",
+"VULNERABILITY_GENERAL"
+],
+"watched": [
+"DOMAIN_NAME",
+"IP_ADDRESS",
+"NETBLOCK_OWNER",
+"WEB_ANALYTICS_ID"
+]
+},
+"sfp_similar": {
+"flags": [],
+"produced": [
+"SIMILARDOMAIN"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_skymem": {
+"flags": [],
+"produced": [
+"EMAILADDR",
+"EMAILADDR_GENERIC"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME"
+]
+},
+"sfp_slideshare": {
+"flags": [],
+"produced": [
+"GEOINFO",
+"RAW_RIR_DATA"
+],
+"watched": [
+"SOCIAL_MEDIA"
+]
+},
+"sfp_snov": {
+"flags": [
+"apikey"
+],
+"produced": [
+"EMAILADDR",
+"EMAILADDR_GENERIC",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME"
+]
+},
+"sfp_social": {
+"flags": [],
+"produced": [
+"SOCIAL_MEDIA",
+"USERNAME"
+],
+"watched": [
+"LINKED_URL_EXTERNAL"
+]
+},
+"sfp_sociallinks": {
+"flags": [
+"apikey"
+],
+"produced": [
+"ACCOUNT_EXTERNAL_OWNED",
+"COMPANY_NAME",
+"GEOINFO",
+"HUMAN_NAME",
+"JOB_TITLE",
+"PHONE_NUMBER",
+"RAW_RIR_DATA",
+"SOCIAL_MEDIA",
+"USERNAME"
+],
+"watched": [
+"EMAILADDR",
+"PHONE_NUMBER",
+"USERNAME"
+]
+},
+"sfp_socialprofiles": {
+"flags": [
+"apikey",
+"slow"
+],
+"produced": [
+"RAW_RIR_DATA",
+"SOCIAL_MEDIA"
+],
+"watched": [
+"HUMAN_NAME"
+]
+},
+"sfp_sorbs": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET",
+"PROXY_HOST"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_soroush": {
+"flags": [
+"experimental"
+],
+"produced": [
+"SOROUSH_MESSAGE"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_spamcop": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_spamhaus": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_spider": {
+"flags": [
+"slow"
+],
+"produced": [
+"HTTP_CODE",
+"LINKED_URL_EXTERNAL",
+"LINKED_URL_INTERNAL",
+"TARGET_WEB_CONTENT",
+"TARGET_WEB_CONTENT_TYPE",
+"WEBSERVER_HTTPHEADERS"
+],
+"watched": [
+"INTERNET_NAME",
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_spur": {
+"flags": [
+"apikey"
+],
+"produced": [
+"COMPANY_NAME",
+"GEOINFO",
+"IP_ADDRESS",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"RAW_RIR_DATA"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_sslcert": {
+"flags": [],
+"produced": [
+"CO_HOSTED_SITE",
+"CO_HOSTED_SITE_DOMAIN",
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"SSL_CERTIFICATE_EXPIRED",
+"SSL_CERTIFICATE_EXPIRING",
+"SSL_CERTIFICATE_ISSUED",
+"SSL_CERTIFICATE_ISSUER",
+"SSL_CERTIFICATE_MISMATCH",
+"SSL_CERTIFICATE_RAW",
+"TCP_PORT_OPEN"
+],
+"watched": [
+"INTERNET_NAME",
+"IP_ADDRESS",
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_stackoverflow": {
+"flags": [
+"apikey",
+"errorprone"
+],
+"produced": [
+"AFFILIATE_EMAILADDR",
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"EMAILADDR",
+"HUMAN_NAME",
+"RAW_RIR_DATA",
+"USERNAME"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_stevenblack_hosts": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"INTERNET_NAME"
+]
+},
+"sfp_strangeheaders": {
+"flags": [],
+"produced": [
+"WEBSERVER_STRANGEHEADER"
+],
+"watched": [
+"WEBSERVER_HTTPHEADERS"
+]
+},
+"sfp_subdomain_takeover": {
+"flags": [],
+"produced": [
+"AFFILIATE_INTERNET_NAME_HIJACKABLE"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_INTERNET_NAME_UNRESOLVED"
+]
+},
+"sfp_subdomainradar": {
+"flags": [
+"apikey"
+],
+"produced": [
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"RAW_RIR_DATA",
+"TCP_PORT_OPEN"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_subfinder": {
+"flags": [
+"tool"
+],
+"produced": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"ROOT"
+]
+},
+"sfp_sublist3r": {
+"flags": [],
+"produced": [
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME"
+]
+},
+"sfp_surbl": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_IPADDR",
+"CO_HOSTED_SITE",
+"INTERNET_NAME",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_talosintel": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_telegram": {
+"flags": [
+"security"
+],
+"produced": [
+"TELEGRAM_MESSAGE"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_textmagic": {
+"flags": [
+"apikey"
+],
+"produced": [
+"PHONE_NUMBER_TYPE",
+"RAW_RIR_DATA"
+],
+"watched": [
+"PHONE_NUMBER"
+]
+},
+"sfp_threatcrowd": {
+"flags": [],
+"produced": [
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_COHOST",
+"MALICIOUS_EMAILADDR",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_IPADDR",
+"CO_HOSTED_SITE",
+"EMAILADDR",
+"INTERNET_NAME",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_threatfox": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS"
+]
+},
+"sfp_threatminer": {
+"flags": [],
+"produced": [
+"CO_HOSTED_SITE",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED"
+],
+"watched": [
+"DOMAIN_NAME",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_tiktok_osint": {
+"flags": [
+"apikey"
+],
+"produced": [
+"AFFILIATE_INTERNET_NAME",
+"GEOINFO",
+"HUMAN_NAME",
+"LINKED_URL_EXTERNAL",
+"RAW_RIR_DATA",
+"SOCIAL_MEDIA_CONTENT",
+"SOCIAL_MEDIA_HASHTAG",
+"SOCIAL_MEDIA_MENTION",
+"SOCIAL_MEDIA_NETWORK",
+"SOCIAL_MEDIA_PROFILE",
+"USERNAME",
+"WEBSERVER_TECHNOLOGY"
+],
+"watched": [
+"EMAILADDR",
+"HUMAN_NAME",
+"PHONE_NUMBER",
+"SOCIAL_MEDIA",
+"USERNAME"
+]
+},
+"sfp_tldsearch": {
+"flags": [
+"slow"
+],
+"produced": [
+"SIMILARDOMAIN"
+],
+"watched": [
+"INTERNET_NAME"
+]
+},
+"sfp_tool_amass": {
+"flags": [
+"slow",
+"tool"
+],
+"produced": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"ROOT"
+]
+},
+"sfp_tool_arjun": {
+"flags": [
+"invasive",
+"slow",
+"tool"
+],
+"produced": [
+"RAW_RIR_DATA",
+"URL_FORM"
+],
+"watched": [
+"LINKED_URL_INTERNAL",
+"URL_FORM"
+]
+},
+"sfp_tool_cmseek": {
+"flags": [
+"tool"
+],
+"produced": [
+"WEBSERVER_TECHNOLOGY"
+],
+"watched": [
+"INTERNET_NAME"
+]
+},
+"sfp_tool_dalfox": {
+"flags": [
+"invasive",
+"slow",
+"tool"
+],
+"produced": [
+"RAW_RIR_DATA",
+"VULNERABILITY_CVE_HIGH",
+"VULNERABILITY_GENERAL"
+],
+"watched": [
+"LINKED_URL_INTERNAL",
+"URL_FORM"
+]
+},
+"sfp_tool_dnstwist": {
+"flags": [
+"tool"
+],
+"produced": [
+"SIMILARDOMAIN"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_tool_dnsx": {
+"flags": [
+"tool"
+],
+"produced": [
+"DNS_SPF",
+"DNS_SRV",
+"DNS_TEXT",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"PROVIDER_DNS",
+"PROVIDER_MAIL",
+"RAW_DNS_RECORDS",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED"
+]
+},
+"sfp_tool_ffuf": {
+"flags": [
+"invasive",
+"slow",
+"tool"
+],
+"produced": [
+"HTTP_CODE",
+"LINKED_URL_INTERNAL",
+"RAW_RIR_DATA",
+"URL_FORM"
+],
+"watched": [
+"DOMAIN_NAME",
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_tool_gau": {
+"flags": [
+"tool"
+],
+"produced": [
+"LINKED_URL_EXTERNAL",
+"LINKED_URL_INTERNAL",
+"RAW_RIR_DATA",
+"URL_FORM",
+"URL_JAVASCRIPT"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_tool_gitleaks": {
+"flags": [
+"slow",
+"tool"
+],
+"produced": [
+"PASSWORD_COMPROMISED",
+"RAW_RIR_DATA",
+"VULNERABILITY_GENERAL"
+],
+"watched": [
+"PUBLIC_CODE_REPO"
+]
+},
+"sfp_tool_gobuster": {
+"flags": [
+"invasive",
+"slow",
+"tool"
+],
+"produced": [
+"URL_DIRECTORY",
+"URL_FILE"
+],
+"watched": [
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_tool_gospider": {
+"flags": [
+"invasive",
+"slow",
+"tool"
+],
+"produced": [
+"EMAILADDR",
+"INTERNET_NAME",
+"LINKED_URL_EXTERNAL",
+"LINKED_URL_INTERNAL",
+"URL_FORM",
+"URL_JAVASCRIPT"
+],
+"watched": [
+"DOMAIN_NAME",
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_tool_gowitness": {
+"flags": [
+"slow",
+"tool"
+],
+"produced": [
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_tool_hakrawler": {
+"flags": [
+"invasive",
+"slow",
+"tool"
+],
+"produced": [
+"LINKED_URL_EXTERNAL",
+"LINKED_URL_INTERNAL",
+"URL_FORM",
+"URL_JAVASCRIPT"
+],
+"watched": [
+"DOMAIN_NAME",
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_tool_katana": {
+"flags": [
+"invasive",
+"slow",
+"tool"
+],
+"produced": [
+"LINKED_URL_EXTERNAL",
+"LINKED_URL_INTERNAL",
+"RAW_RIR_DATA",
+"URL_FORM",
+"URL_JAVASCRIPT"
+],
+"watched": [
+"DOMAIN_NAME",
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_tool_linkfinder": {
+"flags": [
+"tool"
+],
+"produced": [
+"LINKED_URL_EXTERNAL",
+"LINKED_URL_INTERNAL",
+"RAW_RIR_DATA"
+],
+"watched": [
+"URL_JAVASCRIPT"
+]
+},
+"sfp_tool_masscan": {
+"flags": [
+"invasive",
+"slow",
+"tool"
+],
+"produced": [
+"RAW_RIR_DATA",
+"TCP_PORT_OPEN",
+"WEBSERVER_BANNER"
+],
+"watched": [
+"IP_ADDRESS",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_tool_massdns": {
+"flags": [
+"slow",
+"tool"
+],
+"produced": [
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+],
+"watched": [
+"INTERNET_NAME_UNRESOLVED"
+]
+},
+"sfp_tool_naabu": {
+"flags": [
+"invasive",
+"tool"
+],
+"produced": [
+"TCP_PORT_OPEN"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_tool_nbtscan": {
+"flags": [
+"slow",
+"tool"
+],
+"produced": [
+"IP_ADDRESS",
+"UDP_PORT_OPEN",
+"UDP_PORT_OPEN_INFO"
+],
+"watched": [
+"IP_ADDRESS",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_tool_nikto": {
+"flags": [
+"invasive",
+"slow",
+"tool"
+],
+"produced": [
+"INTERESTING_FILE",
+"RAW_RIR_DATA",
+"VULNERABILITY_CVE_HIGH",
+"VULNERABILITY_CVE_LOW",
+"VULNERABILITY_CVE_MEDIUM",
+"VULNERABILITY_GENERAL",
+"WEBSERVER_BANNER",
+"WEBSERVER_TECHNOLOGY"
+],
+"watched": [
+"DOMAIN_NAME",
+"IP_ADDRESS",
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_tool_onesixtyone": {
+"flags": [
+"tool"
+],
+"produced": [
+"IP_ADDRESS",
+"UDP_PORT_OPEN",
+"UDP_PORT_OPEN_INFO"
+],
+"watched": [
+"IP_ADDRESS",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_tool_phoneinfoga": {
+"flags": [
+"apikey",
+"invasive",
+"tool"
+],
+"produced": [
+"CARRIER_NAME",
+"CARRIER_TYPE",
+"COUNTRY_NAME",
+"INTERNATIONAL_FORMAT",
+"IS_POSSIBLE",
+"IS_VALID",
+"LINE_TYPE",
+"LOCAL_FORMAT",
+"LOCATION",
+"NUMBER_TYPE",
+"PHONE_NUMBER",
+"RAW_RIR_DATA",
+"REGION_NAME"
+],
+"watched": [
+"PHONE_NUMBER"
+]
+},
+"sfp_tool_retirejs": {
+"flags": [
+"tool"
+],
+"produced": [
+"VULNERABILITY_CVE_CRITICAL",
+"VULNERABILITY_CVE_HIGH",
+"VULNERABILITY_CVE_LOW",
+"VULNERABILITY_CVE_MEDIUM",
+"VULNERABILITY_GENERAL"
+],
+"watched": [
+"LINKED_URL_EXTERNAL",
+"LINKED_URL_INTERNAL"
+]
+},
+"sfp_tool_snallygaster": {
+"flags": [
+"tool"
+],
+"produced": [
+"VULNERABILITY_CVE_CRITICAL",
+"VULNERABILITY_CVE_HIGH",
+"VULNERABILITY_CVE_LOW",
+"VULNERABILITY_CVE_MEDIUM",
+"VULNERABILITY_GENERAL"
+],
+"watched": [
+"INTERNET_NAME"
+]
+},
+"sfp_tool_sslscan": {
+"flags": [
+"tool"
+],
+"produced": [
+"RAW_RIR_DATA",
+"SSL_CERTIFICATE_ISSUED",
+"SSL_CERTIFICATE_ISSUER",
+"SSL_CERTIFICATE_RAW",
+"VULNERABILITY_GENERAL"
+],
+"watched": [
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_tool_sslyze": {
+"flags": [
+"slow",
+"tool"
+],
+"produced": [
+"RAW_RIR_DATA",
+"SSL_CERTIFICATE_EXPIRED",
+"SSL_CERTIFICATE_EXPIRING",
+"SSL_CERTIFICATE_ISSUED",
+"SSL_CERTIFICATE_ISSUER",
+"SSL_CERTIFICATE_RAW",
+"VULNERABILITY_CVE_CRITICAL",
+"VULNERABILITY_CVE_HIGH",
+"VULNERABILITY_GENERAL"
+],
+"watched": [
+"INTERNET_NAME",
+"IP_ADDRESS"
+]
+},
+"sfp_tool_testsslsh": {
+"flags": [
+"tool"
+],
+"produced": [
+"IP_ADDRESS",
+"VULNERABILITY_CVE_CRITICAL",
+"VULNERABILITY_CVE_HIGH",
+"VULNERABILITY_CVE_LOW",
+"VULNERABILITY_CVE_MEDIUM",
+"VULNERABILITY_GENERAL"
+],
+"watched": [
+"INTERNET_NAME",
+"IP_ADDRESS",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_tool_tlsx": {
+"flags": [
+"tool"
+],
+"produced": [
+"RAW_RIR_DATA",
+"SSL_CERTIFICATE_EXPIRED",
+"SSL_CERTIFICATE_EXPIRING",
+"SSL_CERTIFICATE_ISSUED",
+"SSL_CERTIFICATE_ISSUER",
+"SSL_CERTIFICATE_RAW",
+"VULNERABILITY_GENERAL"
+],
+"watched": [
+"INTERNET_NAME",
+"IP_ADDRESS",
+"TCP_PORT_OPEN"
+]
+},
+"sfp_tool_trufflehog": {
+"flags": [
+"slow",
+"tool"
+],
+"produced": [
+"PASSWORD_COMPROMISED"
+],
+"watched": [
+"PUBLIC_CODE_REPO",
+"SOCIAL_MEDIA"
+]
+},
+"sfp_tool_wafw00f": {
+"flags": [
+"tool"
+],
+"produced": [
+"RAW_RIR_DATA",
+"WEBSERVER_TECHNOLOGY"
+],
+"watched": [
+"INTERNET_NAME"
+]
+},
+"sfp_tool_wappalyzer": {
+"flags": [
+"apikey",
+"tool"
+],
+"produced": [
+"OPERATING_SYSTEM",
+"SOFTWARE_USED",
+"WEBSERVER_TECHNOLOGY"
+],
+"watched": [
+"INTERNET_NAME"
+]
+},
+"sfp_tool_waybackurls": {
+"flags": [
+"tool"
+],
+"produced": [
+"LINKED_URL_EXTERNAL",
+"LINKED_URL_INTERNAL",
+"URL_FORM",
+"URL_JAVASCRIPT"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_tool_whatweb": {
+"flags": [
+"tool"
+],
+"produced": [
+"RAW_RIR_DATA",
+"WEBSERVER_BANNER",
+"WEBSERVER_TECHNOLOGY"
+],
+"watched": [
+"INTERNET_NAME"
+]
+},
+"sfp_torch": {
+"flags": [
+"errorprone",
+"tor"
+],
+"produced": [
+"DARKNET_MENTION_CONTENT",
+"DARKNET_MENTION_URL"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"HUMAN_NAME"
+]
+},
+"sfp_torexits": {
+"flags": [],
+"produced": [
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"TOR_EXIT_NODE"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"NETBLOCKV6_OWNER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_tron": {
+"flags": [
+"apikey",
+"experimental"
+],
+"produced": [
+"TRON_ADDRESS",
+"TRON_TX"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_trumail": {
+"flags": [],
+"produced": [
+"EMAILADDR_DISPOSABLE",
+"RAW_RIR_DATA"
+],
+"watched": [
+"EMAILADDR"
+]
+},
+"sfp_twilio": {
+"flags": [
+"apikey"
+],
+"produced": [
+"COMPANY_NAME",
+"RAW_RIR_DATA"
+],
+"watched": [
+"PHONE_NUMBER"
+]
+},
+"sfp_twitter": {
+"flags": [],
+"produced": [
+"GEOINFO",
+"RAW_RIR_DATA"
+],
+"watched": [
+"SOCIAL_MEDIA"
+]
+},
+"sfp_uceprotect": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_unwiredlabs": {
+"flags": [
+"apikey",
+"experimental"
+],
+"produced": [
+"UNWIREDLABS_GEOINFO"
+],
+"watched": [
+"CELL_TOWER",
+"IP_ADDRESS",
+"MAC_ADDRESS"
+]
+},
+"sfp_urlscan": {
+"flags": [],
+"produced": [
+"BGP_AS_MEMBER",
+"DOMAIN_NAME",
+"GEOINFO",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"LINKED_URL_INTERNAL",
+"RAW_RIR_DATA",
+"WEBSERVER_BANNER"
+],
+"watched": [
+"INTERNET_NAME"
+]
+},
+"sfp_validin": {
+"flags": [
+"apikey"
+],
+"produced": [
+"DNS_TEXT",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR",
+"RAW_RIR_DATA",
+"SSL_CERTIFICATE_RAW"
+],
+"watched": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_venmo": {
+"flags": [],
+"produced": [
+"HUMAN_NAME",
+"RAW_RIR_DATA"
+],
+"watched": [
+"USERNAME"
+]
+},
+"sfp_viewdns": {
+"flags": [
+"apikey"
+],
+"produced": [
+"AFFILIATE_DOMAIN_NAME",
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE"
+],
+"watched": [
+"EMAILADDR",
+"IP_ADDRESS",
+"PROVIDER_DNS"
+]
+},
+"sfp_virustotal": {
+"flags": [
+"apikey"
+],
+"produced": [
+"AFFILIATE_DOMAIN_NAME",
+"AFFILIATE_INTERNET_NAME",
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"CO_HOSTED_SITE",
+"INTERNET_NAME",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_voipbl": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"IP_ADDRESS",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_vxvault": {
+"flags": [],
+"produced": [
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME",
+"MALICIOUS_IPADDR"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"CO_HOSTED_SITE",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_webanalytics": {
+"flags": [],
+"produced": [
+"WEB_ANALYTICS_ID"
+],
+"watched": [
+"DNS_TEXT",
+"TARGET_WEB_CONTENT"
+]
+},
+"sfp_webframework": {
+"flags": [],
+"produced": [
+"URL_WEB_FRAMEWORK"
+],
+"watched": [
+"TARGET_WEB_CONTENT"
+]
+},
+"sfp_webserver": {
+"flags": [],
+"produced": [
+"LINKED_URL_EXTERNAL",
+"LINKED_URL_INTERNAL",
+"WEBSERVER_BANNER",
+"WEBSERVER_TECHNOLOGY"
+],
+"watched": [
+"WEBSERVER_HTTPHEADERS"
+]
+},
+"sfp_wechat": {
+"flags": [
+"apikey"
+],
+"produced": [
+"WECHAT_MESSAGE"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_whatcms": {
+"flags": [
+"apikey",
+"slow"
+],
+"produced": [
+"RAW_RIR_DATA",
+"WEBSERVER_TECHNOLOGY"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_whatsapp": {
+"flags": [
+"apikey",
+"experimental"
+],
+"produced": [
+"WHATSAPP_MESSAGE"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_whois": {
+"flags": [],
+"produced": [
+"AFFILIATE_DOMAIN_WHOIS",
+"CO_HOSTED_SITE_DOMAIN_WHOIS",
+"DOMAIN_REGISTRAR",
+"DOMAIN_WHOIS",
+"NETBLOCK_WHOIS",
+"SIMILARDOMAIN_WHOIS"
+],
+"watched": [
+"AFFILIATE_DOMAIN_NAME",
+"CO_HOSTED_SITE_DOMAIN",
+"DOMAIN_NAME",
+"DOMAIN_NAME_PARENT",
+"NETBLOCKV6_OWNER",
+"NETBLOCK_OWNER",
+"SIMILARDOMAIN"
+]
+},
+"sfp_whoisfreaks": {
+"flags": [
+"apikey",
+"slow"
+],
+"produced": [
+"AFFILIATE_DOMAIN_NAME",
+"AFFILIATE_INTERNET_NAME"
+],
+"watched": [
+"COMPANY_NAME",
+"EMAILADDR",
+"EMAILADDR_GENERIC",
+"HUMAN_NAME"
+]
+},
+"sfp_whoisology": {
+"flags": [
+"apikey"
+],
+"produced": [
+"AFFILIATE_DOMAIN_NAME",
+"AFFILIATE_INTERNET_NAME"
+],
+"watched": [
+"EMAILADDR"
+]
+},
+"sfp_whoisxmlapi": {
+"flags": [
+"apikey"
+],
+"produced": [
+"DOMAIN_REGISTRAR",
+"DOMAIN_WHOIS",
+"GEOINFO",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"MALICIOUS_INTERNET_NAME",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_whoxy": {
+"flags": [
+"apikey"
+],
+"produced": [
+"AFFILIATE_DOMAIN_NAME",
+"AFFILIATE_INTERNET_NAME"
+],
+"watched": [
+"EMAILADDR"
+]
+},
+"sfp_wificafespots": {
+"flags": [
+"experimental"
+],
+"produced": [
+"WIFICAFESPOTS_HOTSPOT"
+],
+"watched": [
+"GEOINFO",
+"INTERNET_NAME"
+]
+},
+"sfp_wifimapio": {
+"flags": [
+"experimental"
+],
+"produced": [
+"WIFIMAPIO_HOTSPOT"
+],
+"watched": [
+"GEOINFO",
+"INTERNET_NAME"
+]
+},
+"sfp_wigle": {
+"flags": [
+"apikey"
+],
+"produced": [
+"WIFI_ACCESS_POINT"
+],
+"watched": [
+"PHYSICAL_COORDINATES"
+]
+},
+"sfp_wikileaks": {
+"flags": [],
+"produced": [
+"LEAKSITE_CONTENT",
+"LEAKSITE_URL"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"HUMAN_NAME"
+]
+},
+"sfp_wikipediaedits": {
+"flags": [],
+"produced": [
+"WIKIPEDIA_PAGE_EDIT"
+],
+"watched": [
+"IP_ADDRESS",
+"USERNAME"
+]
+},
+"sfp_wpscan": {
+"flags": [
+"apikey"
+],
+"produced": [
+"RAW_RIR_DATA",
+"VULNERABILITY_CVE_CRITICAL",
+"VULNERABILITY_CVE_HIGH",
+"VULNERABILITY_CVE_LOW",
+"VULNERABILITY_CVE_MEDIUM",
+"VULNERABILITY_GENERAL"
+],
+"watched": [
+"SOFTWARE_USED",
+"URL_WEB_FRAMEWORK",
+"WEBSERVER_TECHNOLOGY"
+]
+},
+"sfp_xforce": {
+"flags": [
+"apikey"
+],
+"produced": [
+"BLACKLISTED_AFFILIATE_IPADDR",
+"BLACKLISTED_IPADDR",
+"BLACKLISTED_NETBLOCK",
+"BLACKLISTED_SUBNET",
+"CO_HOSTED_SITE",
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED",
+"MALICIOUS_AFFILIATE_IPADDR",
+"MALICIOUS_IPADDR",
+"MALICIOUS_NETBLOCK",
+"MALICIOUS_SUBNET",
+"RAW_RIR_DATA"
+],
+"watched": [
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"NETBLOCKV6_MEMBER",
+"NETBLOCKV6_OWNER",
+"NETBLOCK_MEMBER",
+"NETBLOCK_OWNER"
+]
+},
+"sfp_xiaohongshu": {
+"flags": [],
+"produced": [
+"XIAOHONGSHU_POST"
+],
+"watched": [
+"ROOT"
+]
+},
+"sfp_yandexdns": {
+"flags": [],
+"produced": [
+"BLACKLISTED_AFFILIATE_INTERNET_NAME",
+"BLACKLISTED_COHOST",
+"BLACKLISTED_INTERNET_NAME",
+"MALICIOUS_AFFILIATE_INTERNET_NAME",
+"MALICIOUS_COHOST",
+"MALICIOUS_INTERNET_NAME"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"CO_HOSTED_SITE",
+"INTERNET_NAME"
+]
+},
+"sfp_zetalytics": {
+"flags": [
+"apikey"
+],
+"produced": [
+"AFFILIATE_DOMAIN_NAME",
+"INTERNET_NAME",
+"INTERNET_NAME_UNRESOLVED"
+],
+"watched": [
+"DOMAIN_NAME",
+"EMAILADDR",
+"INTERNET_NAME"
+]
+},
+"sfp_zonefiles": {
+"flags": [
+"apikey"
+],
+"produced": [
+"EMAILADDR",
+"IP_ADDRESS",
+"PHONE_NUMBER",
+"PROVIDER_DNS",
+"RAW_RIR_DATA",
+"SOFTWARE_USED"
+],
+"watched": [
+"DOMAIN_NAME"
+]
+},
+"sfp_zoneh": {
+"flags": [],
+"produced": [
+"DEFACED_AFFILIATE_INTERNET_NAME",
+"DEFACED_AFFILIATE_IPADDR",
+"DEFACED_COHOST",
+"DEFACED_INTERNET_NAME",
+"DEFACED_IPADDR"
+],
+"watched": [
+"AFFILIATE_INTERNET_NAME",
+"AFFILIATE_IPADDR",
+"AFFILIATE_IPV6_ADDRESS",
+"CO_HOSTED_SITE",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+},
+"sfp_zoomeye": {
+"flags": [
+"apikey"
+],
+"produced": [
+"DOMAIN_NAME",
+"INTERNET_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS",
+"RAW_RIR_DATA"
+],
+"watched": [
+"DOMAIN_NAME",
+"IPV6_ADDRESS",
+"IP_ADDRESS"
+]
+}
+},
+"source": "SpiderFoot NG fork Snaxxwax/spiderfoot 5c5d41d5 (poppopjmp v6.1.0 base), dumped from the deployed sf-api container 2026-10-04 via each module's watchedEvents()/producedEvents()/meta.flags"
+}

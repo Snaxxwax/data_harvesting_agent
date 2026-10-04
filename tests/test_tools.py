@@ -298,7 +298,11 @@ def test_missing_binary_is_a_policy_denial(monkeypatch):
 
 def test_plan_suggests_maigret_for_a_username():
     plan = plan_investigation("@janedoe")
-    assert plan.tools == [{"name": "maigret", "target": "janedoe"}]
+    # The static planner names every tool that accepts the kind; the API filters to ready ones.
+    assert plan.tools == [
+        {"name": "maigret", "target": "janedoe"},
+        {"name": "spiderfoot", "target": "janedoe"},
+    ]
     # A tool is never suggested for an input it cannot consume: maigret takes a username,
     # so an email plan must not offer it (it may offer email-consuming tools instead).
     assert "maigret" not in {t["name"] for t in plan_investigation("jane@example.org").tools}
@@ -1338,3 +1342,94 @@ def test_an_unexpanded_template_is_not_a_valid_url():
 
     with pytest.raises(ValueError, match="template placeholder"):
         canonical_url("https://t.me/{username}")
+
+
+# --- Per-input SpiderFoot module selection (the scan sends a plan, not the allowlist). ---
+
+_DEPLOYED_SF = (
+    "sfp_dnsresolve,sfp_accounts,sfp_tiktok_osint,sfp_gravatar,sfp_hudsonrock,"
+    "sfp_pgp,sfp_debounce,sfp_names,sfp_wikileaks"
+).split(",")
+
+
+def test_spiderfoot_plan_differs_by_input_type():
+    s = _sf_settings(spiderfoot_modules=tuple(_DEPLOYED_SF))
+    email = tools.spiderfoot_plan("EMAILADDR", s)["modules"]
+    user = tools.spiderfoot_plan("USERNAME", s)["modules"]
+    host = tools.spiderfoot_plan("INTERNET_NAME", s)
+    assert set(email) == set(_DEPLOYED_SF) - {"sfp_dnsresolve"}
+    assert user == ["sfp_accounts", "sfp_hudsonrock", "sfp_tiktok_osint"]
+    assert host["modules"] == [
+        "sfp_accounts",
+        "sfp_dnsresolve",
+        "sfp_hudsonrock",
+        "sfp_pgp",
+        "sfp_wikileaks",
+    ]
+    # Dependency: these fire on a domain only because sfp_dnsresolve produces DOMAIN_NAME.
+    assert host["consumes"]["sfp_wikileaks"] == ["DOMAIN_NAME"]
+    assert host["consumes"]["sfp_accounts"] == ["DOMAIN_NAME"]
+    # A domain's addresses are other people: email-only modules are not reached through pgp.
+    assert "consumes nothing reachable" in host["excluded"]["sfp_gravatar"]
+
+
+def test_spiderfoot_plan_gates_keyed_modules_on_declared_credentials():
+    s = _sf_settings(spiderfoot_modules=("sfp_accounts", "sfp_c99"))
+    plan = tools.spiderfoot_plan("USERNAME", s)
+    assert plan["modules"] == ["sfp_accounts"]
+    assert "API key" in plan["excluded"]["sfp_c99"]
+    keyed = _sf_settings(
+        spiderfoot_modules=("sfp_accounts", "sfp_c99"),
+        spiderfoot_keyed_modules=frozenset({"sfp_c99"}),
+    )
+    assert tools.spiderfoot_plan("USERNAME", keyed)["modules"] == ["sfp_accounts", "sfp_c99"]
+    # Keyed, but observed producing events with no key configured: usable keyless.
+    tiktok = tools.spiderfoot_plan(
+        "USERNAME", _sf_settings(spiderfoot_modules=("sfp_tiktok_osint",))
+    )
+    assert tiktok["modules"] == ["sfp_tiktok_osint"]
+
+
+def test_spiderfoot_plan_discloses_unknown_untested_and_not_enabled():
+    plan = tools.spiderfoot_plan(
+        "USERNAME", _sf_settings(spiderfoot_modules=("sfp_accounts", "sfp_nope"))
+    )
+    assert "unknown" in plan["excluded"]["sfp_nope"]
+    assert plan["tested"] == {"sfp_accounts": "untested"}
+    assert "sfp_github" in plan["not_enabled"]
+    assert tools.spiderfoot_plan("EMAILADDR", _sf_settings(spiderfoot_modules=("sfp_accounts",)))[
+        "tested"
+    ] == {"sfp_accounts": "events"}
+
+
+def test_spiderfoot_scan_sends_the_input_plan_and_records_it(fake_sf, monkeypatch):
+    monkeypatch.setattr(tools.time, "sleep", lambda _s: None)
+    fake = fake_sf(_FakeSF(statuses=["FINISHED"], pages=[([], False)]))
+    s = _sf_settings(spiderfoot_modules=tuple(_DEPLOYED_SF))
+    capture = tools.run("spiderfoot", "Snaxxwax", s)
+    assert fake.created[0]["modules"] == ["sfp_accounts", "sfp_hudsonrock", "sfp_tiktok_osint"]
+    assert fake.created[0]["target_type"] == "USERNAME"
+    body = json.loads(capture.body)
+    assert body["modules"]["modules"] == fake.created[0]["modules"]
+    assert "sfp_dnsresolve" in body["modules"]["excluded"]
+
+
+def test_spiderfoot_refuses_a_scan_no_module_can_serve(fake_sf):
+    fake = fake_sf(_FakeSF(statuses=["FINISHED"], pages=[([], False)]))
+    with pytest.raises(PolicyDenied, match="USERNAME"):
+        tools.run("spiderfoot", "Snaxxwax", _sf_settings())  # only sfp_dnsresolve allowlisted
+    assert not fake.created
+
+
+def test_capabilities_report_spiderfoot_per_input():
+    from harvest import capabilities
+
+    s = _sf_settings(spiderfoot_modules=("sfp_dnsresolve",), spiderfoot_egress="proxy-env")
+    by_kind = {
+        k: {c["name"]: c for c in capabilities.for_kind(k, s)} for k in ("domain", "username")
+    }
+    assert by_kind["domain"]["spiderfoot"]["ready"] is True
+    assert by_kind["username"]["spiderfoot"]["ready"] is False
+    assert "USERNAME" in by_kind["username"]["spiderfoot"]["detail"]
+    plans = capabilities.readiness(s)["spiderfoot"]["plans"]
+    assert plans["INTERNET_NAME"]["modules"] == ["sfp_dnsresolve"]
