@@ -199,3 +199,14 @@ def test_external_tool_cost_is_labelled_estimated_not_enforced(engine, source):
     inv = engine.store.job(parent)["investigation"]
     assert set(inv["enforced"]) >= {"requests", "bytes", "cost_usd", "tool_runs", "seconds"}
     assert inv["external_tool_runs"] == []
+
+
+def test_followup_keys_are_scoped_to_their_investigation(engine, source):
+    a = _parent(engine, source)
+    b = _parent(engine, source)
+    url = source["base"] + "/evidence"
+    child_a = engine.follow_up(a, url=url, key=url)
+    child_b = engine.follow_up(b, url=url, key=url)
+    assert child_a != child_b
+    assert engine.store.job(child_b)["root_id"] == b
+    assert engine.follow_up(b, url=url, key=url) == child_b
