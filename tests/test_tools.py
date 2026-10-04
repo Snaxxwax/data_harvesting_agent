@@ -625,8 +625,8 @@ class _FakeSF:
             if self.create_status != 201:
                 return httpx.Response(self.create_status, json={"detail": "nope"})
             return httpx.Response(201, json={"id": "ABC123"})
-        if request.method == "DELETE":
-            self.deleted.append(path)
+        if request.method == "DELETE" or path.endswith("/stop"):
+            self.deleted.append(request.method + " " + path)
             return httpx.Response(200, json={})
         if path.endswith("/events"):
             page = int(request.url.params.get("page", 1))
@@ -922,7 +922,24 @@ def test_spiderfoot_cancellation_stops_the_scan(fake_sf, monkeypatch):
     cancelled.set()
     with pytest.raises(LostLease):
         tools.run("spiderfoot", "example.com", _sf_settings(), cancelled=cancelled)
-    assert fake.deleted == ["/api/v1/scans/ABC123"]
+    assert fake.deleted == ["POST /api/v1/scans/ABC123/stop"]
+
+
+def test_spiderfoot_timeout_stops_the_scan_instead_of_orphaning_it(fake_sf, monkeypatch):
+    monkeypatch.setattr(tools.time, "sleep", lambda _s: None)
+    fake = fake_sf(_FakeSF(statuses=["RUNNING"] * 50, pages=[([], False)]))
+    settings = _sf_settings()
+    settings.tool_timeout = 0.0
+    with pytest.raises(ValueError, match="exceeded"):
+        tools.run("spiderfoot", "example.com", settings)
+    assert fake.deleted == ["POST /api/v1/scans/ABC123/stop"]
+
+
+def test_spiderfoot_finished_scan_is_not_stopped(fake_sf, monkeypatch):
+    monkeypatch.setattr(tools.time, "sleep", lambda _s: None)
+    fake = fake_sf(_FakeSF(statuses=["FINISHED"], pages=[([], False)]))
+    tools.run("spiderfoot", "example.com", _sf_settings())
+    assert fake.deleted == []
 
 
 # ---------------------------------------------------------------------------
