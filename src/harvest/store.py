@@ -965,9 +965,15 @@ class Store:
                        WHERE x.job_id=? AND (e.entity_key=? OR e.entity_key=?))
                 LIMIT 1""",
                 (
-                    job_id, needle, needle,
-                    job_id, needle, packed_value,
-                    job_id, needle, "url:" + needle,
+                    job_id,
+                    needle,
+                    needle,
+                    job_id,
+                    needle,
+                    packed_value,
+                    job_id,
+                    needle,
+                    "url:" + needle,
                 ),
             ).fetchone()
         return hit is not None

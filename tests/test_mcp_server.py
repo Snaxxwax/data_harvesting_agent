@@ -43,8 +43,16 @@ def test_result_surfaces_authorization_required_as_data():
     # A 403 from /followup must come back as structured data the agent reasons about,
     # not an exception -- it is an expected "ask the operator" outcome.
     out = mcp_server._result(
-        _resp(403, {"detail": {"error": "authorization_required", "reason": "out of scope",
-                               "suggestion": "authorize a new investigation"}})
+        _resp(
+            403,
+            {
+                "detail": {
+                    "error": "authorization_required",
+                    "reason": "out of scope",
+                    "suggestion": "authorize a new investigation",
+                }
+            },
+        )
     )
     assert out["ok"] is False
     assert out["error"] == "authorization_required"

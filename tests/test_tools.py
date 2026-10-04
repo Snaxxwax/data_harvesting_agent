@@ -694,10 +694,20 @@ def test_spiderfoot_separates_existence_from_ownership():
     events = [
         # A real account, but reached via a USERNAME derived from the email's local part.
         {"type": "ROOT", "data": "me@x.test", "hash": "R", "source_event_hash": "R"},
-        {"type": "USERNAME", "data": "me", "hash": "U", "source_event_hash": "R",
-         "module": "sfp_accounts"},
-        {"type": "ACCOUNT_EXTERNAL_OWNED", "data": "https://x.test/a", "hash": "A",
-         "source_event_hash": "U", "module": "sfp_accounts"},
+        {
+            "type": "USERNAME",
+            "data": "me",
+            "hash": "U",
+            "source_event_hash": "R",
+            "module": "sfp_accounts",
+        },
+        {
+            "type": "ACCOUNT_EXTERNAL_OWNED",
+            "data": "https://x.test/a",
+            "hash": "A",
+            "source_event_hash": "U",
+            "module": "sfp_accounts",
+        },
         {"type": "SIMILAR_ACCOUNT_EXTERNAL", "data": "https://x.test/a2", "module": "sfp_accounts"},
         {"type": "AFFILIATE_EMAILADDR", "data": "other@x.test", "module": "sfp_pgp"},
         {"type": "HUMAN_NAME", "data": "Guessed Name", "module": "sfp_names"},

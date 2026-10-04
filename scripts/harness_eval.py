@@ -81,15 +81,15 @@ def evaluate(c: httpx.Client, job_id: str) -> dict:
     # search) is a wasted call; we can only see status here, so this is an upper bound.
     obs_captures = {cid for o in observations for cid in o["capture_ids"]}
     unnecessary = sum(
-        1
-        for cap in captures
-        if cap["id"] not in obs_captures and 200 <= cap["status"] < 300
+        1 for cap in captures if cap["id"] not in obs_captures and 200 <= cap["status"] < 300
     )
 
     return {
         "job_id": job_id,
         "status": job["status"],
-        "mode": json.loads(job["spec"])["mode"] if isinstance(job.get("spec"), str) else job["spec"]["mode"],
+        "mode": json.loads(job["spec"])["mode"]
+        if isinstance(job.get("spec"), str)
+        else job["spec"]["mode"],
         "discoveries": discoveries,
         "false_attribution": owned_confirmed,
         "evidence_support": evidence_support,

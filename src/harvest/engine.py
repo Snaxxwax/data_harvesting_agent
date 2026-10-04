@@ -147,15 +147,17 @@ class Engine:
                     "expand beyond the original request",
                     suggestion=f"start a new investigation with seed {canon}",
                 )
-            child = JobSpec.model_validate({
-                **pspec.model_dump(),
-                "objective": f"follow-up on discovered source {canon}",
-                "mode": "targeted",
-                "seeds": [canon],
-                "discovery_queries": [],
-                "tools": [],
-                "refresh_seconds": None,
-            })
+            child = JobSpec.model_validate(
+                {
+                    **pspec.model_dump(),
+                    "objective": f"follow-up on discovered source {canon}",
+                    "mode": "targeted",
+                    "seeds": [canon],
+                    "discovery_queries": [],
+                    "tools": [],
+                    "refresh_seconds": None,
+                }
+            )
             return self.submit(child, key=key, parent=parent_id)
 
         if tool not in self.settings.tools:
@@ -171,15 +173,17 @@ class Engine:
                 "scanning it would expand into a target the operator did not authorize",
                 suggestion=f"authorize an investigation whose target is {target!r}",
             )
-        child = JobSpec.model_validate({
-            **pspec.model_dump(),
-            "objective": f"follow-up {tool} scan of discovered identifier",
-            "mode": "targeted",
-            "seeds": [],
-            "discovery_queries": [],
-            "tools": [{"name": tool, "target": target}],
-            "refresh_seconds": None,
-        })
+        child = JobSpec.model_validate(
+            {
+                **pspec.model_dump(),
+                "objective": f"follow-up {tool} scan of discovered identifier",
+                "mode": "targeted",
+                "seeds": [],
+                "discovery_queries": [],
+                "tools": [{"name": tool, "target": target}],
+                "refresh_seconds": None,
+            }
+        )
         return self.submit(child, key=key, parent=parent_id)
 
     def rerun(self, job_id):
