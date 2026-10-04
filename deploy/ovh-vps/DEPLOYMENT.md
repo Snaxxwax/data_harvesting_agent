@@ -1,11 +1,21 @@
 # Harvest OSINT stack — ovh-vps
 
-Deployed commit: `aa8efd3` (data_harvesting_agent main), deployed 2026-10-03. It merges
-`feat/ghunt-tool` (ghunt implemented, **not** enabled — see "ghunt" below) and
-`feat/tool-evidence-quality` (tool evidence reaches dossiers, graded confidence, crawl
-relevance). Checkout `/opt/harvest/app`, overrides in `compose.override.yaml` and the opt-in
+Deployed commit: `5764d22a` (data_harvesting_agent main), deployed 2026-10-04. Checkout
+`/opt/harvest/app`, overrides in `compose.override.yaml` and the opt-in
 `compose.egress-proxy.yaml` and `compose.ghunt.yaml` — all tracked in the repo under
 `deploy/ovh-vps/`.
+
+`5764d22a` (PR #19) adds: a **capability registry** served at `/meta` (per-capability
+readiness with the single blocking reason); **honest attribution** — every tool record now
+carries `existence` (observed/inferred) and `ownership` (self/candidate/unverified) as
+separate axes, and **ownership is never `confirmed` from tool evidence** (a matching handle
+or an email-local-part derivation is `candidate`), replacing the old overloaded
+`identity_basis`; an explicit SpiderFoot **`target_type`** sent on every scan (so a bare
+username is scannable — see below); **authorized follow-ups** (`POST /jobs/{id}/followup`, a
+child job that inherits the parent's scope/budget/targets and can only pursue what the parent
+already discovered); and a **separate, optional MCP adapter** (`harvest-mcp`) for agents. See
+"Agent interface (MCP)" and "Attribution" below, and `docs/validation/v06-harness-eval.md`.
+Predecessor `aa8efd3` merged `feat/ghunt-tool` and `feat/tool-evidence-quality`.
 
 **The running stack loads `compose.egress-proxy.yaml`, so it is in proxy mode.** Bringing it
 up without that file recreates both containers in `direct` mode, silently, because
@@ -14,12 +24,18 @@ three-file invocation in "Operating" below.
 
 SpiderFoot NG: `/opt/harvest/spiderfoot-ng`, poppopjmp/spiderfoot **v6.1.0**, based on
 upstream `4b53ca68ea63548c25c4148a3a18bda8d9417c74`, **now patched**: deployed commit
-`daee4b5f`, branch `fix/auth-db-reconnect`, pushed to
-`https://github.com/Snaxxwax/spiderfoot` (the `patched` remote in that checkout). Four
-commits: two fixing connection recovery (see "Postgres restart recovery" below) and two
-on the `harvest-egress` network wiring for proxy-only mode.
+`5c5d41d5`, branch `fix/auth-db-reconnect`, pushed to
+`https://github.com/Snaxxwax/spiderfoot` (the `patched` remote in that checkout). On top of
+the earlier `daee4b5f` (connection recovery + `harvest-egress` wiring), PR #1 adds
+`ScanRequest.target_type` (explicit scan target type, validated; quotes stripped only for
+USERNAME/HUMAN_NAME), honours `sort_by`/`sort_order` on `GET /scans`, and fixes the
+`paginate` page-past-end clamp. Rebuilding this fork needs the base image rebuilt first — see
+"Operating".
 
-Last verified: 2026-10-03.
+Last verified: 2026-10-04 — 42/42 deployment checks pass; a USERNAME scan stored the clean
+value `Snaxxwax` (no quotes); a bounded Maigret run produced records with
+`ownership=candidate`, zero `ownership=confirmed`; MCP adapter connected from Claude Code,
+Hermes and (single-call) Codex.
 
 ### Verified on the deployed commit (2026-10-03)
 
