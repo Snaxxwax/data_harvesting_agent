@@ -43,6 +43,8 @@ def _all(c: httpx.Client, path: str, key: str = "id") -> list[dict]:
     out, after = [], 0
     while True:
         rows = c.get(path, params={"after": after, "limit": 500}).json()
+        if not isinstance(rows, list):
+            raise SystemExit(f"{path} did not return a list (got {rows}); check the job id")
         if not rows:
             return out
         out.extend(rows)
