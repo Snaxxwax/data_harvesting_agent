@@ -133,6 +133,10 @@ class Engine:
         """
         parent = self.store.job(parent_id)
         root = parent.get("root_id") or parent_id
+        # Idempotency keys are global in the jobs table; a follow-up's key means "this request
+        # within THIS investigation". Unscoped, two investigations retrying the same URL as
+        # their key got each other's child job back.
+        key = f"followup:{root}:{key}" if key else None
         pspec = JobSpec.model_validate(parent["spec"])
         if bool(url) == bool(tool):
             raise ValueError("follow_up takes exactly one of url= or tool=")

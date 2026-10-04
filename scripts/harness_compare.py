@@ -242,7 +242,7 @@ def parse_run(arm, out: str, tmp: Path):
             answer = json.loads(matches[-1])
         except ValueError:
             answer = None
-    return answer, usage
+    return answer, usage, text[-2000:]
 
 
 def agent_arm(c, arm, job, phase, args):
@@ -286,7 +286,7 @@ def agent_arm(c, arm, job, phase, args):
                 os.killpg(proc.pid, signal.SIGKILL)
                 out, _ = proc.communicate()
                 killed = True
-            answer, usage = parse_run(arm, out or "", tmp)
+            answer, usage, final_text = parse_run(arm, out or "", tmp)
             runs.append(
                 {
                     "session": i + 1,
@@ -295,6 +295,7 @@ def agent_arm(c, arm, job, phase, args):
                     "seconds": round(time.time() - started, 1),
                     "answer": answer,
                     "usage": usage,
+                    "final_text": final_text,
                     "command": _redact(cmd),
                 }
             )
