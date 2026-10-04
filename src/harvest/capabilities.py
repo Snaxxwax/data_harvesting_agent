@@ -74,8 +74,8 @@ _TOOL_NOTES: dict[str, dict[str, str]] = {
         "cost": "~100 KiB per lookup; requires an authenticated Google session",
     },
     "spiderfoot": {
-        "evidence": "events from the configured module set: derived accounts, breach/paste "
-        "hits, DNS and related identifiers",
+        "evidence": "events from the modules that can fire for the input type (see `plans`): "
+        "derived accounts, breach/paste hits, DNS and related identifiers",
         "cost": "a full email module sweep is ~250 s and makes its own out-of-budget requests",
     },
 }
@@ -174,8 +174,15 @@ def readiness(settings) -> dict[str, dict]:
             "requires": list(cap.requires),
         }
         if cap.name == "spiderfoot":
+            from .tools import SPIDERFOOT_KIND_TYPES, spiderfoot_plan
+
             entry["modules"] = list(settings.spiderfoot_modules)
             entry["egress"] = settings.spiderfoot_egress
+            # Per input type: the modules a scan will actually send, what each consumes, the
+            # allowlisted ones it will not and why, and what the fork could do but is not enabled.
+            entry["plans"] = {
+                t: spiderfoot_plan(t, settings) for t in sorted(set(SPIDERFOOT_KIND_TYPES.values()))
+            }
         out[cap.name] = entry
     return out
 
@@ -192,5 +199,13 @@ def for_kind(kind: str, settings) -> list[dict]:
         if kind not in cap.kinds:
             continue
         s = status[cap.name]
-        result.append({"name": cap.name, "ready": s["ready"], "detail": s["detail"]})
+        ready, detail = s["ready"], s["detail"]
+        if ready and cap.name == "spiderfoot":
+            from .tools import SPIDERFOOT_KIND_TYPES
+
+            plan = s["plans"][SPIDERFOOT_KIND_TYPES[kind]]
+            if not plan["modules"]:
+                ready = False
+                detail = f"no allowlisted SpiderFoot module consumes a {plan['target_type']} target"
+        result.append({"name": cap.name, "ready": ready, "detail": detail})
     return result

@@ -15,6 +15,7 @@ default, because these binaries make their own unbudgeted network requests outsi
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
@@ -571,6 +572,57 @@ def _ghunt(
     return records
 
 
+# --- Versioned attribution, applied when a tool capture is (re-)extracted ----------------
+#
+# A capture's body is immutable evidence, so a capture taken before the existence/ownership
+# axes existed (maigret capture 212, the early ghunt/spiderfoot runs) can never gain them by
+# editing it. Instead the CURRENT attribution rules are applied each time a tool capture is
+# extracted: a replay of an old capture is a new, offline extraction revision whose ownership
+# claims follow today's rules, while the original capture, its original extraction and every
+# earlier observation stay exactly as they were. Each field this changes is marked derived
+# (observation method "derived:<revision>", see extract.records_extraction) and a value the
+# capture itself carried is kept beside it as `<field>_as_captured` -- so a reader can always
+# tell what the tool said from what Harvest concluded, and which rule revision concluded it.
+ATTRIBUTION_REVISION = "attribution/2"
+
+
+def attribute_record(tool: str, record: dict, target: str) -> dict:
+    """`record` with existence/ownership set by the current rules for `tool`.
+
+    Never "confirmed": no tool output establishes that a person owns an account.
+    """
+    if tool == "maigret":
+        existence = record.get("existence") or (
+            "observed" if _maigret_confidence(record) >= 0.5 else "inferred"
+        )
+        ownership = "candidate"
+    elif tool == "spiderfoot":
+        existence = _spiderfoot_existence(
+            str(record.get("event_type") or ""), str(record.get("module") or "")
+        )
+        ownership = _spiderfoot_ownership(existence, record.get("derived_via"))
+    elif tool == "ghunt":
+        existence, ownership = "observed", "self"
+    else:
+        return record
+    out, derived = dict(record), {}
+    for field, value in (("existence", existence), ("ownership", ownership)):
+        captured = record.get(field)
+        if captured == value:
+            continue
+        if captured is not None:
+            out[f"{field}_as_captured"] = captured
+        out[field] = value
+        derived[field] = ATTRIBUTION_REVISION
+    # A pre-grading maigret capture claimed every account at confidence 1.0; grade it the same
+    # way a live capture is graded today. Metadata, not a claim, so it is not marked derived.
+    if tool == "maigret" and "_confidence" not in record:
+        out["_confidence"] = _maigret_confidence(record)
+    if derived:
+        out["_derived"] = derived
+    return out
+
+
 def _spiderfoot_target_type(target: str) -> str:
     """The explicit SpiderFoot target type for a Harvest target.
 
@@ -787,6 +839,119 @@ def _spiderfoot_records(events: list, target: str) -> list[dict]:
     return list(groups.values())
 
 
+# --- Per-input SpiderFoot module selection -------------------------------------------------
+#
+# HARVEST_SPIDERFOOT_MODULES is the operator's ALLOWLIST, not the scan. Sending all of it for
+# every target ran email modules against a domain and DNS modules against a handle: wasted
+# requests at best, and a module set nobody could predict from the input at worst. The scan
+# now gets the subset that can actually fire for this target, computed from each module's
+# own declared watched/produced event types (vendored from the deployed fork, below).
+
+_SF_META_PATH = Path(__file__).with_name("spiderfoot_modules.json")
+
+
+@functools.cache
+def _sf_meta() -> dict[str, dict]:
+    return json.loads(_SF_META_PATH.read_text())["modules"]
+
+
+# What each module has actually done on the deployed fork, per SpiderFoot target type, read
+# from its scan history (tbl_scan_results, 2026-10-02..04) and the live demonstration that
+# accompanies this table. "events": produced findings. "ran-empty": was enabled and ran on
+# that type, producing nothing for the authorized test targets (not proof it is broken).
+# Absent: never exercised on that type. Reported with every plan, never used to hide a
+# module -- except that a keyed module observed producing events WITHOUT a configured key
+# is evidently usable keyless, which the credential gate below honours.
+_SF_TESTED: dict[tuple[str, str], str] = {
+    ("sfp_accounts", "EMAILADDR"): "events",
+    ("sfp_tiktok_osint", "EMAILADDR"): "events",
+    ("sfp_gravatar", "EMAILADDR"): "ran-empty",
+    ("sfp_hudsonrock", "EMAILADDR"): "ran-empty",
+    ("sfp_pgp", "EMAILADDR"): "ran-empty",
+    ("sfp_debounce", "EMAILADDR"): "ran-empty",
+    ("sfp_names", "EMAILADDR"): "ran-empty",
+    ("sfp_wikileaks", "EMAILADDR"): "ran-empty",
+    ("sfp_dnsresolve", "INTERNET_NAME"): "events",
+}
+
+# Identifier event types per kind of subject; see spiderfoot_plan for why only these are followed.
+_SF_SUBJECT_KINDS = (
+    frozenset({"EMAILADDR", "USERNAME", "PHONE_NUMBER"}),
+    frozenset({"INTERNET_NAME", "DOMAIN_NAME", "IP_ADDRESS", "IPV6_ADDRESS"}),
+)
+
+# Harvest investigation kind -> the SpiderFoot target type _spiderfoot_target_type gives it.
+SPIDERFOOT_KIND_TYPES = {
+    "email": "EMAILADDR",
+    "username": "USERNAME",
+    "domain": "INTERNET_NAME",
+    "organization": "INTERNET_NAME",
+}
+
+
+def spiderfoot_plan(target_type: str, settings) -> dict:
+    """The modules a scan of this target type will actually run, and why each other is not.
+
+    Dependency-aware: a module is selected when it watches an event type reachable from the
+    target -- the target itself, or an identifier an already-selected module produces -- so on
+    a domain, sfp_dnsresolve's DOMAIN_NAME is what lets a DOMAIN_NAME-only module fire.
+
+    Reachability follows only identifiers of the SAME KIND of subject as the target: person
+    identifiers (address, handle, phone) for a person target, host identifiers for a host
+    target. Everything else is evidence, not a reason to run more modules: raw blobs
+    (RAW_RIR_DATA, page content) contain incidental identifiers of anyone; a HUMAN_NAME is
+    never unique; the "related, but not the target" events (AFFILIATE_/SIMILAR_/CO_HOSTED_)
+    are a neighbour's; and a domain's addresses are other people. Following any of them is
+    how a scan wanders from the authorized target into unrelated people -- with them
+    followed, every allowlisted module was reachable from every input, which selected nothing.
+
+    Pure function of Settings and the vendored metadata, so `/meta`, the planner and the scan
+    itself report the same set.
+    """
+    meta = _sf_meta()
+    keyed = getattr(settings, "spiderfoot_keyed_modules", frozenset())
+    keyless_ok = {m for (m, _), outcome in _SF_TESTED.items() if outcome == "events"}
+    excluded: dict[str, str] = {}
+    usable: dict[str, dict] = {}
+    for module in getattr(settings, "spiderfoot_modules", ()) or ():
+        info = meta.get(module)
+        if info is None:
+            excluded[module] = "unknown to this build's SpiderFoot module metadata; not sent"
+        elif "apikey" in info["flags"] and module not in keyed and module not in keyless_ok:
+            excluded[module] = (
+                "needs an API key not declared configured (HARVEST_SPIDERFOOT_KEYED_MODULES)"
+            )
+        else:
+            usable[module] = info
+    follow = next((kind for kind in _SF_SUBJECT_KINDS if target_type in kind), frozenset())
+    reachable, selected = {target_type}, {}
+    changed = True
+    while changed:
+        changed = False
+        for module, info in usable.items():
+            hit = module not in selected and reachable.intersection(info["watched"])
+            if hit:
+                selected[module] = sorted(hit)
+                reachable.update(e for e in info["produced"] if e in follow)
+                changed = True
+    for module in usable:
+        if module not in selected:
+            excluded[module] = f"consumes nothing reachable from the {target_type} target"
+    # Disclose what the fork could do for this input that the allowlist does not enable.
+    allowed = set(getattr(settings, "spiderfoot_modules", ()) or ())
+    not_enabled = sorted(
+        m for m, info in meta.items() if target_type in info["watched"] and m not in allowed
+    )
+    return {
+        "target_type": target_type,
+        "modules": sorted(selected),
+        "consumes": selected,
+        "excluded": excluded,
+        "tested": {m: _SF_TESTED.get((m, target_type), "untested") for m in sorted(selected)},
+        "not_enabled": not_enabled,
+    }
+
+
 # SpiderFoot NG speaks HTTP rather than argv, so it does not go through _exec. The
 # service is infrastructure on a private network, not a scan target, so these calls
 # deliberately bypass the fetcher's budgets and robots handling -- the scan SpiderFoot
@@ -803,14 +968,20 @@ def _spiderfoot(
 
     base = getattr(settings, "spiderfoot_url", "") or ""
     key = getattr(settings, "spiderfoot_api_key", "") or ""
-    modules = list(getattr(settings, "spiderfoot_modules", ()) or ())
     if not base:
         raise PolicyDenied("HARVEST_SPIDERFOOT_URL is not configured")
     if not key:
         raise PolicyDenied("HARVEST_SPIDERFOOT_API_KEY is not configured")
-    if not modules:
+    if not getattr(settings, "spiderfoot_modules", ()):
         raise PolicyDenied("HARVEST_SPIDERFOOT_MODULES is empty; no scan would run")
     target_type = _spiderfoot_target_type(target)
+    modules = spiderfoot_plan(target_type, settings)["modules"]
+    if not modules:
+        # Refuse rather than launch a scan that can only echo its own target back.
+        raise PolicyDenied(
+            f"no allowlisted SpiderFoot module consumes a {target_type} target; "
+            "see /meta capabilities.spiderfoot.plans"
+        )
 
     # The key authenticates every call; it must never reach a log or a persisted error.
     headers = {"X-API-Key": key, "content-type": "application/json"}
@@ -888,7 +1059,7 @@ def _spiderfoot(
 TOOLS: dict[str, dict] = {
     "maigret": {"kinds": ("username",), "run": _maigret},
     "ghunt": {"kinds": ("email",), "run": _ghunt},
-    "spiderfoot": {"kinds": ("domain", "organization"), "run": _spiderfoot},
+    "spiderfoot": {"kinds": tuple(SPIDERFOOT_KIND_TYPES), "run": _spiderfoot},
 }
 
 
@@ -917,7 +1088,12 @@ def run(
         # breadth; a tool whose run function does not take it simply does not see it.
         kwargs = {"top_sites": top_sites} if top_sites and name == "maigret" else {}
         records = tool["run"](target, workdir, settings.tool_timeout, cancelled, settings, **kwargs)
-    body = json.dumps({"tool": name, "target": target, "results": records}).encode()
+    result = {"tool": name, "target": target, "results": records}
+    if name == "spiderfoot":
+        # The executed module set is part of the evidence: what a scan did NOT look for is
+        # what makes "no findings" interpretable.
+        result["modules"] = spiderfoot_plan(_spiderfoot_target_type(target), settings)
+    body = json.dumps(result).encode()
     url = f"tool://{name}/{target}"
     return Capture(
         url=url,

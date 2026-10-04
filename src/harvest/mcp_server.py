@@ -50,6 +50,10 @@ def _client() -> httpx.Client:
     return httpx.Client(base_url=base, headers={"Authorization": f"Bearer {token}"}, timeout=30.0)
 
 
+def _key(idempotency_key: str | None) -> dict:
+    return {"Idempotency-Key": idempotency_key} if idempotency_key else {}
+
+
 def _result(resp: httpx.Response) -> dict:
     """Normalise an API response into a dict an agent can read, errors included as data.
 
@@ -63,7 +67,7 @@ def _result(resp: httpx.Response) -> dict:
         body = {"detail": resp.text[:500]}
     if resp.status_code >= 400:
         detail = body.get("detail", body) if isinstance(body, dict) else body
-        if resp.status_code == 403 and isinstance(detail, dict):
+        if resp.status_code in (403, 409) and isinstance(detail, dict):
             return {"ok": False, **detail}
         return {"ok": False, "status": resp.status_code, "error": detail}
     return body if isinstance(body, dict) else {"result": body}
@@ -98,9 +102,14 @@ def build_server():
         mode: str = "targeted",
         dataset: str = "default",
         max_requests: int | None = None,
+        limits: dict | None = None,
+        idempotency_key: str | None = None,
     ) -> dict:
         """Start a bounded investigation. The targets (seeds/tools) and scope (allowed_domains)
         you pass ARE the operator's persisted authorization for this job and its follow-ups.
+        `limits` (requests, tool_runs, seconds, ...) is the budget for the WHOLE investigation:
+        every follow-up spends from it. Pass an idempotency_key so a retried call after an
+        interruption returns the same job instead of starting a second one.
         Returns the created job including its id; a worker must be running to process it."""
         spec: dict = {
             "objective": objective,
@@ -113,15 +122,19 @@ def build_server():
             "tools": tools or [],
             "use_model": use_model,
         }
-        if max_requests is not None:
-            spec["limits"] = {"requests": max_requests}
+        if limits or max_requests is not None:
+            spec["limits"] = {
+                **(limits or {}),
+                **({"requests": max_requests} if max_requests else {}),
+            }
         with _client() as c:
-            return _result(c.post("/jobs", json=spec))
+            return _result(c.post("/jobs", json=spec, headers=_key(idempotency_key)))
 
     @server.tool()
     def investigation_status(job_id: str) -> dict:
         """Status, counters and budget usage for a job, so another session can resume without
-        repeating work. Terminal statuses: completed/partial/failed/cancelled/budget_exhausted/plateau."""
+        repeating work. `investigation` is the shared balance across all its follow-ups:
+        `enforced` counters are hard limits; `external_tool_runs` network cost is an estimate. Terminal statuses: completed/partial/failed/cancelled/budget_exhausted/plateau."""
         with _client() as c:
             return _result(c.get(f"/jobs/{job_id}"))
 
@@ -147,14 +160,20 @@ def build_server():
         url: str | None = None,
         tool: str | None = None,
         target: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict:
         """Pursue ONE thing this investigation already discovered: a discovered in-scope URL,
         or a tool scan of a discovered identifier. Harvest enforces scope, budget and
         provenance; anything wider returns {ok:false, error:"authorization_required", ...}
-        for the operator to decide. Pass exactly one of url or tool(+target)."""
+        for the operator to decide. Pass exactly one of url or tool(+target). Every follow-up
+        spends from the investigation's ONE shared budget; when it is spent the result is
+        {ok:false, error:"budget_exhausted"} and no retry or new follow-up can get around it.
+        Reuse an idempotency_key when retrying after an interruption."""
         payload = {"url": url, "tool": tool, "target": target}
         with _client() as c:
-            return _result(c.post(f"/jobs/{job_id}/followup", json=payload))
+            return _result(
+                c.post(f"/jobs/{job_id}/followup", json=payload, headers=_key(idempotency_key))
+            )
 
     @server.tool()
     def cancel_investigation(job_id: str) -> dict:

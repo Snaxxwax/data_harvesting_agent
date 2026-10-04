@@ -412,3 +412,105 @@ def test_replay_cannot_execute_injected_network_task(engine, source):
     result = engine.run(replay)
     assert result["status"] == "partial" and result["progress"]["blocked"] == 1
     assert len(source["requests"]) == before and result["requests"] == 0
+
+
+def test_replay_corrects_historical_attribution_without_touching_the_capture(tmp_path, monkeypatch):
+    """Capture 212 predates the existence/ownership axes. Replaying it is the correction path.
+
+    The capture body is the real saved one (tests/data/maigret_snaxxwax_capture212_legacy.json):
+    20 accounts with no ownership field and every claim at confidence 1.0. A replay must
+    produce a NEW revision whose ownership claims follow today's rules -- every account a
+    candidate, derived and marked with the rule revision -- while the capture bytes and the
+    original job's observations stay exactly as they were.
+    """
+    import json as _json
+    from pathlib import Path
+
+    from harvest import engine as engine_mod
+    from harvest.config import Settings
+    from harvest.models import ReplaySpec, ToolRun
+    from harvest.network import Capture
+    from harvest.tools import ATTRIBUTION_REVISION
+
+    body = (Path(__file__).parent / "data" / "maigret_snaxxwax_capture212_legacy.json").read_bytes()
+    monkeypatch.setattr(
+        engine_mod,
+        "run_tool",
+        lambda *a, **k: Capture(
+            url="tool://maigret/Snaxxwax",
+            final_url="tool://maigret/Snaxxwax",
+            status=200,
+            headers={"content-type": "application/json"},
+            body=body,
+            retrieved=1.0,
+        ),
+    )
+    eng = Engine(
+        Settings(
+            database=str(tmp_path / "h.sqlite"),
+            api_token="test-operator-token-at-least-24-characters",
+            tools=frozenset({"maigret"}),
+        ),
+        fetcher_factory=lambda *a, **k: (_ for _ in ()).throw(AssertionError("no network")),
+    )
+    original = eng.submit(
+        JobSpec(
+            objective="historical", tools=[ToolRun(name="maigret", target="Snaxxwax", crawl=False)]
+        )
+    )
+    # History: this capture was extracted before attribution existed (old extractor).
+    from harvest import extract as extract_mod
+
+    with monkeypatch.context() as m:
+        m.setattr(extract_mod, "tool_records", lambda records, url: records)
+        eng.run(original)
+    cap = eng.store.captures(original)[0]
+    before = {
+        o["id"]: (o["field"], o["value"], o["method"])
+        for o in eng.store.observations(original, limit=1000)
+    }
+
+    replay = eng.replay(ReplaySpec(capture_ids=[cap["id"]]))
+    eng.run(replay)
+    obs = eng.store.observations(replay, limit=1000)
+    ownership = [o for o in obs if o["field"] == "ownership"]
+    assert len(ownership) == 20
+    assert {
+        _json.loads(o["value"]) if o["value"].startswith('"') else o["value"] for o in ownership
+    } == {"candidate"}
+    assert {o["method"] for o in ownership} == {"derived:" + ATTRIBUTION_REVISION}
+    # The record's own captured fields are still plain structured claims from the same capture.
+    assert any(o["field"] == "url" and o["method"] == "structured" for o in obs)
+    assert all(cap["id"] in o["capture_ids"] for o in ownership)
+    # Evidence and history are untouched: same capture bytes, original revision unchanged.
+    assert eng.store.capture(cap["id"])["body"] == body
+    after = {
+        o["id"]: (o["field"], o["value"], o["method"])
+        for o in eng.store.observations(original, limit=1000)
+    }
+    assert after == before
+    assert not any(f == "ownership" for f, _, _ in before.values())
+
+
+def test_attribution_keeps_what_the_capture_said_beside_the_correction():
+    from harvest.tools import ATTRIBUTION_REVISION, attribute_record
+
+    # A legacy record that over-claimed: a tool never establishes ownership.
+    out = attribute_record("maigret", {"url": "https://x/a", "ownership": "confirmed"}, "a")
+    assert out["ownership"] == "candidate"
+    assert out["ownership_as_captured"] == "confirmed"
+    assert out["_derived"]["ownership"] == ATTRIBUTION_REVISION
+    # Current-shape records are left as they were captured: nothing derived.
+    current = {
+        "url": "https://x/a",
+        "existence": "observed",
+        "ownership": "candidate",
+        "_confidence": 0.9,
+    }
+    assert attribute_record("maigret", current, "a") == current
+    ghunt = attribute_record("ghunt", {"email": "a@x.test"}, "a@x.test")
+    assert (ghunt["existence"], ghunt["ownership"]) == ("observed", "self")
+    sf = attribute_record(
+        "spiderfoot", {"event_type": "HUMAN_NAME", "module": "sfp_names", "data": "N"}, "a@x.test"
+    )
+    assert (sf["existence"], sf["ownership"]) == ("inferred", "candidate")

@@ -62,6 +62,16 @@ def record_key(record, url, index):
     return f"record:{url}:{digest(packed(record))}"
 
 
+def tool_records(records, url):
+    """Apply the current versioned attribution rules to a tool capture's records."""
+    if not url.startswith("tool://") or not isinstance(records, list):
+        return records
+    from .tools import attribute_record
+
+    _, _, tool, target = (url.split("/", 3) + ["", ""])[:4]
+    return [attribute_record(tool, r, target) if isinstance(r, dict) else r for r in records]
+
+
 def records_extraction(records, url, prefix="", extractor="json/1", single=False, offset=0):
     claims, leads, warnings = [], [], []
     if len(records) > 100:
@@ -89,6 +99,7 @@ def records_extraction(records, url, prefix="", extractor="json/1", single=False
             and 0 <= declared <= 1
             else 1.0
         )
+        derived = record.get("_derived") if isinstance(record.get("_derived"), dict) else {}
         if len(record) > 100 and "field limit: first 100 fields per record" not in warnings:
             warnings.append("field limit: first 100 fields per record")
         for field, value in list(record.items())[:100]:
@@ -96,7 +107,7 @@ def records_extraction(records, url, prefix="", extractor="json/1", single=False
                 if "response limit: first 5000 observations" not in warnings:
                     warnings.append("response limit: first 5000 observations")
                 break
-            if value is None or field in ("@context", "_confidence"):
+            if value is None or field in ("@context", "_confidence", "_derived"):
                 continue
             evidence = packed(value)
             if len(evidence) > 20000:
@@ -111,7 +122,7 @@ def records_extraction(records, url, prefix="", extractor="json/1", single=False
                     value=value,
                     evidence=evidence,
                     locator=f"{record_path}/{str(field).replace('~', '~0').replace('/', '~1')}",
-                    method="structured",
+                    method="derived:" + derived[field] if field in derived else "structured",
                     confidence=confidence,
                 )
             )
@@ -206,12 +217,14 @@ class JsonAdapter:
 
     def extract(self, body, url):
         data, records, prefix, single = self.records(body)
+        records = tool_records(records, url)
         result = records_extraction(records, url, prefix, self.name, single=single)
         result.leads = self.pagination(data, url) + result.leads
         return result
 
     def batches(self, body, url, start, maximum):
         data, records, prefix, single = self.records(body)
+        records = tool_records(records, url)
         return record_batches(
             records,
             url,
