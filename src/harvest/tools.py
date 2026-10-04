@@ -256,9 +256,17 @@ def _maigret_record(name: str, site: dict, target: str) -> dict:
     """
     status = site.get("status") or {}
     ids = status.get("ids") if isinstance(status.get("ids"), dict) else {}
+    confidence = _maigret_confidence(site)
     record = {
         "sitename": name,
         "username": site.get("username"),
+        # Two axes, same meaning as SpiderFoot's. `existence`: whether maigret actually read a
+        # profile (strong) or only saw a status code / a "similar" near-miss (weak). `ownership`
+        # is ALWAYS "candidate": a handle existing on a site is evidence the account exists, never
+        # evidence that the person under investigation owns it. The dossier keeps the identity
+        # decision out of band.
+        "existence": "observed" if confidence >= 0.5 else "inferred",
+        "ownership": "candidate",
         # The profile URL. Also the entity key (record_key prefers "url") and the one lead
         # worth following for enrichment.
         "url": site.get("url_user"),
@@ -270,7 +278,7 @@ def _maigret_record(name: str, site: dict, target: str) -> dict:
         # that looks like real data; None drops it, which is what "unranked" means.
         "rank": None if site.get("rank") == 9223372036854775807 else site.get("rank"),
         "tags": status.get("tags") or None,
-        "_confidence": _maigret_confidence(site),
+        "_confidence": confidence,
     }
     # Promote the parsed profile fields to top level under maigret's own names, so each is
     # its own claim with its own locator instead of one unqueryable blob. Keys starting with
@@ -545,6 +553,13 @@ def _ghunt(
             {
                 "container": name,
                 "email": target,
+                # GHunt resolves the Google account OF the exact address queried, so this is
+                # not a handle coincidence: `ownership: self` means "the account belonging to
+                # this identifier", distinct from maigret/SpiderFoot's "candidate". It still is
+                # not a claim about the PERSON -- whoever controls the address controls the
+                # account -- which the dossier states rather than inferring identity.
+                "existence": "observed",
+                "ownership": "self",
                 **({"id": person} if isinstance(person, str) and person else {}),
                 # The tool's own structure first, then the promoted scalars, so a promotion
                 # always lands even if GHunt later adds a container key of the same name.
@@ -556,43 +571,25 @@ def _ghunt(
     return records
 
 
-def _assert_spiderfoot_target_is_scannable(target: str) -> None:
-    """Refuse a bare username, which SpiderFoot NG cannot scan correctly through its API.
+def _spiderfoot_target_type(target: str) -> str:
+    """The explicit SpiderFoot target type for a Harvest target.
 
-    `POST /api/v1/scans` derives the target type from the target STRING and then uses that
-    same string as the target VALUE, with no way to pass the type separately
-    (`ScanRequest` has no such field). SpiderFoot's own convention for "this is a username"
-    is to wrap it in double quotes -- and that is where the two uses collide:
+    Harvest always sends this to the fork's `ScanRequest.target_type`, which decouples the
+    type signal from the value and so removes the bug that made a bare username unscannable:
+    the API used to infer the type from the string and reuse the string as the value, typing
+    an unquoted handle INTERNET_NAME (no identity module consumes it) and carrying a quoted
+    one's quotes into every module URL. With an explicit type the stripped value reaches the
+    modules clean. An older SpiderFoot that lacks the field simply ignores it (Pydantic drops
+    an unknown field), so this is safe to send to either.
 
-      * unquoted "Snaxxwax"   -> typed INTERNET_NAME. Measured: a 5-module, 476-second scan
-        produced zero events, because every identity module consumes USERNAME and nothing
-        ever emitted one.
-      * quoted '"Snaxxwax"'   -> typed USERNAME correctly, but the quotes stay in the value,
-        so modules build URLs like https://%22snaxxwax%22.weebly.com/ and every request dies
-        on a malformed host.
-
-    Either way a username scan burns a full module sweep and returns nothing, so this refuses
-    up front instead. maigret already covers username-to-accounts, over a far larger site
-    set, and it works today -- so the denial names it rather than leaving the operator to
-    guess. Email and domain targets are unaffected: SpiderFoot types those from their own
-    shape and the value survives intact.
-
-    ponytail: shape test, not a resolver call. "no @ and no dot" cannot be an address or a
-    hostname, which is exactly the case that mistypes. A dotted handle (jane.doe) is still
-    sent through as a hostname; fixing that needs an explicit target type, which needs the
-    upstream patch below.
-
-    The real fix is one field on ScanRequest plus stripping the quotes before use, in the
-    fork at github.com/Snaxxwax/spiderfoot. Until then this is a documented capability gap.
+    Shape test, not a resolver call: an "@" is an address, a dotted label is a hostname, and
+    anything else is a username -- which SpiderFoot can now scan.
     """
-    if "@" not in target and "." not in target:
-        raise PolicyDenied(
-            f"spiderfoot cannot scan the bare username {target!r}: its API infers the target "
-            "type from the target string, so an unquoted handle is typed INTERNET_NAME and no "
-            "identity module consumes it, while a quoted one carries the quotes into every "
-            "request URL. Use maigret for username-to-account discovery, or give spiderfoot "
-            "an email address or domain."
-        )
+    if "@" in target:
+        return "EMAILADDR"
+    if "." in target:
+        return "INTERNET_NAME"
+    return "USERNAME"
 
 
 # One scan can emit tens of thousands of events. Pagination stops here rather than holding
@@ -639,26 +636,52 @@ def _spiderfoot_split_data(data: str) -> tuple[str, str | None]:
     return (label or link or data), link
 
 
-def _spiderfoot_identity_basis(event_type: str, module: str) -> str:
-    """ "confirmed" for an observation about the target, "candidate" for anything inferred."""
-    if module in _SF_CANDIDATE_MODULES:
+def _spiderfoot_existence(event_type: str, module: str) -> str:
+    """Did SpiderFoot OBSERVE this, or INFER it?
+
+    "observed" is a real finding about the identifier it consumed -- a profile it fetched, a
+    breach record, a resolved address. "inferred" is SpiderFoot's own "related to, but not,
+    the thing you asked about" (AFFILIATE_/SIMILAR_/CO_HOSTED_/...) or a guess derived from
+    the input (sfp_names turns an address local part into plausible human names). This axis
+    is only about whether the thing exists/was seen -- NOT about who owns it.
+    """
+    if module in _SF_CANDIDATE_MODULES or event_type.startswith(_SF_CANDIDATE_PREFIXES):
+        return "inferred"
+    return "observed"
+
+
+def _spiderfoot_ownership(existence: str, derived_via: str | None) -> str:
+    """Does this finding belong to the investigation TARGET? A separate question from whether
+    it exists, and one a tool cannot answer "confirmed".
+
+      * "candidate" -- the link to the person is a handle/name coincidence: the finding was
+        reached by deriving an identifier from the target (an account hanging off a USERNAME
+        that sfp_accounts built from an email's local part), or it is itself an inferred
+        near-miss/name. A handle matching is NOT proof the target owns the account.
+      * "unverified" -- a direct observation about the target's own identifier (e.g. a breach
+        record for the exact address), which still is not proof the target controls it.
+
+    Deliberately never "confirmed": nothing SpiderFoot returns establishes ownership, so the
+    record must not carry a field that reads as if it had. The dossier keeps identity
+    decisions out of band and reversible.
+    """
+    if existence == "inferred" or derived_via:
         return "candidate"
-    if event_type.startswith(_SF_CANDIDATE_PREFIXES):
-        return "candidate"
-    return "confirmed"
+    return "unverified"
 
 
-def _spiderfoot_confidence(event: dict, basis: str) -> float:
-    """SpiderFoot's own 0-100 confidence, rescaled, with candidates held below confirmed.
+def _spiderfoot_confidence(event: dict, existence: str) -> float:
+    """SpiderFoot's own 0-100 confidence, rescaled, with inferred findings held below observed.
 
-    The ceiling on candidates is the point: without it an inferred HUMAN_NAME arrives at
-    SpiderFoot's default confidence of 100 and outranks a profile that was actually read.
-    Coarse on purpose -- these rank evidence, they do not estimate a probability.
+    The ceiling on inferred findings is the point: without it an inferred HUMAN_NAME arrives
+    at SpiderFoot's default confidence of 100 and outranks a profile that was actually read.
+    This scores EXISTENCE strength only; it says nothing about ownership. Coarse on purpose --
+    it ranks evidence, it does not estimate a probability.
     """
     raw = event.get("confidence")
     value = raw / 100 if isinstance(raw, (int, float)) and not isinstance(raw, bool) else 1.0
     value = max(0.0, min(1.0, value))
-    return round(min(value, 0.5), 2) if basis == "candidate" else round(value, 2)
+    return round(min(value, 0.5), 2) if existence == "inferred" else round(value, 2)
 
 
 def _spiderfoot_records(events: list, target: str) -> list[dict]:
@@ -699,20 +722,29 @@ def _spiderfoot_records(events: list, target: str) -> list[dict]:
         if data.lower() == normalized:
             continue  # the scan's own target, echoed back as an event
         module = str(event.get("module") or "").strip()
-        basis = _spiderfoot_identity_basis(event_type, module)
+        existence = _spiderfoot_existence(event_type, module)
         data, link = _spiderfoot_split_data(data)
+        # derived_via is computed just below; ownership needs it, so look up the parent now.
+        parent_type, parent_data = lineage.get(event.get("source_event_hash"), ("", None))
+        derived_via = (
+            parent_type
+            if parent_type and parent_type not in _SF_NOISE_TYPES and parent_type != event_type
+            else None
+        )
         record = {
             "event_type": event_type,
             "data": data,
             "module": module or None,
-            # Whether this is an observation about the target or an inference near it. Flat
-            # and queryable so a dossier can map it, and so a reader never has to know
-            # SpiderFoot's type vocabulary to tell the two apart.
-            "identity_basis": basis,
+            # Two independent axes, flat and queryable so a dossier can map either and a reader
+            # never needs SpiderFoot's type vocabulary. `existence`: did we see it or infer it.
+            # `ownership`: does it belong to the target -- never "confirmed" from a tool, because
+            # an account reached by a matching handle is not proof the target owns it.
+            "existence": existence,
+            "ownership": _spiderfoot_ownership(existence, derived_via),
             "risk": event.get("risk"),
             "visibility": event.get("visibility"),
             "generated": event.get("generated"),
-            "_confidence": _spiderfoot_confidence(event, basis),
+            "_confidence": _spiderfoot_confidence(event, existence),
         }
         # A URL-valued event is the one lead worth following. `url` is also what record_key
         # prefers, so these keep a stable entity across reruns instead of a content hash.
@@ -722,11 +754,10 @@ def _spiderfoot_records(events: list, target: str) -> list[dict]:
         # for an email target the chain is the whole story -- sfp_accounts derives a USERNAME
         # from the local part and the accounts hang off THAT, so an account reported for an
         # address was reached by handle, not by anything tying the address to the profile.
-        # Surfaced as a field rather than folded into identity_basis, because it is a
-        # different question: basis says how strong the finding is, this says what it rests on.
-        parent_type, parent_data = lineage.get(event.get("source_event_hash"), ("", None))
-        if parent_type and parent_type not in _SF_NOISE_TYPES and parent_type != event_type:
-            record["derived_via"] = parent_type
+        # This is why `ownership` above is "candidate" whenever derived_via is set: it records
+        # what the attribution rests on, which `existence` and `ownership` summarise.
+        if derived_via:
+            record["derived_via"] = derived_via
             # The parent's VALUE, not just its type, because that is the only field on an
             # account record that a dossier can match an identifier against. An account's
             # own `data` is a label ("Pinterest (Category: social)"), so without this the
@@ -779,7 +810,7 @@ def _spiderfoot(
         raise PolicyDenied("HARVEST_SPIDERFOOT_API_KEY is not configured")
     if not modules:
         raise PolicyDenied("HARVEST_SPIDERFOOT_MODULES is empty; no scan would run")
-    _assert_spiderfoot_target_is_scannable(target)
+    target_type = _spiderfoot_target_type(target)
 
     # The key authenticates every call; it must never reach a log or a persisted error.
     headers = {"X-API-Key": key, "content-type": "application/json"}
@@ -794,6 +825,7 @@ def _spiderfoot(
                 json={
                     "name": f"harvest-{target}",
                     "target": target,
+                    "target_type": target_type,
                     "modules": modules,
                 },
             )
