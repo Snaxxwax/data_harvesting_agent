@@ -47,9 +47,7 @@ def _client() -> httpx.Client:
     token = os.environ.get("HARVEST_API_TOKEN", "")
     if not token:
         raise RuntimeError("HARVEST_API_TOKEN must be set for the Harvest MCP adapter")
-    return httpx.Client(
-        base_url=base, headers={"Authorization": f"Bearer {token}"}, timeout=30.0
-    )
+    return httpx.Client(base_url=base, headers={"Authorization": f"Bearer {token}"}, timeout=30.0)
 
 
 def _result(resp: httpx.Response) -> dict:

@@ -198,16 +198,17 @@ def create_app(settings: Settings | None = None):
         from .models import AuthorizationRequired
 
         try:
-            new_id = engine.follow_up(
-                job_id, url=body.url, tool=body.tool, target=body.target
-            )
+            new_id = engine.follow_up(job_id, url=body.url, tool=body.tool, target=body.target)
         except AuthorizationRequired as exc:
             # Materially exceeds the operator's authorization: 403 with the concrete thing
             # they would have to authorize, so an agent gets a structured "ask" not a start.
             raise HTTPException(
                 status_code=403,
-                detail={"error": "authorization_required", "reason": exc.reason,
-                        "suggestion": exc.suggestion},
+                detail={
+                    "error": "authorization_required",
+                    "reason": exc.reason,
+                    "suggestion": exc.suggestion,
+                },
             ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
