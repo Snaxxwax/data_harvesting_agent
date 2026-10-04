@@ -942,6 +942,42 @@ class Store:
                 for r in rows
             ]
 
+    def discovered(self, job_id: str, needle: str) -> bool:
+        """Did this job's OWN evidence already surface `needle`?
+
+        The gate on agent follow-ups: an agent may pursue a URL or identifier the job already
+        found, never one it injects. `needle` counts as discovered if it is a capture URL, an
+        observation's source URL or value, or an entity key in this job -- so a lead the job
+        produced can be followed, while an arbitrary new target (a different person) cannot be
+        laundered through a "follow-up". Scoped to one job; the caller passes the parent.
+        """
+        self.job(job_id)
+        packed_value = packed(needle)
+        with self.connection() as db:
+            hit = db.execute(
+                """SELECT 1 WHERE
+                  EXISTS(SELECT 1 FROM captures c WHERE c.job_id=? AND (c.url=? OR c.final_url=?))
+                  OR EXISTS(SELECT 1 FROM observations o JOIN assertions a ON a.observation_id=o.id
+                       JOIN extractions x ON x.id=a.extraction_id
+                       WHERE x.job_id=? AND (o.source_url=? OR o.value=?))
+                  OR EXISTS(SELECT 1 FROM entities e JOIN observations o ON o.entity_id=e.id
+                       JOIN assertions a ON a.observation_id=o.id JOIN extractions x ON x.id=a.extraction_id
+                       WHERE x.job_id=? AND (e.entity_key=? OR e.entity_key=?))
+                LIMIT 1""",
+                (
+                    job_id,
+                    needle,
+                    needle,
+                    job_id,
+                    needle,
+                    packed_value,
+                    job_id,
+                    needle,
+                    "url:" + needle,
+                ),
+            ).fetchone()
+        return hit is not None
+
     def canonical(self, dataset: str, after="", limit=100):
         """Latest usable analysis per source, with newer unsuccessful attempts disclosed."""
         with self.connection() as db:
