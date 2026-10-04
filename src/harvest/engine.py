@@ -14,6 +14,7 @@ import httpx
 from .config import Settings
 from .extract import Extractors, http_url
 from .models import (
+    AuthorizationRequired,
     BudgetExceeded,
     JobSpec,
     LostLease,
@@ -47,7 +48,7 @@ class Engine:
         self.fetcher_factory = fetcher_factory
         self.reasoner = reasoner or Reasoner(self.settings, self.store)
 
-    def submit(self, spec: JobSpec, key=None):
+    def submit(self, spec: JobSpec, key=None, parent=None):
         if spec.use_model and not self.reasoner.configured():
             raise ValueError(
                 "use_model requires HARVEST_MODEL_URL, HARVEST_MODEL_NAME and HARVEST_MODEL_USD_PER_MILLION"
@@ -101,7 +102,85 @@ class Engine:
             raise ValueError(
                 "provide a seed URL or configure HARVEST_SEARCH_URL for discovery from an objective"
             )
-        return self.store.create(spec, initial, key)
+        return self.store.create(spec, initial, key, parent=parent)
+
+    def follow_up(self, parent_id, *, url=None, tool=None, target=None, key=None):
+        """Start a child job that INHERITS the parent investigation's authorization.
+
+        This is the agent-facing expansion control, and the whole point is that it cannot
+        widen what the operator authorized. The child inherits the parent's scope
+        (allowed_domains), budget ceilings (limits), dataset, declared targets and model
+        permission; the agent chooses only WHICH discovered thing to pursue, not new scope.
+
+        Two material-exceedance guards, both content-independent (they never trust anything a
+        fetched page said):
+          * scope -- a URL must be in the parent's allowed_domains; a tool must be enabled.
+          * provenance -- the URL or identifier must already appear in the PARENT's own
+            evidence (Store.discovered). An agent can follow a lead the investigation found;
+            it cannot inject an unrelated person and call it a follow-up. "Discovery alone
+            must not authorize unrestricted expansion into unrelated people."
+
+        Anything outside those raises AuthorizationRequired, which the agent interface turns
+        into an "ask the operator" result rather than silently doing it.
+
+        ponytail: the child gets the parent's budget CEILINGS as a fresh budget, not a shared
+        per-investigation remaining balance. Follow-ups are bounded by the finite discovered
+        set and each child's own budget; add an investigation-wide budget only if aggregate
+        follow-up cost is shown to matter.
+        """
+        parent = self.store.job(parent_id)
+        pspec = JobSpec.model_validate(parent["spec"])
+        if bool(url) == bool(tool):
+            raise ValueError("follow_up takes exactly one of url= or tool=")
+
+        if url:
+            canon = canonical_url(url)
+            if not in_scope(canon, pspec):
+                raise AuthorizationRequired(
+                    f"{urlsplit(canon).hostname} is outside this investigation's authorized "
+                    f"scope (allowed_domains={pspec.allowed_domains or 'any'})",
+                    suggestion=f"authorize a new investigation for {urlsplit(canon).hostname}",
+                )
+            if not self.store.discovered(parent_id, canon):
+                raise AuthorizationRequired(
+                    "that URL was not discovered by this investigation, so following it would "
+                    "expand beyond the original request",
+                    suggestion=f"start a new investigation with seed {canon}",
+                )
+            child = JobSpec.model_validate({
+                **pspec.model_dump(),
+                "objective": f"follow-up on discovered source {canon}",
+                "mode": "targeted",
+                "seeds": [canon],
+                "discovery_queries": [],
+                "tools": [],
+                "refresh_seconds": None,
+            })
+            return self.submit(child, key=key, parent=parent_id)
+
+        if tool not in self.settings.tools:
+            raise AuthorizationRequired(
+                f"tool {tool!r} is not enabled on this deployment",
+                suggestion=f"add {tool} to HARVEST_TOOLS, then re-request",
+            )
+        if not target:
+            raise ValueError("a tool follow-up needs a target")
+        if not self.store.discovered(parent_id, target):
+            raise AuthorizationRequired(
+                f"the identifier {target!r} was not discovered by this investigation, so "
+                "scanning it would expand into a target the operator did not authorize",
+                suggestion=f"authorize an investigation whose target is {target!r}",
+            )
+        child = JobSpec.model_validate({
+            **pspec.model_dump(),
+            "objective": f"follow-up {tool} scan of discovered identifier",
+            "mode": "targeted",
+            "seeds": [],
+            "discovery_queries": [],
+            "tools": [{"name": tool, "target": target}],
+            "refresh_seconds": None,
+        })
+        return self.submit(child, key=key, parent=parent_id)
 
     def rerun(self, job_id):
         """Resubmit a prior job's exact spec as a new durable job; never mutates old history."""

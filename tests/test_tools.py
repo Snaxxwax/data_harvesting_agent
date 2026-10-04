@@ -671,29 +671,55 @@ def test_spiderfoot_scan_returns_events_as_records(fake_sf, monkeypatch):
     assert [r["data"] for r in body["results"]] == ["1.2.3.4"]
     assert fake.created[0]["modules"] == ["sfp_dnsresolve"]
     assert fake.created[0]["target"] == "example.com"
+    # An explicit target_type is always sent so the fork does not have to infer it from the
+    # string (which is what made a bare username unscannable).
+    assert fake.created[0]["target_type"] == "INTERNET_NAME"
 
 
-def test_spiderfoot_marks_inferred_findings_as_candidates():
-    """An inference must never read as an observation, and must rank below one.
+def test_spiderfoot_target_type_is_explicit_per_shape():
+    assert tools._spiderfoot_target_type("me@x.test") == "EMAILADDR"
+    assert tools._spiderfoot_target_type("example.com") == "INTERNET_NAME"
+    # The case the old denial refused: a bare handle is now a scannable USERNAME.
+    assert tools._spiderfoot_target_type("Snaxxwax") == "USERNAME"
 
-    SpiderFoot reports both at its default confidence of 100, so without this an inferred
-    HUMAN_NAME ties with a profile that was actually read -- and a name guessed from an
-    address's local part is exactly the claim that must not reach a dossier as confirmed.
+
+def test_spiderfoot_separates_existence_from_ownership():
+    """Existence and ownership are different questions, reported separately.
+
+    SpiderFoot reports observations and inferences both at confidence 100, so without the
+    existence ceiling an inferred HUMAN_NAME ties with a profile that was actually read. And
+    an account reached by a USERNAME derived from an address's local part exists, but a
+    matching handle is NOT proof the target owns it -- so ownership is never "confirmed".
     """
     events = [
-        {"type": "ACCOUNT_EXTERNAL_OWNED", "data": "https://x.test/a", "module": "sfp_accounts"},
+        # A real account, but reached via a USERNAME derived from the email's local part.
+        {"type": "ROOT", "data": "me@x.test", "hash": "R", "source_event_hash": "R"},
+        {"type": "USERNAME", "data": "me", "hash": "U", "source_event_hash": "R",
+         "module": "sfp_accounts"},
+        {"type": "ACCOUNT_EXTERNAL_OWNED", "data": "https://x.test/a", "hash": "A",
+         "source_event_hash": "U", "module": "sfp_accounts"},
         {"type": "SIMILAR_ACCOUNT_EXTERNAL", "data": "https://x.test/a2", "module": "sfp_accounts"},
         {"type": "AFFILIATE_EMAILADDR", "data": "other@x.test", "module": "sfp_pgp"},
         {"type": "HUMAN_NAME", "data": "Guessed Name", "module": "sfp_names"},
     ]
     by_type = {r["event_type"]: r for r in tools._spiderfoot_records(events, "me@x.test")}
 
-    assert by_type["ACCOUNT_EXTERNAL_OWNED"]["identity_basis"] == "confirmed"
+    acct = by_type["ACCOUNT_EXTERNAL_OWNED"]
+    # The profile was fetched, so it was OBSERVED -- but it was reached by a derived handle,
+    # so ownership is only a candidate, never confirmed.
+    assert acct["existence"] == "observed"
+    assert acct["ownership"] == "candidate"
+    assert acct["derived_via"] == "USERNAME"
+    assert acct["_confidence"] > 0.5
+
     for inferred in ("SIMILAR_ACCOUNT_EXTERNAL", "AFFILIATE_EMAILADDR", "HUMAN_NAME"):
-        assert by_type[inferred]["identity_basis"] == "candidate", inferred
-        # The ceiling is what keeps a guess from outranking an observation.
+        assert by_type[inferred]["existence"] == "inferred", inferred
+        assert by_type[inferred]["ownership"] == "candidate", inferred
+        # The ceiling keeps a guess from outranking an observation.
         assert by_type[inferred]["_confidence"] <= 0.5, inferred
-    assert by_type["ACCOUNT_EXTERNAL_OWNED"]["_confidence"] > 0.5
+
+    # No record from a tool ever asserts ownership.
+    assert all(r["ownership"] != "confirmed" for r in by_type.values())
 
 
 def test_spiderfoot_extracts_sfurl_links_and_records_provenance():
