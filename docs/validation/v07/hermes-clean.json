@@ -1,0 +1,159 @@
+{
+ "arm": "hermes",
+ "phase": "clean",
+ "root_job": "9e459ce2cc2941709922e5f204e60746",
+ "limits": {
+  "requests": 10,
+  "bytes": 3000000,
+  "seconds": 3600,
+  "depth": 0,
+  "tool_runs": 0,
+  "tasks": 60
+ },
+ "capture": 212,
+ "wall_seconds": 125.9,
+ "final_statuses": [
+  "completed",
+  "completed",
+  "failed",
+  "failed",
+  "completed",
+  "completed",
+  "failed",
+  "failed",
+  "failed",
+  "failed"
+ ],
+ "answer_parsed": true,
+ "run": {
+  "answer": {
+   "owned": 1,
+   "not_owned": 1,
+   "undetermined": 18
+  },
+  "sessions": [
+   {
+    "session": 1,
+    "exit": 0,
+    "killed": false,
+    "seconds": 123.1,
+    "answer": {
+     "owned": 1,
+     "not_owned": 1,
+     "undetermined": 18
+    },
+    "usage": {
+     "estimated_cost_usd": 0.0,
+     "cost_status": "included",
+     "cost_source": "none",
+     "input_tokens": 46268,
+     "output_tokens": 3268,
+     "cache_read_tokens": 477568,
+     "cache_write_tokens": 0,
+     "reasoning_tokens": 863,
+     "total_tokens": 527104,
+     "api_calls": 14,
+     "model": "gpt-5.6-sol",
+     "provider": "openai-codex",
+     "session_id": "20261004_113242_ac2946",
+     "completed": true,
+     "partial": false,
+     "interrupted": false,
+     "turn_exit_reason": "text_response(finish_reason=stop)",
+     "failed": false,
+     "service_tier": null,
+     "auxiliary": {
+      "api_calls": 1,
+      "input_tokens": 498,
+      "output_tokens": 18,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "reasoning_tokens": 0,
+      "estimated_cost_usd": 0,
+      "total_tokens": 516,
+      "by_task": {
+       "title_generation": {
+        "api_calls": 1,
+        "input_tokens": 498,
+        "output_tokens": 18,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0,
+        "estimated_cost_usd": 0
+       }
+      }
+     },
+     "total_including_auxiliary": {
+      "estimated_cost_usd": 0.0,
+      "total_tokens": 527620,
+      "api_calls": 15
+     }
+    },
+    "command": [
+     "hermes",
+     "-z",
+     "<prompt>",
+     "--usage-file",
+     "/tmp/hc-hermes-qfxvmat7/usage.json"
+    ]
+   }
+  ]
+ },
+ "score": {
+  "root_id": "9e459ce2cc2941709922e5f204e60746",
+  "jobs": 10,
+  "statuses": [
+   "completed",
+   "failed"
+  ],
+  "followups": 9,
+  "useful_followups": 3,
+  "followup_targets": 9,
+  "observations": 316,
+  "captures": 4,
+  "citation_presence": 1.0,
+  "evidence_support": 1.0,
+  "evidence_checked": 276,
+  "derived_claims": 40,
+  "attribution_harvest": {
+   "asserted": 0,
+   "correct": 0,
+   "incorrect": 0,
+   "unsupported": 0,
+   "missed_owned": 1,
+   "errors": 0
+  },
+  "attribution_answer": {
+   "asserted": 1,
+   "correct": 1,
+   "incorrect": 0,
+   "unsupported": 0,
+   "missed_owned": 0,
+   "errors": 0
+  },
+  "unnecessary_calls": 0,
+  "repeated_followups": 0,
+  "cost_enforced": {
+   "requests": 9,
+   "bytes": 332940,
+   "model_calls": 0,
+   "model_tokens": 0,
+   "cost_usd": 0.0,
+   "tool_runs": 0,
+   "tasks": 13,
+   "seconds": 989.3
+  },
+  "budget_limits": {
+   "requests": 10,
+   "bytes": 3000000,
+   "model_calls": 10,
+   "model_tokens": 150000,
+   "cost_usd": 2.0,
+   "tool_runs": 0,
+   "tasks": 60,
+   "seconds": 3600
+  },
+  "external_tool_runs": []
+ },
+ "rescored": "2026-10-04, harness_eval scalar/entity-aware support check"
+}

@@ -46,3 +46,10 @@ def test_attribution_counts_incorrect_and_unsupported_associations():
     assert s["unsupported"] == ["https://x.test/s"]
     assert s["errors"] == 2
     assert he.score_attribution(set(), labels)["missed_owned"] == ["https://github.com/Snaxxwax"]
+
+
+def test_support_decodes_entities_and_typed_numbers_from_page_extractions():
+    page = {1: "<title>a &middot; b</title><b>566290833</b>"}.__getitem__
+    assert he.support(_obs(value='"a · b"', locator="title"), page) == "supported"
+    assert he.support(_obs(value="566290833", locator="socid:x"), page) == "supported"
+    assert he.support(_obs(value="42", locator="socid:x"), page) == "unsupported"

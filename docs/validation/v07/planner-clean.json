@@ -1,0 +1,104 @@
+{
+ "arm": "planner",
+ "phase": "clean",
+ "root_job": "c101d9d235bb4b3b96758f0c99a2e90b",
+ "limits": {
+  "requests": 10,
+  "bytes": 3000000,
+  "seconds": 3600,
+  "depth": 0,
+  "tool_runs": 0,
+  "tasks": 60
+ },
+ "capture": 212,
+ "wall_seconds": 45.2,
+ "final_statuses": [
+  "completed",
+  "completed",
+  "completed",
+  "partial",
+  "failed",
+  "completed",
+  "completed",
+  "failed",
+  "failed",
+  "completed",
+  "completed",
+  "budget_exhausted"
+ ],
+ "answer_parsed": true,
+ "run": {
+  "answer": {
+   "owned": 0,
+   "not_owned": 0,
+   "undetermined": 20
+  },
+  "command": "in-process deterministic policy (harness_compare.planner_arm)",
+  "model": "none",
+  "refused": {
+   "error": "budget_exhausted",
+   "reason": "investigation requests budget exhausted"
+  },
+  "usage": null,
+  "exit": 0
+ },
+ "score": {
+  "root_id": "c101d9d235bb4b3b96758f0c99a2e90b",
+  "jobs": 12,
+  "statuses": [
+   "budget_exhausted",
+   "completed",
+   "failed",
+   "partial"
+  ],
+  "followups": 11,
+  "useful_followups": 7,
+  "followup_targets": 11,
+  "observations": 328,
+  "captures": 8,
+  "citation_presence": 1.0,
+  "evidence_support": 1.0,
+  "evidence_checked": 288,
+  "derived_claims": 40,
+  "attribution_harvest": {
+   "asserted": 0,
+   "correct": 0,
+   "incorrect": 0,
+   "unsupported": 0,
+   "missed_owned": 1,
+   "errors": 0
+  },
+  "attribution_answer": {
+   "asserted": 0,
+   "correct": 0,
+   "incorrect": 0,
+   "unsupported": 0,
+   "missed_owned": 1,
+   "errors": 0
+  },
+  "unnecessary_calls": 0,
+  "repeated_followups": 0,
+  "cost_enforced": {
+   "requests": 10,
+   "bytes": 334662,
+   "model_calls": 0,
+   "model_tokens": 0,
+   "cost_usd": 0.0,
+   "tool_runs": 0,
+   "tasks": 19,
+   "seconds": 1205.9
+  },
+  "budget_limits": {
+   "requests": 10,
+   "bytes": 3000000,
+   "model_calls": 10,
+   "model_tokens": 150000,
+   "cost_usd": 2.0,
+   "tool_runs": 0,
+   "tasks": 60,
+   "seconds": 3600
+  },
+  "external_tool_runs": []
+ },
+ "rescored": "2026-10-04, harness_eval scalar/entity-aware support check"
+}

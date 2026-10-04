@@ -1,0 +1,128 @@
+{
+ "arm": "codex",
+ "phase": "clean",
+ "root_job": "9839f7a449d24639afb6480004209762",
+ "limits": {
+  "requests": 10,
+  "bytes": 3000000,
+  "seconds": 3600,
+  "depth": 0,
+  "tool_runs": 0,
+  "tasks": 60
+ },
+ "capture": 212,
+ "wall_seconds": 197.5,
+ "final_statuses": [
+  "completed",
+  "completed",
+  "failed",
+  "failed",
+  "partial",
+  "completed",
+  "completed",
+  "failed",
+  "failed",
+  "failed",
+  "failed",
+  "failed",
+  "completed"
+ ],
+ "answer_parsed": true,
+ "run": {
+  "answer": {
+   "owned": 1,
+   "not_owned": 0,
+   "undetermined": 19
+  },
+  "sessions": [
+   {
+    "session": 1,
+    "exit": 0,
+    "killed": false,
+    "seconds": 194.0,
+    "answer": {
+     "owned": 1,
+     "not_owned": 0,
+     "undetermined": 19
+    },
+    "usage": {
+     "tokens": {
+      "input_tokens": 1528389,
+      "cached_input_tokens": 1462784,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 3146,
+      "reasoning_output_tokens": 106
+     }
+    },
+    "command": [
+     "codex",
+     "exec",
+     "--json",
+     "--ephemeral",
+     "--skip-git-repo-check",
+     "-c",
+     "mcp_servers.harvest.default_tools_approval_mode=\"approve\"",
+     "<prompt>"
+    ]
+   }
+  ]
+ },
+ "score": {
+  "root_id": "9839f7a449d24639afb6480004209762",
+  "jobs": 13,
+  "statuses": [
+   "completed",
+   "failed",
+   "partial"
+  ],
+  "followups": 12,
+  "useful_followups": 5,
+  "followup_targets": 12,
+  "observations": 326,
+  "captures": 6,
+  "citation_presence": 1.0,
+  "evidence_support": 1.0,
+  "evidence_checked": 286,
+  "derived_claims": 40,
+  "attribution_harvest": {
+   "asserted": 0,
+   "correct": 0,
+   "incorrect": 0,
+   "unsupported": 0,
+   "missed_owned": 1,
+   "errors": 0
+  },
+  "attribution_answer": {
+   "asserted": 1,
+   "correct": 1,
+   "incorrect": 0,
+   "unsupported": 0,
+   "missed_owned": 0,
+   "errors": 0
+  },
+  "unnecessary_calls": 0,
+  "repeated_followups": 0,
+  "cost_enforced": {
+   "requests": 10,
+   "bytes": 416127,
+   "model_calls": 0,
+   "model_tokens": 0,
+   "cost_usd": 0.0,
+   "tool_runs": 0,
+   "tasks": 18,
+   "seconds": 660.8
+  },
+  "budget_limits": {
+   "requests": 10,
+   "bytes": 3000000,
+   "model_calls": 10,
+   "model_tokens": 150000,
+   "cost_usd": 2.0,
+   "tool_runs": 0,
+   "tasks": 60,
+   "seconds": 3600
+  },
+  "external_tool_runs": []
+ },
+ "rescored": "2026-10-04, harness_eval scalar/entity-aware support check"
+}

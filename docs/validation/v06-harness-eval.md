@@ -1,5 +1,9 @@
 # Harness evaluation (0.6): Harvest planner vs Hermes / Claude Code / Codex
 
+> **Superseded by `v07-harness-eval.md`.** This run measured control enforcement only; its
+> `evidence_support=1.0` and `false_attribution=0` were not meaningful (see 0.7), and its Codex
+> conclusion was a configuration issue, resolved in 0.7.
+
 Date: 2026-10-04. Deployment: `ovh-vps`, Harvest `5764d22a`, SpiderFoot fork `5c5d41d5`.
 
 ## Question
