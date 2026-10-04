@@ -1038,7 +1038,7 @@ def _spiderfoot(
     # The key authenticates every call; it must never reach a log or a persisted error.
     headers = {"X-API-Key": key, "content-type": "application/json"}
     deadline = time.time() + timeout
-    scan_id = None
+    scan_id, finished = None, False
     with httpx.Client(base_url=base, headers=headers, timeout=30.0) as client:
         try:
             if getattr(settings, "proxy_only", False):
@@ -1095,16 +1095,21 @@ def _spiderfoot(
                     )
                     break
                 page += 1
+            finished = True
             return _spiderfoot_records(records, target)
         except httpx.HTTPError as exc:
             # Never surface the response body: it can echo the request headers.
             raise ValueError(f"spiderfoot request failed: {type(exc).__name__}") from None
         finally:
-            if scan_id and cancelled is not None and cancelled.is_set():
+            # Any scan Harvest stops waiting for -- cancelled, timed out, failed -- is STOPPED,
+            # not left running. Only cancellation used to stop it, so a timed-out example.org
+            # scan kept making out-of-budget requests for 20+ minutes after its task failed.
+            # /stop, not DELETE: the scan's own record stays in SpiderFoot as evidence.
+            if scan_id and not finished:
                 try:
-                    client.delete(f"/api/v1/scans/{scan_id}")
+                    client.post(f"/api/v1/scans/{scan_id}/stop")
                 except httpx.HTTPError:
-                    log.warning("could not stop spiderfoot scan after cancellation")
+                    log.warning("could not stop an unfinished spiderfoot scan")
 
 
 # kinds: the planning investigation types whose normalized value is a valid target.
