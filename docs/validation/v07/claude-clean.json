@@ -1,0 +1,158 @@
+{
+ "arm": "claude",
+ "phase": "clean",
+ "root_job": "96364a9282d8403c90b45ad8edfcf887",
+ "limits": {
+  "requests": 10,
+  "bytes": 3000000,
+  "seconds": 3600,
+  "depth": 0,
+  "tool_runs": 0,
+  "tasks": 60
+ },
+ "capture": 212,
+ "wall_seconds": 55.9,
+ "final_statuses": [
+  "completed",
+  "completed",
+  "failed",
+  "failed",
+  "failed",
+  "completed"
+ ],
+ "answer_parsed": true,
+ "run": {
+  "answer": {
+   "owned": 1,
+   "not_owned": 0,
+   "undetermined": 19
+  },
+  "sessions": [
+   {
+    "session": 1,
+    "exit": 0,
+    "killed": false,
+    "seconds": 54.2,
+    "answer": {
+     "owned": 1,
+     "not_owned": 0,
+     "undetermined": 19
+    },
+    "usage": {
+     "total_cost_usd": 0.3501796,
+     "num_turns": 18,
+     "models": [
+      "claude-sonnet-5-5"
+     ],
+     "usage": {
+      "input_tokens": 24,
+      "cache_creation_input_tokens": 51926,
+      "cache_read_input_tokens": 551638,
+      "output_tokens": 3210,
+      "output_tokens_details": {
+       "thinking_tokens": 354
+      },
+      "server_tool_use": {
+       "web_search_requests": 0,
+       "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 51926,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+       {
+        "input_tokens": 2,
+        "output_tokens": 985,
+        "cache_read_input_tokens": 62434,
+        "cache_creation_input_tokens": 1867,
+        "cache_creation": {
+         "ephemeral_5m_input_tokens": 0,
+         "ephemeral_1h_input_tokens": 1867
+        },
+        "type": "message"
+       }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+     }
+    },
+    "command": [
+     "claude",
+     "-p",
+     "<prompt>",
+     "--output-format",
+     "json",
+     "--model",
+     "sonnet",
+     "--strict-mcp-config",
+     "--mcp-config",
+     "/tmp/hc-claude-iql88m4d/mcp.json",
+     "--allowedTools",
+     "mcp__harvest",
+     "--disallowedTools",
+     "Bash,WebFetch,WebSearch"
+    ]
+   }
+  ]
+ },
+ "score": {
+  "root_id": "96364a9282d8403c90b45ad8edfcf887",
+  "jobs": 6,
+  "statuses": [
+   "completed",
+   "failed"
+  ],
+  "followups": 5,
+  "useful_followups": 2,
+  "followup_targets": 5,
+  "observations": 315,
+  "captures": 3,
+  "citation_presence": 1.0,
+  "evidence_support": 1.0,
+  "evidence_checked": 275,
+  "derived_claims": 40,
+  "attribution_harvest": {
+   "asserted": 0,
+   "correct": 0,
+   "incorrect": 0,
+   "unsupported": 0,
+   "missed_owned": 1,
+   "errors": 0
+  },
+  "attribution_answer": {
+   "asserted": 1,
+   "correct": 1,
+   "incorrect": 0,
+   "unsupported": 0,
+   "missed_owned": 0,
+   "errors": 0
+  },
+  "unnecessary_calls": 0,
+  "repeated_followups": 0,
+  "cost_enforced": {
+   "requests": 5,
+   "bytes": 243390,
+   "model_calls": 0,
+   "model_tokens": 0,
+   "cost_usd": 0.0,
+   "tool_runs": 0,
+   "tasks": 8,
+   "seconds": 1103.3
+  },
+  "budget_limits": {
+   "requests": 10,
+   "bytes": 3000000,
+   "model_calls": 10,
+   "model_tokens": 150000,
+   "cost_usd": 2.0,
+   "tool_runs": 0,
+   "tasks": 60,
+   "seconds": 3600
+  },
+  "external_tool_runs": []
+ },
+ "rescored": "2026-10-04, harness_eval scalar/entity-aware support check"
+}

@@ -1,0 +1,150 @@
+{
+ "arm": "codex",
+ "phase": "interrupted",
+ "root_job": "f9102acb990c4368a6c2da639042cbb0",
+ "limits": {
+  "requests": 10,
+  "bytes": 3000000,
+  "seconds": 3600,
+  "depth": 0,
+  "tool_runs": 0,
+  "tasks": 60
+ },
+ "capture": 212,
+ "wall_seconds": 311.0,
+ "final_statuses": [
+  "completed",
+  "completed",
+  "failed",
+  "completed",
+  "failed",
+  "completed",
+  "partial",
+  "failed",
+  "failed",
+  "failed",
+  "failed",
+  "failed",
+  "failed",
+  "budget_exhausted"
+ ],
+ "answer_parsed": true,
+ "run": {
+  "answer": {
+   "owned": 1,
+   "not_owned": 0,
+   "undetermined": 19
+  },
+  "sessions": [
+   {
+    "session": 1,
+    "exit": -9,
+    "killed": true,
+    "seconds": 70.2,
+    "answer": null,
+    "usage": {
+     "tokens": {}
+    },
+    "command": [
+     "codex",
+     "exec",
+     "--json",
+     "--ephemeral",
+     "--skip-git-repo-check",
+     "-c",
+     "mcp_servers.harvest.default_tools_approval_mode=\"approve\"",
+     "<prompt>"
+    ]
+   },
+   {
+    "session": 2,
+    "exit": 0,
+    "killed": false,
+    "seconds": 237.6,
+    "answer": {
+     "owned": 1,
+     "not_owned": 0,
+     "undetermined": 19
+    },
+    "usage": {
+     "tokens": {
+      "input_tokens": 1785770,
+      "cached_input_tokens": 1727616,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 3839,
+      "reasoning_output_tokens": 183
+     }
+    },
+    "command": [
+     "codex",
+     "exec",
+     "--json",
+     "--ephemeral",
+     "--skip-git-repo-check",
+     "-c",
+     "mcp_servers.harvest.default_tools_approval_mode=\"approve\"",
+     "<prompt>"
+    ]
+   }
+  ]
+ },
+ "score": {
+  "root_id": "f9102acb990c4368a6c2da639042cbb0",
+  "jobs": 14,
+  "statuses": [
+   "budget_exhausted",
+   "completed",
+   "failed",
+   "partial"
+  ],
+  "followups": 13,
+  "useful_followups": 4,
+  "followup_targets": 13,
+  "observations": 325,
+  "captures": 5,
+  "citation_presence": 1.0,
+  "evidence_support": 1.0,
+  "evidence_checked": 285,
+  "derived_claims": 40,
+  "attribution_harvest": {
+   "asserted": 0,
+   "correct": 0,
+   "incorrect": 0,
+   "unsupported": 0,
+   "missed_owned": 1,
+   "errors": 0
+  },
+  "attribution_answer": {
+   "asserted": 1,
+   "correct": 1,
+   "incorrect": 0,
+   "unsupported": 0,
+   "missed_owned": 0,
+   "errors": 0
+  },
+  "unnecessary_calls": 0,
+  "repeated_followups": 0,
+  "cost_enforced": {
+   "requests": 10,
+   "bytes": 354673,
+   "model_calls": 0,
+   "model_tokens": 0,
+   "cost_usd": 0.0,
+   "tool_runs": 0,
+   "tasks": 18,
+   "seconds": 462.5
+  },
+  "budget_limits": {
+   "requests": 10,
+   "bytes": 3000000,
+   "model_calls": 10,
+   "model_tokens": 150000,
+   "cost_usd": 2.0,
+   "tool_runs": 0,
+   "tasks": 60,
+   "seconds": 3600
+  },
+  "external_tool_runs": []
+ },
+ "rescored": "2026-10-04, harness_eval scalar/entity-aware support check"
+}

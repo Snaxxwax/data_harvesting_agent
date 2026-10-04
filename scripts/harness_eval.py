@@ -37,6 +37,7 @@ Prints one JSON object. Reads only; starts no scan.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import sys
@@ -106,8 +107,12 @@ def support(obs: dict, body_of) -> str:
                     return "supported"
             except (LookupError, ValueError, IndexError):
                 pass
-        elif isinstance(value, str) and value and value in body:
-            return "supported"
+        elif isinstance(value, (str, int, float)) and not isinstance(value, bool):
+            # Page extractions decode entities and type numbers, so compare against the
+            # decoded text and the scalar's own spelling.
+            needle = str(value)
+            if needle and (needle in body or needle in html.unescape(body)):
+                return "supported"
     return "unsupported"
 
 

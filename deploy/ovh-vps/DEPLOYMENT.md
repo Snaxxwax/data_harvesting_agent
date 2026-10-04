@@ -5,7 +5,25 @@ Deployed commit: `5764d22a` (data_harvesting_agent main), deployed 2026-10-04. C
 `compose.egress-proxy.yaml` and `compose.ghunt.yaml` — all tracked in the repo under
 `deploy/ovh-vps/`.
 
-`5764d22a` (PR #19) adds: a **capability registry** served at `/meta` (per-capability
+`a1e90b48` (PRs #22–#24, deployed 2026-10-04) adds, on top of `5764d22a` (PR #19):
+
+- **Investigation-wide budgets.** A follow-up records its investigation root (`jobs.root_id`).
+  Requests, bytes, model spend, tool runs, tasks and wall clock are summed over the root and
+  every follow-up and checked against the root's limits, so siblings (concurrent or not),
+  chains, retries and reruns of follow-ups share ONE balance. `GET /jobs/{id}` →
+  `investigation` separates `enforced` counters from `external_tool_runs` (network cost
+  estimated, not metered). Follow-up idempotency keys are scoped to the investigation.
+- **Per-input SpiderFoot modules.** `HARVEST_SPIDERFOOT_MODULES` is an allowlist; each scan
+  sends only the modules that can fire for its target type, from the fork's vendored
+  watched/produced metadata, minus keyed modules without a declared key
+  (`HARVEST_SPIDERFOOT_KEYED_MODULES`) and minus modules that would consume another subject's
+  identifiers inside the scan. Plans are at `/meta` → `capabilities.spiderfoot.plans` and in
+  every capture. A scan Harvest stops waiting for (timeout/failure/cancel) is now stopped in
+  SpiderFoot (`POST /scans/{id}/stop`), not orphaned.
+- **Attribution correction by replay** (rule revision `attribution/2`) and **honest eval
+  metrics**; see `docs/validation/v07-harness-eval.md`.
+
+Earlier: `5764d22a` (PR #19) adds: a **capability registry** served at `/meta` (per-capability
 readiness with the single blocking reason); **honest attribution** — every tool record now
 carries `existence` (observed/inferred) and `ownership` (self/candidate/unverified) as
 separate axes, and **ownership is never `confirmed` from tool evidence** (a matching handle
@@ -32,10 +50,13 @@ USERNAME/HUMAN_NAME), honours `sort_by`/`sort_order` on `GET /scans`, and fixes 
 `paginate` page-past-end clamp. Rebuilding this fork needs the base image rebuilt first — see
 "Operating".
 
-Last verified: 2026-10-04 — 42/42 deployment checks pass; a USERNAME scan stored the clean
-value `Snaxxwax` (no quotes); a bounded Maigret run produced records with
-`ownership=candidate`, zero `ownership=confirmed`; MCP adapter connected from Claude Code,
-Hermes and (single-call) Codex.
+Last verified: 2026-10-04 on `a1e90b48` — 42/42 deployment checks pass. Live: SpiderFoot's
+own `tbl_scan_config` shows each Harvest scan enabled exactly its plan (email 8 modules,
+username 3, domain `sfp_dnsresolve`+`sfp_pgp`); replay of capture 212 produced 20
+`ownership=candidate` claims marked `derived:attribution/2` with the capture hash unchanged;
+the planner arm of the harness comparison spent exactly its 10-request investigation budget
+across 4–6 follow-ups. The MCP adapter drives headless from Claude Code, Hermes and Codex
+(Codex with `default_tools_approval_mode="approve"`, see README).
 
 ### Verified on the deployed commit (2026-10-03)
 
@@ -235,6 +256,35 @@ service that answered with a redirect cannot carry its exemption to wherever it 
    time. Service calls now use a separate direct client. Targets keep using the proxied one.
 
 ## SpiderFoot identity modules — and what does not work
+
+### Per-input module plans (2026-10-04, `a1e90b48`)
+
+The list below is now an **allowlist**, not the scan. Demonstrated live through the job path,
+each row cross-checked against SpiderFoot's own `tbl_scan_config._modulesenabled`:
+
+| Input (target type) | Harvest job | SF scan | Modules sent | Records (module) |
+|---|---|---|---|---|
+| `errlybird49@gmail.com` (EMAILADDR) | `3a7b41fb` | `8C39B07C` | accounts, debounce, gravatar, hudsonrock, names, pgp, tiktok_osint, wikileaks | accounts 4, tiktok_osint 2 |
+| `Snaxxwax` (USERNAME) | `16ea0166` | `79DC9EBB` | accounts, hudsonrock, tiktok_osint | accounts 5, tiktok_osint 2 |
+| `example.org` (INTERNET_NAME) | `06630f5d` | `01B622FF` | dnsresolve, pgp | pgp 74, dnsresolve 4 |
+
+All records are `ownership=candidate`. The USERNAME row is the first time `sfp_accounts` ran
+on a USERNAME-typed target (before the fork's `target_type` fix every handle scan was typed
+INTERNET_NAME). Unavailable capabilities are disclosed per plan: `excluded` (with the reason),
+`not_enabled` (fork modules that consume the type but are not allowlisted: 29 for EMAILADDR,
+7 for USERNAME, 87 for INTERNET_NAME), `tested` and `cascades`.
+
+The domain row is the second attempt. The first (`37ca834a`, SF scan `501D46C5`, plan
+dnsresolve/accounts/hudsonrock/pgp/wikileaks) showed SpiderFoot handing `sfp_pgp`'s addresses
+to `sfp_accounts` inside the scan; it ran past the 600 s tool timeout, and SpiderFoot kept
+running it for 20+ minutes afterwards (264 account events, out of budget) because only
+cancellation stopped a scan. Both are fixed: such consumers are excluded from a host plan
+(the reason names the producer), and every unfinished scan is stopped. `501D46C5` was stopped
+by hand with `DELETE`, which also erased its SpiderFoot record; Harvest now uses `/stop`.
+
+No SpiderFoot module API keys are configured. `sfp_tiktok_osint` is flagged `apikey` but has
+produced events keyless (EMAILADDR and USERNAME), which the plan honours.
+
 
 `HARVEST_SPIDERFOOT_MODULES` was `sfp_dnsresolve` alone. It is now:
 
