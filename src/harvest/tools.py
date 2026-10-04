@@ -872,11 +872,21 @@ _SF_TESTED: dict[tuple[str, str], str] = {
     ("sfp_names", "EMAILADDR"): "ran-empty",
     ("sfp_wikileaks", "EMAILADDR"): "ran-empty",
     ("sfp_dnsresolve", "INTERNET_NAME"): "events",
+    # Live demonstration 2026-10-04 (Harvest b2b56ae, SpiderFoot scans 79DC9EBB / 501D46C5):
+    # the first USERNAME-typed scans these modules have ever had.
+    ("sfp_accounts", "USERNAME"): "events",
+    ("sfp_tiktok_osint", "USERNAME"): "events",
+    ("sfp_hudsonrock", "USERNAME"): "ran-empty",
+    ("sfp_accounts", "INTERNET_NAME"): "events",
+    ("sfp_hudsonrock", "INTERNET_NAME"): "events",
+    ("sfp_pgp", "INTERNET_NAME"): "events",
+    ("sfp_wikileaks", "INTERNET_NAME"): "ran-empty",
 }
 
 # Identifier event types per kind of subject; see spiderfoot_plan for why only these are followed.
+_SF_PERSON_EVENTS = frozenset({"EMAILADDR", "USERNAME", "PHONE_NUMBER"})
 _SF_SUBJECT_KINDS = (
-    frozenset({"EMAILADDR", "USERNAME", "PHONE_NUMBER"}),
+    _SF_PERSON_EVENTS,
     frozenset({"INTERNET_NAME", "DOMAIN_NAME", "IP_ADDRESS", "IPV6_ADDRESS"}),
 )
 
@@ -924,19 +934,60 @@ def spiderfoot_plan(target_type: str, settings) -> dict:
         else:
             usable[module] = info
     follow = next((kind for kind in _SF_SUBJECT_KINDS if target_type in kind), frozenset())
-    reachable, selected = {target_type}, {}
-    changed = True
-    while changed:
-        changed = False
-        for module, info in usable.items():
-            hit = module not in selected and reachable.intersection(info["watched"])
-            if hit:
-                selected[module] = sorted(hit)
-                reachable.update(e for e in info["produced"] if e in follow)
-                changed = True
+    other = frozenset().union(*(k for k in _SF_SUBJECT_KINDS if k is not follow))
+
+    def closure(pool):
+        reachable, chosen, changed = {target_type}, {}, True
+        while changed:
+            changed = False
+            for module, info in pool.items():
+                hit = module not in chosen and reachable.intersection(info["watched"])
+                if hit:
+                    chosen[module] = sorted(hit)
+                    reachable.update(e for e in info["produced"] if e in follow)
+                    changed = True
+        return chosen
+
+    # Selection decides WHICH modules run; SpiderFoot then feeds every enabled module every
+    # event type it watches. So a module that would receive the OTHER subject's identifiers
+    # from another selected module is left out: on a domain, sfp_pgp's addresses would reach
+    # sfp_accounts (enabled for DOMAIN_NAME), which then derives handles from other people's
+    # addresses -- measured live on example.org, where that cascade also ran the scan past the
+    # tool timeout. Repeated to a fixpoint, since dropping one module can drop another's input.
+    selected = closure(usable)
+    while True:
+        leak = {
+            consumer: (producer, event)
+            for producer in selected
+            for event in usable[producer]["produced"]
+            if event in other
+            for consumer in selected
+            if consumer != producer and event in usable[consumer]["watched"]
+        }
+        if not leak:
+            break
+        for consumer, (producer, event) in leak.items():
+            excluded[consumer] = (
+                f"would also consume {event} from {producer} inside the scan (another "
+                f"subject's identifiers); remove {producer} from the allowlist to enable it"
+            )
+            usable.pop(consumer)
+        selected = closure(usable)
     for module in usable:
         if module not in selected:
             excluded[module] = f"consumes nothing reachable from the {target_type} target"
+    # Remaining in-scan hand-offs of a non-unique name, disclosed rather than prevented: a
+    # HUMAN_NAME reaches other modules as a search term. Records arrive labelled candidate.
+    cascades = sorted(
+        {
+            (producer, event, consumer)
+            for producer in selected
+            for event in usable[producer]["produced"]
+            if event not in follow and (event in other or event == "HUMAN_NAME")
+            for consumer in selected
+            if consumer != producer and event in usable[consumer]["watched"]
+        }
+    )
     # Disclose what the fork could do for this input that the allowlist does not enable.
     allowed = set(getattr(settings, "spiderfoot_modules", ()) or ())
     not_enabled = sorted(
@@ -945,6 +996,7 @@ def spiderfoot_plan(target_type: str, settings) -> dict:
     return {
         "target_type": target_type,
         "modules": sorted(selected),
+        "cascades": [{"from": p, "event": e, "to": c} for p, e, c in cascades],
         "consumes": selected,
         "excluded": excluded,
         "tested": {m: _SF_TESTED.get((m, target_type), "untested") for m in sorted(selected)},
