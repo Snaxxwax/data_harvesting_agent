@@ -1,5 +1,15 @@
 # Harvest OSINT stack — ovh-vps
 
+**v1.0.1** (2026-10-05): tag `v1.0.1`, SpiderFoot fork at `1a05a8a1`. Fixes the v1.0.0
+acceptance failures: SpiderFoot honours a stop within ~5 s (scanner final-pass wait now
+checks ABORT-REQUESTED), the Postgres password no longer reaches logs, exceptions or the
+config API (and was rotated, see `docs/validation/v1-acceptance.md`), and page/field evidence
+must be structural. **Credential rotation procedure** (SpiderFoot DB): new password via
+`ALTER USER` over stdin, update `POSTGRES_PASSWORD` in `spiderfoot-ng/.env` and
+`SPIDERFOOT_NG_POSTGRES_PASSWORD` in `/opt/harvest/credentials.env`, then
+`docker compose -f compose.core.yml --env-file .env up -d postgres api celery-worker` and
+`docker network connect harvest-egress sf-api` / `sf-celery-worker`.
+
 **v1.0.0** (2026-10-05): Harvest `main` at the `v1.0.0` tag, SpiderFoot fork
 `fix/auth-db-reconnect` at `75ca484c`. Checkout `/opt/harvest/app`, overlays tracked under
 `deploy/ovh-vps/`. `verify-deployment.sh`: 44/44. Acceptance evidence, root causes of job
@@ -15,9 +25,9 @@ v1 (PRs #26–#31) on top of `87e7a9a`:
   being polled for the whole timeout. Cause found on this host: a long scan leaks the celery
   child's Postgres pool and the next scan in that child dies before starting. Fixed by
   `SF_CELERY_MAX_TASKS_PER_CHILD=1` in `spiderfoot-core.yml` (checked by verify).
-- **Orphaned scans are stopped**: every 60 s the worker stops unfinished `harvest-*` scans
-  when no live task lease owns one (worker restart/crash). Measured: ABORTED 133 s after a
-  restart.
+- **Orphaned scans are stopped**: every 15 s the worker stops unfinished
+  `harvest-t<task>-*` scans whose task no longer holds its 30 s lease (worker crash).
+  Measured (v1.0.1): last new outbound tunnel 37.9 s after a SIGKILL.
 - **`HARVEST_WORKER_THREADS=2`** (compose.override.yaml, checked by verify): a job still runs
   one task at a time, but other jobs progress during a long scan.
 - **Crawl hygiene and page checks**: sign-in/OAuth/sign-up links are not followed; each
@@ -25,8 +35,8 @@ v1 (PRs #26–#31) on top of `87e7a9a`:
 - **Summary** `GET /jobs/{id}/summary` (MCP `get_summary`, UI Summary with Follow-up),
   **stop advice** naming the limit that fired, **field aliases** (fullname→display_name,
   url→profile_url), actionable failure reasons, socid ambiguous locators at 0.5.
-- Fork PR #2: `sfp_accounts` checks for a stop between sites (correct, but SpiderFoot's stop
-  still takes ~8 min to reach the module; see the acceptance doc's Limitations).
+- Fork PR #2: `sfp_accounts` checks for a stop between sites (effective once fork PR #3
+  made the scanner see the stop during its final-pass wait, v1.0.1).
 
 Earlier: `a1e90b48` (PRs #22–#24, deployed 2026-10-04) adds, on top of `5764d22a` (PR #19):
 
