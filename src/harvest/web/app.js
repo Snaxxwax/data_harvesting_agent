@@ -637,7 +637,8 @@ function renderOverview(node, overview, jobId, active) {
   if (overview.accounts.length) {
     const rows = overview.accounts.map((a) => {
       const action = el("td");
-      if (!active && a.page_check.startsWith("unchecked") && /^https?:/.test(a.url)) {
+      // Only pages never fetched: a robots.txt or HTTP block would just be blocked again.
+      if (!active && /^unchecked: (not_fetched|cancelled|pending)/.test(a.page_check) && /^https?:/.test(a.url)) {
         action.appendChild(
           el("button", {
             class: "secondary",
