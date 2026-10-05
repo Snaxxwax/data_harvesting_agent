@@ -661,6 +661,7 @@ class Engine:
                 cancelled,
                 top_sites=task["payload"].get("top_sites"),
                 timeout=allowance,
+                task_id=task["id"],
             )
             partial = json.loads(cap.body).get("partial")
             # `crawl` rides on the extract task because that is where leads are selected.
@@ -842,19 +843,20 @@ class Engine:
         return self.store.job(job_id)
 
     def recover_external_scans(self):
-        """Stop SpiderFoot scans orphaned by a dead worker, when no live task owns one."""
+        """Stop SpiderFoot scans orphaned by a dead worker (their task's lease lapsed)."""
         if "spiderfoot" not in self.settings.tools or not self.settings.spiderfoot_url:
             return 0
         with self.store.connection() as db:
-            live = db.execute(
-                """SELECT count(*) FROM tasks WHERE kind='tool' AND status='running'
-                AND lease_until>? AND payload LIKE '%"tool":"spiderfoot"%'""",
-                (time.time(),),
-            ).fetchone()[0]
-        if live:
-            return 0
+            live = {
+                r[0]
+                for r in db.execute(
+                    """SELECT id FROM tasks WHERE kind='tool' AND status='running'
+                    AND lease_until>? AND payload LIKE '%"tool":"spiderfoot"%'""",
+                    (time.time(),),
+                )
+            }
         try:
-            stopped = tools.stop_orphaned_spiderfoot_scans(self.settings)
+            stopped = tools.stop_orphaned_spiderfoot_scans(self.settings, live)
         except httpx.HTTPError as exc:
             log.warning("spiderfoot orphan sweep failed: %s", type(exc).__name__)
             return 0
