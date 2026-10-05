@@ -317,7 +317,9 @@ def test_tool_run_is_bounded_by_the_remaining_wall_clock(tmp_path, monkeypatch):
     engine, job_id = _tool_engine(tmp_path, seconds=60)
     seen = {}
 
-    def fake_run(name, target, settings, cancelled=None, top_sites=None, timeout=None):
+    def fake_run(
+        name, target, settings, cancelled=None, top_sites=None, timeout=None, task_id=None
+    ):
         seen["timeout"] = timeout
         raise ActionableError("spiderfoot exceeded its 60s time allowance")
 
@@ -433,7 +435,9 @@ def test_a_long_tool_scan_does_not_stall_other_jobs(engine, source, monkeypatch)
 
     release = threading.Event()
 
-    def slow_tool(name, target, settings, cancelled=None, top_sites=None, timeout=None):
+    def slow_tool(
+        name, target, settings, cancelled=None, top_sites=None, timeout=None, task_id=None
+    ):
         release.wait(20)
         url = f"tool://{name}/{target}"
         return Capture(url, url, 200, {"content-type": "application/json"}, b'{"results": []}', 0)
@@ -468,17 +472,23 @@ def test_a_long_tool_scan_does_not_stall_other_jobs(engine, source, monkeypatch)
             thread.join(10)
 
 
-def test_orphaned_spiderfoot_scans_are_stopped_only_when_no_task_owns_one(tmp_path, monkeypatch):
-    """A worker that dies mid-scan leaves the SpiderFoot scan running; the sweep stops it,
-    but never while a live Harvest task is running a scan."""
+def test_the_sweep_stops_only_scans_whose_task_is_gone(tmp_path, monkeypatch):
+    """A worker that dies mid-scan leaves its SpiderFoot scan running; the sweep stops that
+    scan, never one a live task owns, and never a scan Harvest did not start."""
     calls = []
+    engine, job_id = _tool_engine(tmp_path, seconds=900)
+    engine.settings.spiderfoot_url = "http://sf.test"
+    engine.settings.spiderfoot_api_key = "k"
+    task = engine.store.claim(job_id)  # a live lease: a worker is running this scan
 
     def handler(request):
         calls.append(request.method + " " + request.url.path)
         items = [
-            {"scan_id": "A1", "name": "harvest-exampleuser", "status": "RUNNING"},
-            {"scan_id": "A2", "name": "harvest-example.org", "status": "FINISHED"},
-            {"scan_id": "A3", "name": "manual-scan", "status": "RUNNING"},
+            {"scan_id": "LIVE", "name": f"harvest-t{task['id']}-exampleuser", "status": "RUNNING"},
+            {"scan_id": "DEAD", "name": "harvest-t999999-exampleuser", "status": "RUNNING"},
+            {"scan_id": "OLD", "name": "harvest-example.org", "status": "RUNNING"},
+            {"scan_id": "DONE", "name": "harvest-t999998-x", "status": "FINISHED"},
+            {"scan_id": "MANUAL", "name": "manual-scan", "status": "RUNNING"},
         ]
         return httpx.Response(200, json={"items": items})
 
@@ -488,15 +498,44 @@ def test_orphaned_spiderfoot_scans_are_stopped_only_when_no_task_owns_one(tmp_pa
         "Client",
         lambda *a, **k: real(*a, **{**k, "transport": httpx.MockTransport(handler)}),
     )
-    engine, job_id = _tool_engine(tmp_path, seconds=900)
-    engine.settings.spiderfoot_url = "http://sf.test"
-    engine.settings.spiderfoot_api_key = "k"
-    task = engine.store.claim(job_id)  # a live lease: a worker is running this scan
-    assert engine.recover_external_scans() == 0 and calls == []
+    # The live task's scan and the legacy-named one (owner unknown) are left alone.
+    assert engine.recover_external_scans() == 1
+    assert calls == ["GET /api/v1/scans", "POST /api/v1/scans/DEAD/stop"]
+    calls.clear()
     with engine.store.connection() as db:
         db.execute("UPDATE tasks SET lease_until=0 WHERE id=?", (task["id"],))
-    assert engine.recover_external_scans() == 1
-    assert calls == ["GET /api/v1/scans", "POST /api/v1/scans/A1/stop"]
+    assert engine.recover_external_scans() == 3
+    assert sorted(calls[1:]) == [f"POST /api/v1/scans/{s}/stop" for s in ("DEAD", "LIVE", "OLD")]
+
+
+def test_a_scan_is_named_after_its_owning_task(monkeypatch):
+    import harvest.tools as t
+
+    created = []
+
+    def handler(request):
+        if request.method == "POST" and request.url.path == "/api/v1/scans":
+            created.append(json.loads(request.content)["name"])
+            return httpx.Response(201, json={"id": "S3"})
+        if request.url.path.endswith("/events"):
+            return httpx.Response(200, json={"events": [], "has_next": False})
+        return httpx.Response(200, json={"status": "FINISHED"})
+
+    real = httpx.Client
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda *a, **k: real(*a, **{**k, "transport": httpx.MockTransport(handler)}),
+    )
+    settings = Settings(
+        tools=frozenset({"spiderfoot"}),
+        spiderfoot_url="http://sf.test",
+        spiderfoot_api_key="k",
+        spiderfoot_modules=("sfp_accounts",),
+        proxy=None,
+    )
+    t.run("spiderfoot", "exampleuser", settings, task_id=42)
+    assert created == ["harvest-t42-exampleuser"]
 
 
 def test_a_partial_tool_run_makes_the_job_partial(tmp_path, monkeypatch):
@@ -504,7 +543,9 @@ def test_a_partial_tool_run_makes_the_job_partial(tmp_path, monkeypatch):
 
     engine, job_id = _tool_engine(tmp_path, seconds=900)
 
-    def partial_run(name, target, settings, cancelled=None, top_sites=None, timeout=None):
+    def partial_run(
+        name, target, settings, cancelled=None, top_sites=None, timeout=None, task_id=None
+    ):
         body = json.dumps({"tool": name, "results": [], "partial": "scan stopped after 30s"})
         url = f"tool://{name}/{target}"
         return Capture(url, url, 200, {"content-type": "application/json"}, body.encode(), 0)
@@ -537,7 +578,9 @@ def test_a_running_tool_holds_only_a_short_lease(tmp_path, monkeypatch):
     engine, job_id = _tool_engine(tmp_path, seconds=900)
     seen = {}
 
-    def slow_run(name, target, settings, cancelled=None, top_sites=None, timeout=None):
+    def slow_run(
+        name, target, settings, cancelled=None, top_sites=None, timeout=None, task_id=None
+    ):
         clock.sleep(2.5)  # two heartbeats
         with engine.store.connection() as db:
             seen["lease"] = (

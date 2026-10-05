@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "harvest-platform"
-version = "1.0.0"
+version = "1.0.1"
 description = "Durable, evidence-first self-hosted data harvesting"
 readme = "README.md"
 license = "MIT"

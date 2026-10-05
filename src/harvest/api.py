@@ -26,7 +26,7 @@ from .export import render_csv
 from .models import BudgetExceeded, JobSpec, ReplaySpec
 from .tools import TOOLS
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 
 WEB_DIR = Path(__file__).parent / "web"
