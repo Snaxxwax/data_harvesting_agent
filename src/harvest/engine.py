@@ -33,6 +33,7 @@ from .tools import run as run_tool
 
 log = logging.getLogger("harvest")
 ACTIVE = {"queued", "running"}
+TOOL_FINISH_MARGIN = 15  # seconds a tool run leaves before the deadline to save its results
 
 # ponytail: name heuristics, not a site-specific map. Misses an unconventional sign-in path;
 # add a pattern when a capture shows one.
@@ -593,7 +594,10 @@ class Engine:
         if task["kind"] == "tool":
             # Bounded by the job/investigation wall clock as well as HARVEST_TOOL_TIMEOUT: a
             # scan started with 4 minutes left used to run its full 10, past the deadline.
-            left = self.store.seconds_left(task)
+            # The run must END before the deadline, with time left to read its results and
+            # record the capture: at the deadline itself any worker's expire_deadlines stops
+            # the job, revoking this task's lease, and a partial result was then discarded.
+            left = self.store.seconds_left(task) - TOOL_FINISH_MARGIN
             if left < 5:
                 raise BudgetExceeded("wall-clock deadline reached before the tool could run")
             allowance = min(self.settings.tool_timeout, left)
