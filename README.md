@@ -1,9 +1,11 @@
 # Harvest Platform
 
+Operator guide: [docs/USER_GUIDE.md](docs/USER_GUIDE.md). v1 acceptance evidence: [docs/validation/v1-acceptance.md](docs/validation/v1-acceptance.md).
+
 A self-hosted harvesting service that turns objectives or seed URLs into durable jobs,
 structured observations, raw evidence, and inspectable research decisions.
 
-**Status: tested 0.5 foundation, with a browser UI and bounded multi-pass document reading.**
+**Status: v1.0.0 — private deployment (see the operator guide and acceptance evidence above).**
 Durable acquisition, offline replay, resumable record batches, audited model inputs and a
 server-rendered browser UI are implemented. This is not yet a fully hardened general-purpose
 research product. Current capabilities and the limits of verification are explicit below.
