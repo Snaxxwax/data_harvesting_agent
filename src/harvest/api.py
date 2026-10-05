@@ -296,6 +296,10 @@ def create_app(settings: Settings | None = None):
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    @protected.get("/jobs/{job_id}/summary")
+    def summary(job_id: str):
+        return engine.store.job_summary(job_id)
+
     @protected.get("/jobs/{job_id}/records")
     def records(job_id: str):
         return engine.store.job_records(job_id)

@@ -14,6 +14,7 @@ import httpx
 from .config import Settings
 from .extract import Extractors, http_url
 from .models import (
+    ActionableError,
     AuthorizationRequired,
     BudgetExceeded,
     JobSpec,
@@ -31,6 +32,63 @@ from .tools import run as run_tool
 
 log = logging.getLogger("harvest")
 ACTIVE = {"queued", "running"}
+
+# ponytail: name heuristics, not a site-specific map. Misses an unconventional sign-in path;
+# add a pattern when a capture shows one.
+_AUTH_SEGMENT = re.compile(
+    r"(?i)^(?:(?:log|sign)[-_]?(?:in|on|up|out)\w*|register|registration|join|auth|oauth2?"
+    r"|sso|password|forgot\w*|reset\w*|request(?:password|username))$"
+)
+_AUTH_TEXT = re.compile(
+    r"(?i)\b(?:log ?in|log ?out|sign ?(?:in|up|on|out)|forgot|password|create (?:an )?account)\b"
+)
+
+
+def auth_like(url: str, text: str = "") -> bool:
+    """A sign-in/sign-up/password page, by path segment or link text. Never evidence about a
+    subject, and following one loops through returnUrl/OAuth redirects."""
+    segments = [seg for seg in urlsplit(url).path.split("/") if seg]
+    return any(_AUTH_SEGMENT.match(seg) for seg in segments) or bool(_AUTH_TEXT.search(text))
+
+
+def identifier_in_text(text: str, identifier: str):
+    """(start, end) of the first occurrence of `identifier` that is NOT inside a URL.
+
+    Profile-not-found and sign-in pages routinely echo the requested handle back inside
+    `?next=/handle/` or `returnUrl=...%3Dhandle`; that is the request, not the subject."""
+    lowered, needle = text.lower(), identifier.lower()
+    start = lowered.find(needle)
+    while start >= 0:
+        if not (start and lowered[start - 1] in "/=") and lowered[
+            max(0, start - 3) : start
+        ] not in (
+            "%2f",
+            "%3d",
+        ):
+            return start, start + len(needle)
+        start = lowered.find(needle, start + 1)
+    return None
+
+
+def page_check(identifiers, requested_url, final_url, text, duplicate_of=None):
+    """What a fetched page says about a searched identifier: verdict, evidence, locator.
+
+    Only `identifier_present` lets a page count as (or expand from) the subject's profile.
+    A redirect away from the profile, a sign-in wall, a page byte-identical to another URL's
+    (an archived or catch-all site) and a page that never names the identifier do not."""
+    if duplicate_of is not None:
+        return "duplicate_content", f"capture {duplicate_of}", f"capture:{duplicate_of}"
+    requested, final = urlsplit(requested_url).path, urlsplit(final_url).path
+    if requested.rstrip("/") != final.rstrip("/") and not any(
+        i.lower() in final.lower() for i in identifiers
+    ):
+        return "redirected_away", final_url, "final_url"
+    if auth_like(final_url):
+        return "login_wall", final_url, "final_url"
+    for identifier in identifiers:
+        if span := identifier_in_text(text, identifier):
+            return "identifier_present", text[span[0] : span[1]], f"chars:{span[0]}-{span[1]}"
+    return "identifier_absent", final_url, "final_url"
 
 
 class Engine:
@@ -303,6 +361,9 @@ class Engine:
                     )
         offline = task["execution"] == "offline_replay"
         crawl = task["payload"].get("crawl", True)
+        verdict = self.check_page(task, cap, extraction) if batch is None else None
+        if verdict not in (None, "identifier_present"):
+            crawl = False  # a generic page's links are the site's, not the subject's
         accepted = [] if offline or not crawl else self.select_leads(task, extraction.leads)
         # Every lead the extraction produced that did not become a task: already seen, out of
         # scope, over the depth limit, deduplicated, past the per-task cap, or not crawled at
@@ -355,8 +416,63 @@ class Engine:
                 "offline": offline,
                 "crawl": crawl,
                 "suppressed_leads": suppressed,
+                **({"page_check": verdict} if verdict else {}),
             },
         )
+
+    def identifiers(self, task):
+        """The identifiers this investigation searched for: tool targets and declared target
+        identifiers, of this job and of its root (a follow-up's own spec carries no tools)."""
+        specs = [JobSpec.model_validate_json(task["spec"])]
+        root = self.store.job(task["job_id"]).get("root_id")
+        if root:
+            specs.append(JobSpec.model_validate(self.store.job(root)["spec"]))
+        found = set()
+        for spec in specs:
+            found.update(t.target for t in spec.tools)
+            for target in spec.investigation.targets if spec.investigation else ():
+                found.update(v for values in target.identifiers.values() for v in values)
+        # The local part is how a handle shows up on a profile page for an email target.
+        return sorted(
+            {i.split("@")[0] if "@" in i[1:] else i.lstrip("@") for i in found if len(i) >= 3}
+        )
+
+    def check_page(self, task, cap, extraction):
+        """Record a page_check claim for a fetched page in an identifier investigation, and
+        return its verdict. Byte-identical pages under another URL in the same job are
+        duplicates in any job: their links were already offered once."""
+        if not cap["url"].startswith(("http://", "https://")):
+            return None
+        with self.store.connection() as db:
+            row = db.execute(
+                "SELECT min(id) FROM captures WHERE job_id=? AND body_hash=? AND id<? AND url<>?",
+                (task["job_id"], cap["body_hash"], cap["id"], cap["url"]),
+            ).fetchone()
+        duplicate_of = row[0] if row else None
+        identifiers = self.identifiers(task)
+        if not identifiers:
+            return "duplicate_content" if duplicate_of else None
+        from .models import Claim
+
+        verdict, evidence, locator = page_check(
+            identifiers,
+            cap["url"],
+            cap["final_url"],
+            cap["body"].decode("utf-8", errors="replace"),
+            duplicate_of,
+        )
+        extraction.claims.append(
+            Claim(
+                entity_key="url:" + canonical_url(cap["url"]),
+                field="page_check",
+                value=verdict,
+                evidence=evidence[:20000],
+                locator=locator,
+                method="derived:page-check/1",
+                confidence=1.0 if verdict == "identifier_present" else 0.9,
+            )
+        )
+        return verdict
 
     def select_leads(self, task, leads, *, search=False):
         spec = JobSpec.model_validate_json(task["spec"])
@@ -380,6 +496,8 @@ class Engine:
                 continue
             url = http_url(lead.url)
             if not url or url in seen or url in added or not in_scope(url, spec):
+                continue
+            if lead.reason.startswith("link:") and auth_like(url, lead.reason[5:]):
                 continue
             if (
                 spec.mode in {"enumerative", "continuous"}
@@ -472,13 +590,33 @@ class Engine:
             )
             return
         if task["kind"] == "tool":
+            # Bounded by the job/investigation wall clock as well as HARVEST_TOOL_TIMEOUT: a
+            # scan started with 4 minutes left used to run its full 10, past the deadline.
+            left = self.store.seconds_left(task)
+            if left < 5:
+                raise BudgetExceeded("wall-clock deadline reached before the tool could run")
+            allowance = min(self.settings.tool_timeout, left)
+            with self.store.transaction() as db:
+                # One task per job runs at a time, so a long scan is otherwise a silent gap.
+                self.store.event(
+                    db,
+                    task["job_id"],
+                    "tool_started",
+                    {
+                        "task": task["id"],
+                        "tool": task["payload"]["tool"],
+                        "max_seconds": round(allowance),
+                    },
+                )
             cap = run_tool(
                 task["payload"]["tool"],
                 task["payload"]["target"],
                 self.settings,
                 cancelled,
                 top_sites=task["payload"].get("top_sites"),
+                timeout=allowance,
             )
+            partial = json.loads(cap.body).get("partial")
             # `crawl` rides on the extract task because that is where leads are selected.
             # A tool run is useful without it: the capture and its claims are the evidence,
             # while crawling every profile it reports is a separate and much larger request
@@ -497,7 +635,12 @@ class Engine:
                         "reason": "interpret tool output",
                     }
                 ],
-                details={"tool": task["payload"]["tool"], "acquired": True, "crawl": crawl},
+                details={
+                    "tool": task["payload"]["tool"],
+                    "acquired": True,
+                    "crawl": crawl,
+                    **({"partial": partial} if partial else {}),
+                },
             )
             return
         fetcher = self.fetcher_factory(self.store, self.settings, task)
@@ -599,6 +742,8 @@ class Engine:
                     task, type(exc).__name__, min(60, 2 ** task["attempts"]) + random.uniform(0, 1)
                 )
             )
+        except ActionableError as exc:
+            self._if_owned(lambda exc=exc: self.store.fail(task, str(exc)[:500]))
         except (ValueError, TypeError, KeyError, RecursionError) as exc:
             self._if_owned(
                 lambda exc=exc: self.store.fail(

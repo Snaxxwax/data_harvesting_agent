@@ -59,10 +59,11 @@ class SocidHtmlAdapter(HtmlAdapter):
             # A short ID may occur in unrelated markup before the parser's actual
             # source. Without an offset from socid, do not pretend the first match
             # identifies the supporting occurrence.
+            ambiguous = page.find(evidence, start + 1) >= 0
             locator = (
-                f"socid:{scheme}:chars:{start}-{start + len(evidence)}"
-                if page.find(evidence, start + 1) < 0
-                else f"socid:{scheme}:ambiguous-value:{field}"
+                f"socid:{scheme}:ambiguous-value:{field}"
+                if ambiguous
+                else f"socid:{scheme}:chars:{start}-{start + len(evidence)}"
             )
             result.claims.append(
                 Claim(
@@ -72,6 +73,9 @@ class SocidHtmlAdapter(HtmlAdapter):
                     evidence=evidence,
                     locator=locator,
                     method="html",
+                    # The value is on the page, but no locator pins the occurrence that
+                    # supports this field (a "22" or "0" appears all over markup).
+                    confidence=0.5 if ambiguous else 1.0,
                 )
             )
             result.extractor = self.name

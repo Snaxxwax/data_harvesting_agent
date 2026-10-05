@@ -140,7 +140,18 @@ def main():
         stop = threading.Event()
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, lambda *_: stop.set())
-        engine.worker(stop, args.once)
+        if args.once or engine.settings.worker_threads == 1:
+            engine.worker(stop, args.once)
+        else:
+            threads = [
+                threading.Thread(target=engine.worker, args=(stop,), daemon=True)
+                for _ in range(engine.settings.worker_threads)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                while thread.is_alive():  # timed joins keep SIGTERM handling responsive
+                    thread.join(1)
     elif args.command == "status":
         print(json.dumps(engine.store.job(args.job_id), indent=2))
     elif args.command == "resume":

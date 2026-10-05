@@ -66,6 +66,10 @@ services:
       args:
         HARVEST_TOOL_PACKAGES: *tool-packages
     networks: [default, osint-net]
+    environment:
+      # A job still runs one task at a time; two threads stop one job's long maigret or
+      # SpiderFoot scan from stalling every other job and follow-up for its duration.
+      HARVEST_WORKER_THREADS: "2"
 
 volumes:
   spiderfoot-data:

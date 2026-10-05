@@ -8,13 +8,42 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
-from .models import BudgetExceeded, JobSpec, LostLease
+from .models import FIELD_ALIASES, BudgetExceeded, JobSpec, LostLease, canonical_url
 
 
 def packed(value) -> str:
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
     )
+
+
+# Which limit to raise for each stop reason. The old UI said "raise the request budget" for
+# every budget stop, including a wall-clock stop at 26/100 requests.
+_STOP_ADVICE = (
+    ("wall-clock", "the time budget ran out: raise limits.seconds (requests were not the limit)"),
+    ("tool_runs", "every allowed tool run was used: raise limits.tool_runs"),
+    ("requests", "the request budget ran out: raise limits.requests"),
+    ("bytes", "the download budget ran out: raise limits.bytes"),
+    ("task", "the task budget ran out: raise limits.tasks or lower limits.depth"),
+    ("records", "the record budget ran out: raise limits.records"),
+    ("claims", "the claim budget ran out: raise limits.claims"),
+    ("model", "the model budget ran out: raise limits.model_calls/model_tokens"),
+    ("cost", "the spend budget ran out: raise limits.cost_usd"),
+)
+
+
+def stop_advice(status, reason):
+    if status == "plateau":
+        return "stopped because recent pages added nothing new; results are what was found"
+    if status == "cancelled":
+        return "cancelled; evidence collected before the cancellation is kept"
+    if status != "budget_exhausted":
+        return None
+    reason = reason or ""
+    for needle, advice in _STOP_ADVICE:
+        if needle in reason:
+            return advice
+    return f"a budget ran out ({reason}); see limits"
 
 
 def digest(value: str | bytes) -> str:
@@ -206,6 +235,23 @@ class Store:
             (root, root),
         ).fetchone()
         return limits, used, tasks, tools, totals[len(self._SHARED)]
+
+    def seconds_left(self, task):
+        """Wall clock remaining for this task's job AND its investigation, whichever is less.
+
+        A tool run is one task that can take minutes; it must be bounded by this, not by
+        HARVEST_TOOL_TIMEOUT alone, or it runs on past the deadline the operator set."""
+        with self.connection() as db:
+            job = db.execute(
+                "SELECT spec,started,root_id,id FROM jobs WHERE id=?", (task["job_id"],)
+            ).fetchone()
+            limits = JobSpec.model_validate_json(job["spec"]).limits
+            ilimits, _, _, _, started = self._investigation_usage(db, job["root_id"] or job["id"])
+        now = time.time()
+        left = [limits.seconds - (now - (job["started"] or now))]
+        if started is not None:
+            left.append(ilimits.seconds - (now - started))
+        return max(0.0, min(left))
 
     def _admit_child(self, db, root, initial):
         """Refuse a follow-up the investigation can no longer afford, inside the creating
@@ -952,6 +998,7 @@ class Store:
         with self.connection() as db:
             fields = self._satisfied_fields(result["spec"], self._fields(db, job_id))
             result["missing_fields"] = [f for f in result["spec"]["fields"] if f not in fields]
+            result["stop_advice"] = stop_advice(result["status"], result["reason"])
             result["coverage"] = (
                 "unmeasured; completion describes work execution, not population completeness"
             )
@@ -982,6 +1029,7 @@ class Store:
         # hop from record name to dossier name, so chaining a->b with b->c must NOT credit
         # c, and membership must not depend on rule or key iteration order.
         satisfied = set(observed)
+        satisfied.update(f for f, sources in FIELD_ALIASES.items() if observed & set(sources))
         for rule in (spec.get("investigation") or {}).get("sources") or []:
             for source_field, dossier_field in (rule.get("field_map") or {}).items():
                 if source_field in observed:
@@ -1258,11 +1306,98 @@ class Store:
                 field["conflict"] = len(unique) > 1
                 field["value"] = field["candidates"][0]["value"] if len(unique) == 1 else None
             for name in requested_fields:
+                alias = next(
+                    (a for a in FIELD_ALIASES.get(name, ()) if a in entity["fields"]), None
+                )
                 entity["fields"].setdefault(
-                    name, {"value": None, "conflict": False, "missing": True, "candidates": []}
+                    name,
+                    {**entity["fields"][alias], "via": alias}
+                    if alias
+                    else {"value": None, "conflict": False, "missing": True, "candidates": []},
                 )
             results.append(entity)
         return sorted(results, key=lambda e: e["entity_id"])
+
+    def job_summary(self, job_id):
+        """One row per account a tool reported, with the three questions kept apart:
+        does a profile exist (tool's `existence`), did our own fetch of it show the searched
+        identifier (`page_check`, from this job or its follow-ups), and is it the subject's
+        (`ownership` -- never confirmed by tool evidence). Unknowns are listed, not implied."""
+        job = self.job(job_id)
+        with self.connection() as db:
+            jobs = [job_id] + [
+                r[0] for r in db.execute("SELECT id FROM jobs WHERE root_id=?", (job_id,))
+            ]
+            marks = ",".join("?" * len(jobs))
+            fetches = {}
+            for key, status, error in db.execute(
+                f"SELECT key,status,error FROM tasks WHERE kind='fetch' AND job_id IN ({marks})",
+                jobs,
+            ):
+                if fetches.get(key, ("",))[0] != "done":
+                    fetches[key] = (status, error)
+        records = [r for j in jobs for r in self.job_records(j)]
+        checks = {
+            r["entity_key"]: r["fields"]["page_check"]["value"]
+            for r in records
+            if "page_check" in r["fields"] and not r["fields"]["page_check"].get("missing")
+        }
+
+        def value(fields, name):
+            field = fields.get(name) or {}
+            return None if field.get("missing") or field.get("conflict") else field.get("value")
+
+        accounts = []
+        for record in records:
+            fields = record["fields"]
+            if value(fields, "existence") is None or not isinstance(value(fields, "url"), str):
+                continue
+            url = value(fields, "url")
+            try:
+                canon = canonical_url(url)
+            except ValueError:
+                canon = url
+            check = checks.get("url:" + canon)
+            if check is None:
+                status, error = fetches.get(canon, ("not_fetched", None))
+                check = f"unchecked: {error or status}"
+            accounts.append(
+                {
+                    "site": value(fields, "sitename"),
+                    "url": url,
+                    "existence": value(fields, "existence"),
+                    "page_check": check,
+                    "ownership": value(fields, "ownership"),
+                    "display_name": value(fields, "display_name"),
+                    "entity_id": record["entity_id"],
+                }
+            )
+        accounts.sort(
+            key=lambda a: (
+                a["page_check"] != "identifier_present",
+                a["existence"] != "observed",
+                a["site"] or "",
+            )
+        )
+        unknowns = [f"requested field never observed: {f}" for f in job["missing_fields"]]
+        if accounts:
+            unknowns.append(
+                "ownership: no account is confirmed as the subject's; a matching handle or a "
+                "page naming it shows an account exists, not who runs it"
+            )
+        unchecked = sum(a["page_check"].startswith("unchecked") for a in accounts)
+        if unchecked:
+            unknowns.append(f"{unchecked} reported account(s) were never fetched or verified")
+        return {
+            "job_id": job_id,
+            "status": job["status"],
+            "reason": job["reason"],
+            "stop_advice": job["stop_advice"],
+            "requests": f"{job['requests']}/{job['spec']['limits']['requests']}",
+            "accounts": accounts,
+            "verified_pages": sum(a["page_check"] == "identifier_present" for a in accounts),
+            "unknowns": unknowns,
+        }
 
     def dossier(self, job_id):
         """Job-scoped investigation view: exact-identifier reconciliation, never truth scoring.

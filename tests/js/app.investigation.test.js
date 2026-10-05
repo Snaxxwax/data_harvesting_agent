@@ -118,3 +118,14 @@ test("canCreateInvestigationJob still blocks a seedless plan with no tool select
   // Absent argument must behave like none selected, so existing callers keep their meaning.
   assert.equal(canCreateInvestigationJob([], { search_configured: false }), false);
 });
+
+test("formatApiErrorDetail turns a structured refusal into its reason and suggestion", () => {
+  assert.equal(
+    formatApiErrorDetail({
+      error: "authorization_required",
+      reason: "that URL was not discovered by this investigation",
+      suggestion: "start a new investigation with seed https://x.test/",
+    }),
+    "that URL was not discovered by this investigation (start a new investigation with seed https://x.test/)"
+  );
+});

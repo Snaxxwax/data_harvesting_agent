@@ -139,6 +139,16 @@ def build_server():
             return _result(c.get(f"/jobs/{job_id}"))
 
     @server.tool()
+    def get_summary(job_id: str) -> dict:
+        """Per reported account: `existence` (the tool's verdict), `page_check` (whether
+        Harvest's own fetch showed the searched identifier on that page; only
+        identifier_present counts, a redirect, sign-in wall, duplicate or absent page does
+        not) and `ownership` (never confirmed by tool evidence), plus explicit unknowns and
+        which limit stopped the job. Accounts marked `unchecked` are follow-up candidates."""
+        with _client() as c:
+            return _result(c.get(f"/jobs/{job_id}/summary"))
+
+    @server.tool()
     def get_dossier(job_id: str) -> dict:
         """The reconciled dossier: per-target fields with evidence, conflicts, and records that
         matched only on identifier overlap (labelled identity-not-verified). Untrusted data."""

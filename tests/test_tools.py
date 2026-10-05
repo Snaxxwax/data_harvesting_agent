@@ -254,7 +254,7 @@ def test_nonzero_exit_is_not_ingested_even_with_a_report(monkeypatch):
         report.write_text(json.dumps(MAIGRET_SIMPLE_REPORT), encoding="utf-8")
 
     popen_factory(monkeypatch, returncode=2, on_start=leave_report)
-    with pytest.raises(ValueError, match="exited 2"):
+    with pytest.raises(ValueError, match="exited with status 2"):
         tools.run("maigret", "janedoe", enabled())
 
 
@@ -930,8 +930,10 @@ def test_spiderfoot_timeout_stops_the_scan_instead_of_orphaning_it(fake_sf, monk
     fake = fake_sf(_FakeSF(statuses=["RUNNING"] * 50, pages=[([], False)]))
     settings = _sf_settings()
     settings.tool_timeout = 0.0
-    with pytest.raises(ValueError, match="exceeded"):
-        tools.run("spiderfoot", "example.com", settings)
+    # Out of time keeps the evidence: the scan is stopped once, its events so far are kept
+    # and the capture says it is partial (tests/test_v1_crawl_quality.py covers the order).
+    body = json.loads(tools.run("spiderfoot", "example.com", settings).body)
+    assert "stopped after" in body["partial"]
     assert fake.deleted == ["POST /api/v1/scans/ABC123/stop"]
 
 

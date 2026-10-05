@@ -30,7 +30,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .extract import http_url
-from .models import TOOL_TARGET_PATTERN, LostLease, PolicyDenied
+from .models import TOOL_TARGET_PATTERN, ActionableError, LostLease, PolicyDenied
 from .network import Capture
 
 log = logging.getLogger("harvest")
@@ -128,7 +128,10 @@ def _exec(
                     # and a run that exceeded its wall clock is not more likely to fit on a
                     # second try. Retrying would make limits.tool_runs bound declarations
                     # rather than actual invocations.
-                    raise ValueError(f"{argv[0]} exceeded {timeout:g}s")
+                    raise ActionableError(
+                        f"{Path(argv[0]).name} exceeded its {timeout:.0f}s"
+                        " time allowance (the lower of the job's remaining wall clock and HARVEST_TOOL_TIMEOUT)"
+                    )
                 try:
                     # Documented as safe to retry after a timeout without losing output.
                     stdout, _stderr = proc.communicate(timeout=min(1, remaining))
@@ -141,7 +144,9 @@ def _exec(
                     # ingesting it would present an incomplete scan as a finished one. Every
                     # nonzero exit in maigret is a startup/config failure or an interrupt,
                     # never a per-site error.
-                    raise ValueError(f"{argv[0]} exited {proc.returncode}")
+                    raise ActionableError(
+                        f"{Path(argv[0]).name} exited with status {proc.returncode}"
+                    )
                 return subprocess.CompletedProcess(argv, proc.returncode, stdout, _stderr)
     except FileNotFoundError as exc:
         raise PolicyDenied(f"{argv[0]} is not installed in this worker image") from exc
@@ -428,10 +433,10 @@ def _maigret(
     # rejects "/", so the name is the target verbatim.
     report = Path(workdir) / f"report_{target}_simple.json"
     if not report.exists():
-        raise ValueError("maigret exited cleanly but wrote no JSON report")
+        raise ActionableError("maigret exited cleanly but wrote no JSON report")
     data = json.loads(report.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        raise ValueError("maigret JSON report was not an object keyed by sitename")
+        raise ActionableError("maigret JSON report was not an object keyed by sitename")
     return _merge_subdomain_duplicates(
         [
             _maigret_record(name, site, target)
@@ -539,10 +544,10 @@ def _ghunt(
         log.warning("ghunt is proxied only through HTTP(S)_PROXY, which it may ignore")
     _exec(argv, timeout, workdir, cancelled, env=env)
     if not report.exists():
-        raise ValueError("ghunt exited cleanly but wrote no JSON report")
+        raise ActionableError("ghunt exited cleanly but wrote no JSON report")
     data = json.loads(report.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        raise ValueError("ghunt JSON report was not an object keyed by container")
+        raise ActionableError("ghunt JSON report was not an object keyed by container")
     records = []
     for name, container in data.items():
         if not isinstance(container, dict):
@@ -1008,6 +1013,9 @@ def spiderfoot_plan(target_type: str, settings) -> dict:
 # service is infrastructure on a private network, not a scan target, so these calls
 # deliberately bypass the fetcher's budgets and robots handling -- the scan SpiderFoot
 # then runs is what costs outbound requests, and SpiderFoot bounds that itself.
+_SPIDERFOOT_START_GRACE = 180
+
+
 def _spiderfoot(
     target: str,
     workdir: str,
@@ -1038,7 +1046,7 @@ def _spiderfoot(
     # The key authenticates every call; it must never reach a log or a persisted error.
     headers = {"X-API-Key": key, "content-type": "application/json"}
     deadline = time.time() + timeout
-    scan_id, finished = None, False
+    scan_id, finished, partial = None, False, None
     with httpx.Client(base_url=base, headers=headers, timeout=30.0) as client:
         try:
             if getattr(settings, "proxy_only", False):
@@ -1057,22 +1065,44 @@ def _spiderfoot(
             created.raise_for_status()
             scan_id = created.json().get("id")
             if not scan_id:
-                raise ValueError("SpiderFoot did not return a scan id")
+                raise ActionableError("SpiderFoot did not return a scan id")
+            created_at = time.time()
 
             while True:
                 if cancelled is not None and cancelled.is_set():
                     raise LostLease("spiderfoot scan cancelled or lease lost")
                 if time.time() > deadline:
-                    raise ValueError(f"spiderfoot exceeded {timeout:g}s")
+                    # Out of time is not out of evidence: stop the scan (no more external
+                    # requests), then keep every event it already produced, marked partial.
+                    _stop_spiderfoot_scan(client, scan_id)
+                    partial = (
+                        f"scan stopped after its {timeout:.0f}s time allowance (the lower of the"
+                        " job's remaining wall clock and HARVEST_TOOL_TIMEOUT); events found"
+                        " before the stop are kept"
+                    )
+                    break
                 status = client.get(f"/api/v1/scans/{scan_id}")
                 status.raise_for_status()
                 state = (status.json().get("status") or "").upper()
                 if state == "FINISHED":
                     break
+                # A scan whose worker died before starting it (seen: Postgres pool exhausted in
+                # the celery child) never leaves its first state and has `started` = 0. Waiting
+                # out the whole allowance for it was the "ten-minute inactivity gap".
+                if (
+                    "started" in status.json()
+                    and not status.json()["started"]
+                    and time.time() - created_at > _SPIDERFOOT_START_GRACE
+                ):
+                    raise ActionableError(
+                        f"SpiderFoot accepted scan {scan_id} but did not start it within "
+                        f"{_SPIDERFOOT_START_GRACE}s (state {state or 'unknown'}); its scan "
+                        "worker is busy or failing -- check sf-celery-worker"
+                    )
                 # Anything else terminal is a failed scan: a partial result set would
                 # present an incomplete scan as a finished one.
                 if state in {"ERROR-FAILED", "ABORTED", "ABORT-REQUESTED"}:
-                    raise ValueError(f"spiderfoot scan ended as {state}")
+                    raise ActionableError(f"spiderfoot scan ended as {state}")
                 time.sleep(2)
 
             records: list[dict] = []
@@ -1095,21 +1125,28 @@ def _spiderfoot(
                     )
                     break
                 page += 1
-            finished = True
-            return _spiderfoot_records(records, target)
+            finished = partial is None
+            results = _spiderfoot_records(records, target)
+            return {"results": results, "partial": partial} if partial else results
         except httpx.HTTPError as exc:
             # Never surface the response body: it can echo the request headers.
-            raise ValueError(f"spiderfoot request failed: {type(exc).__name__}") from None
+            raise ActionableError(f"spiderfoot request failed: {type(exc).__name__}") from None
         finally:
             # Any scan Harvest stops waiting for -- cancelled, timed out, failed -- is STOPPED,
             # not left running. Only cancellation used to stop it, so a timed-out example.org
             # scan kept making out-of-budget requests for 20+ minutes after its task failed.
             # /stop, not DELETE: the scan's own record stays in SpiderFoot as evidence.
-            if scan_id and not finished:
-                try:
-                    client.post(f"/api/v1/scans/{scan_id}/stop")
-                except httpx.HTTPError:
-                    log.warning("could not stop an unfinished spiderfoot scan")
+            if scan_id and not finished and partial is None:
+                _stop_spiderfoot_scan(client, scan_id)
+
+
+def _stop_spiderfoot_scan(client, scan_id) -> None:
+    import httpx
+
+    try:
+        client.post(f"/api/v1/scans/{scan_id}/stop")
+    except httpx.HTTPError:
+        log.warning("could not stop an unfinished spiderfoot scan")
 
 
 # kinds: the planning investigation types whose normalized value is a valid target.
@@ -1126,6 +1163,7 @@ def run(
     settings,
     cancelled: threading.Event | None = None,
     top_sites: int | None = None,
+    timeout: float | None = None,
 ) -> Capture:
     """Run one allowlisted tool and return its output as an immutable capture."""
     tool = TOOLS.get(name)
@@ -1144,8 +1182,12 @@ def run(
         # so adding one does not mean another branch here. `top_sites` is maigret's scan
         # breadth; a tool whose run function does not take it simply does not see it.
         kwargs = {"top_sites": top_sites} if top_sites and name == "maigret" else {}
-        records = tool["run"](target, workdir, settings.tool_timeout, cancelled, settings, **kwargs)
+        timeout = settings.tool_timeout if timeout is None else min(timeout, settings.tool_timeout)
+        records = tool["run"](target, workdir, timeout, cancelled, settings, **kwargs)
     result = {"tool": name, "target": target, "results": records}
+    if isinstance(records, dict):
+        # A run stopped early that still produced evidence: kept, and labelled as partial.
+        result.update(records)
     if name == "spiderfoot":
         # The executed module set is part of the evidence: what a scan did NOT look for is
         # what makes "no findings" interpretable.

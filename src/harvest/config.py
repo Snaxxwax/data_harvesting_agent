@@ -47,6 +47,11 @@ class Settings:
             t.strip().lower() for t in os.getenv("HARVEST_TOOLS", "").split(",") if t.strip()
         )
     )
+    # Worker threads in one `harvest worker` process. A job still runs one task at a time;
+    # more threads stop one job's long tool scan from stalling every other job.
+    worker_threads: int = field(
+        default_factory=lambda: max(1, int(os.getenv("HARVEST_WORKER_THREADS", "1")))
+    )
     tool_timeout: float = field(
         default_factory=lambda: float(os.getenv("HARVEST_TOOL_TIMEOUT", "300"))
     )

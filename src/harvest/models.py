@@ -327,6 +327,23 @@ class PolicyDenied(Exception):
     pass
 
 
+class ActionableError(ValueError):
+    """A failure whose message Harvest itself wrote: secret-free and safe to persist.
+
+    Other ValueErrors can come from parsers or libraries and may quote fetched content, so
+    the worker records only their type. These say what actually stopped the task.
+    """
+
+
+# Requested field -> source field names that hold the same thing. Maigret calls a profile's
+# display name `fullname` and its address `url`; asking for display_name/profile_url must not
+# report them missing. Report-only (records view and missing_fields), never extraction gating.
+FIELD_ALIASES = {
+    "display_name": ("fullname", "full_name", "name", "nickname"),
+    "profile_url": ("url",),
+}
+
+
 class AuthorizationRequired(ValueError):
     """A proposed agent action materially exceeds the authorization the operator gave.
 

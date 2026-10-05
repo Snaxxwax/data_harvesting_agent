@@ -45,6 +45,8 @@ def source():
             state["counts"][path] += 1
             if path == "/robots.txt":
                 self.reply(200, state["robots"], "text/plain")
+            elif path in state.get("redirects", {}):
+                self.reply(302, Location=state["redirects"][path])
             elif path in state.get("routes", {}):
                 body, media = state["routes"][path]
                 self.reply(200, body, media)
