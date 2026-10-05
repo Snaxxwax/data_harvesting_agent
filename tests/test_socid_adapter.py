@@ -49,7 +49,10 @@ def investigation(url):
         (
             MAL_HTML,
             "https://myanimelist.net/profile/Xinil",
-            {"mal_uid": "1", "mal_username": "Xinil"},
+            # mal_username ("Xinil") is omitted: it occurs twice (og:url, JSON-LD name) and no
+            # key names the field, so neither occurrence is field-level evidence. The JSON-LD
+            # extractor still records name="Xinil" as its own structured claim.
+            {"mal_uid": "1"},
         ),
         (
             WEEBLY_HTML,
@@ -116,7 +119,10 @@ def test_repeated_identifier_value_has_no_false_exact_offset(monkeypatch):
         "text/html",
     )
     claim = next(c for c in result.claims if c.field == "uid")
-    assert claim.locator == "socid:fixture:ambiguous-value:uid"
+    # "1" occurs twice; the supporting occurrence is the one assigned to the uid attribute.
+    start, end = map(int, claim.locator.removeprefix("socid:fixture:field:").split("-"))
+    page = "<title>1 unrelated</title><div data-uid='1'>profile</div>"
+    assert page[start:end] == "1" and page[:start].endswith("data-uid='")
 
 
 def test_api_replay_matches_only_declared_profile(engine, source):
@@ -153,7 +159,10 @@ def test_api_replay_matches_only_declared_profile(engine, source):
     target = dossier["targets"][0]
     assert len(target["matched_entities"]) == 1
     assert target["fields"]["platform_id"]["value"] == "1"
-    assert target["fields"]["username"]["value"] == "Xinil"
+    # "Xinil" is on the page twice with no key naming mal_username: no field-level evidence,
+    # so the dossier must not present it as the target's username.
+    assert "username" not in target["fields"]
+    assert "username" in target.get("missing_fields", ["username"])
     assert all(x["source_url"] == mal_url for x in target["matched_entities"])
     assert engine.store.observations(original["id"], limit=1000) == prior
     assert engine.store.captures(original["id"]) == captures
