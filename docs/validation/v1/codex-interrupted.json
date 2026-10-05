@@ -1,0 +1,206 @@
+{
+ "arm": "codex",
+ "phase": "interrupted",
+ "root_job": "34e4712cd4154c6e8373e1bb6bb653c8",
+ "limits": {
+  "requests": 10,
+  "bytes": 3000000,
+  "seconds": 3600,
+  "depth": 0,
+  "tool_runs": 0,
+  "tasks": 60
+ },
+ "capture": 212,
+ "wall_seconds": 276.9,
+ "final_statuses": [
+  "completed",
+  "completed",
+  "failed",
+  "failed",
+  "partial",
+  "completed",
+  "completed",
+  "failed",
+  "failed",
+  "failed",
+  "failed"
+ ],
+ "answer_parsed": true,
+ "run": {
+  "answer": {
+   "owned": [
+    "https://github.com/Snaxxwax"
+   ],
+   "not_owned": [
+    "https://www.wishlistr.com/Snaxxwax/",
+    "https://www.schemecolor.com/author/Snaxxwax",
+    "https://free-lance.ua/users/Snaxxwax/"
+   ],
+   "undetermined": [
+    "https://www.threads.com/@Snaxxwax",
+    "https://twitchtracker.com/Snaxxwax",
+    "https://chaturbate.com/Snaxxwax/",
+    "https://www.hackster.io/Snaxxwax",
+    "https://www.pscp.tv/Snaxxwax",
+    "https://www.aqa.ru/forum/member.php?action=viewpro&member=Snaxxwax",
+    "https://www.heavy-r.com/user/Snaxxwax",
+    "https://heroesworld.ru/user/Snaxxwax/",
+    "http://forum.amperka.ru/members/?username=Snaxxwax",
+    "https://www.perfectweddings.sg/weddingforum/members/?username=Snaxxwax",
+    "https://antichat.io/member.php?username=Snaxxwax",
+    "https://forum.antichat.io/member.php?username=Snaxxwax",
+    "https://gennisi.gr/memberlist.php?mode=viewprofile&un=Snaxxwax",
+    "https://wavedream.wiki/index.php/User:Snaxxwax",
+    "https://forum.yeswiki.net/u/Snaxxwax",
+    "https://hub.kliklak.net/channel/Snaxxwax"
+   ]
+  },
+  "sessions": [
+   {
+    "session": 1,
+    "exit": -9,
+    "killed": true,
+    "seconds": 53.8,
+    "answer": null,
+    "usage": {
+     "tokens": {}
+    },
+    "final_text": "I\u2019ll read the saved evidence and dossier, then spend the shared budget on profiles most likely to show a connection to the GitHub account.\n",
+    "command": [
+     "codex",
+     "exec",
+     "--json",
+     "--ephemeral",
+     "--skip-git-repo-check",
+     "-c",
+     "mcp_servers.harvest.default_tools_approval_mode=\"approve\"",
+     "<prompt>"
+    ]
+   },
+   {
+    "session": 2,
+    "exit": 0,
+    "killed": false,
+    "seconds": 220.0,
+    "answer": {
+     "owned": [
+      "https://github.com/Snaxxwax"
+     ],
+     "not_owned": [
+      "https://www.wishlistr.com/Snaxxwax/",
+      "https://www.schemecolor.com/author/Snaxxwax",
+      "https://free-lance.ua/users/Snaxxwax/"
+     ],
+     "undetermined": [
+      "https://www.threads.com/@Snaxxwax",
+      "https://twitchtracker.com/Snaxxwax",
+      "https://chaturbate.com/Snaxxwax/",
+      "https://www.hackster.io/Snaxxwax",
+      "https://www.pscp.tv/Snaxxwax",
+      "https://www.aqa.ru/forum/member.php?action=viewpro&member=Snaxxwax",
+      "https://www.heavy-r.com/user/Snaxxwax",
+      "https://heroesworld.ru/user/Snaxxwax/",
+      "http://forum.amperka.ru/members/?username=Snaxxwax",
+      "https://www.perfectweddings.sg/weddingforum/members/?username=Snaxxwax",
+      "https://antichat.io/member.php?username=Snaxxwax",
+      "https://forum.antichat.io/member.php?username=Snaxxwax",
+      "https://gennisi.gr/memberlist.php?mode=viewprofile&un=Snaxxwax",
+      "https://wavedream.wiki/index.php/User:Snaxxwax",
+      "https://forum.yeswiki.net/u/Snaxxwax",
+      "https://hub.kliklak.net/channel/Snaxxwax"
+     ]
+    },
+    "usage": {
+     "tokens": {
+      "input_tokens": 1186508,
+      "cached_input_tokens": 1122688,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 3354,
+      "reasoning_output_tokens": 105
+     }
+    },
+    "final_text": " previous follow-up confirmed the GitHub page but found no owner details. The saved scan names \u201cJosh Sonnen\u201d on Threads and Periscope, which may connect those two accounts but does not yet connect either to GitHub. Hackster blocked acquisition through robots.txt.\n\nWishlistr redirects to \u201cPage Not Found,\u201d so its scan hit appears to be a false positive. Periscope confirms the name Josh Sonnen, while TwitchTracker provides only handle and channel details; neither establishes a GitHub connection. Four HTTP requests remain.\n\nNo additional account can be linked confidently to the GitHub owner. Threads and Periscope share the name \u201cJosh Sonnen,\u201d but the GitHub evidence provides no connecting identity details.\n\nWishlistr redirects to \u201cPage Not Found\u201d; SchemeColor and Free-lance.ua return HTTP 404. These are rejected as current profile matches, without establishing historical ownership. Blocked, inconclusive, and unchecked profiles remain undetermined.\n\nThe shared budget is exhausted: 10/10 HTTP requests, 335,876/3,000,000 bytes.\n\nANSWER_JSON: {\"owned\":[\"https://github.com/Snaxxwax\"],\"not_owned\":[\"https://www.wishlistr.com/Snaxxwax/\",\"https://www.schemecolor.com/author/Snaxxwax\",\"https://free-lance.ua/users/Snaxxwax/\"],\"undetermined\":[\"https://www.threads.com/@Snaxxwax\",\"https://twitchtracker.com/Snaxxwax\",\"https://chaturbate.com/Snaxxwax/\",\"https://www.hackster.io/Snaxxwax\",\"https://www.pscp.tv/Snaxxwax\",\"https://www.aqa.ru/forum/member.php?action=viewpro&member=Snaxxwax\",\"https://www.heavy-r.com/user/Snaxxwax\",\"https://heroesworld.ru/user/Snaxxwax/\",\"http://forum.amperka.ru/members/?username=Snaxxwax\",\"https://www.perfectweddings.sg/weddingforum/members/?username=Snaxxwax\",\"https://antichat.io/member.php?username=Snaxxwax\",\"https://forum.antichat.io/member.php?username=Snaxxwax\",\"https://gennisi.gr/memberlist.php?mode=viewprofile&un=Snaxxwax\",\"https://wavedream.wiki/index.php/User:Snaxxwax\",\"https://forum.yeswiki.net/u/Snaxxwax\",\"https://hub.kliklak.net/channel/Snaxxwax\"]}",
+    "command": [
+     "codex",
+     "exec",
+     "--json",
+     "--ephemeral",
+     "--skip-git-repo-check",
+     "-c",
+     "mcp_servers.harvest.default_tools_approval_mode=\"approve\"",
+     "<prompt>"
+    ]
+   }
+  ]
+ },
+ "score": {
+  "root_id": "34e4712cd4154c6e8373e1bb6bb653c8",
+  "jobs": 11,
+  "statuses": [
+   "completed",
+   "failed",
+   "partial"
+  ],
+  "followups": 10,
+  "useful_followups": 4,
+  "followup_targets": [
+   "https://github.com/Snaxxwax",
+   "https://www.hackster.io/Snaxxwax",
+   "https://www.threads.com/@Snaxxwax",
+   "https://www.pscp.tv/Snaxxwax",
+   "https://twitchtracker.com/Snaxxwax",
+   "https://www.wishlistr.com/Snaxxwax/",
+   "https://hub.kliklak.net/channel/Snaxxwax",
+   "https://www.schemecolor.com/author/Snaxxwax",
+   "https://free-lance.ua/users/Snaxxwax/",
+   "http://forum.amperka.ru/members/?username=Snaxxwax"
+  ],
+  "observations": 329,
+  "captures": 5,
+  "citation_presence": 1.0,
+  "evidence_support": 1.0,
+  "evidence_checked": 285,
+  "derived_claims": 44,
+  "attribution_harvest": {
+   "asserted": 0,
+   "correct": 0,
+   "incorrect": [],
+   "unsupported": [],
+   "missed_owned": [
+    "https://github.com/Snaxxwax"
+   ],
+   "errors": 0
+  },
+  "attribution_answer": {
+   "asserted": 1,
+   "correct": 1,
+   "incorrect": [],
+   "unsupported": [],
+   "missed_owned": [],
+   "errors": 0
+  },
+  "unnecessary_calls": 0,
+  "repeated_followups": 0,
+  "cost_enforced": {
+   "requests": 10,
+   "bytes": 335876,
+   "model_calls": 0,
+   "model_tokens": 0,
+   "cost_usd": 0.0,
+   "tool_runs": 0,
+   "tasks": 15,
+   "seconds": 277.8
+  },
+  "budget_limits": {
+   "requests": 10,
+   "bytes": 3000000,
+   "model_calls": 10,
+   "model_tokens": 150000,
+   "cost_usd": 2.0,
+   "tool_runs": 0,
+   "tasks": 60,
+   "seconds": 3600
+  },
+  "external_tool_runs": []
+ }
+}

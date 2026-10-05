@@ -1,11 +1,34 @@
 # Harvest OSINT stack — ovh-vps
 
-Deployed commit: `5764d22a` (data_harvesting_agent main), deployed 2026-10-04. Checkout
-`/opt/harvest/app`, overrides in `compose.override.yaml` and the opt-in
-`compose.egress-proxy.yaml` and `compose.ghunt.yaml` — all tracked in the repo under
-`deploy/ovh-vps/`.
+**v1.0.0** (2026-10-05): Harvest `main` at the `v1.0.0` tag, SpiderFoot fork
+`fix/auth-db-reconnect` at `75ca484c`. Checkout `/opt/harvest/app`, overlays tracked under
+`deploy/ovh-vps/`. `verify-deployment.sh`: 44/44. Acceptance evidence, root causes of job
+8986aa5c and limitations: `docs/validation/v1-acceptance.md`; operator guide:
+`docs/USER_GUIDE.md`.
 
-`a1e90b48` (PRs #22–#24, deployed 2026-10-04) adds, on top of `5764d22a` (PR #19):
+v1 (PRs #26–#31) on top of `87e7a9a`:
+
+- **Tool runs are bounded by the investigation's remaining wall clock** (minus 15 s to save
+  results), not `HARVEST_TOOL_TIMEOUT` alone. A SpiderFoot scan that runs out of time is
+  stopped and its events so far are kept, labelled `partial`; the job is then `partial`.
+- **A SpiderFoot scan that never starts fails in 180 s** with an actionable error instead of
+  being polled for the whole timeout. Cause found on this host: a long scan leaks the celery
+  child's Postgres pool and the next scan in that child dies before starting. Fixed by
+  `SF_CELERY_MAX_TASKS_PER_CHILD=1` in `spiderfoot-core.yml` (checked by verify).
+- **Orphaned scans are stopped**: every 60 s the worker stops unfinished `harvest-*` scans
+  when no live task lease owns one (worker restart/crash). Measured: ABORTED 133 s after a
+  restart.
+- **`HARVEST_WORKER_THREADS=2`** (compose.override.yaml, checked by verify): a job still runs
+  one task at a time, but other jobs progress during a long scan.
+- **Crawl hygiene and page checks**: sign-in/OAuth/sign-up links are not followed; each
+  fetched profile gets `page_check` and only `identifier_present` pages expand.
+- **Summary** `GET /jobs/{id}/summary` (MCP `get_summary`, UI Summary with Follow-up),
+  **stop advice** naming the limit that fired, **field aliases** (fullname→display_name,
+  url→profile_url), actionable failure reasons, socid ambiguous locators at 0.5.
+- Fork PR #2: `sfp_accounts` checks for a stop between sites (correct, but SpiderFoot's stop
+  still takes ~8 min to reach the module; see the acceptance doc's Limitations).
+
+Earlier: `a1e90b48` (PRs #22–#24, deployed 2026-10-04) adds, on top of `5764d22a` (PR #19):
 
 - **Investigation-wide budgets.** A follow-up records its investigation root (`jobs.root_id`).
   Requests, bytes, model spend, tool runs, tasks and wall clock are summed over the root and
