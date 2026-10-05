@@ -25,6 +25,9 @@ function formatApiErrorDetail(detail) {
       .filter(Boolean);
     return messages.length ? messages.join("; ") : null;
   }
+  if (detail && typeof detail === "object" && detail.reason) {
+    return detail.suggestion ? `${detail.reason} (${detail.suggestion})` : detail.reason;
+  }
   if (detail && typeof detail === "object") return JSON.stringify(detail);
   return detail || null;
 }
@@ -86,9 +89,12 @@ function captureLinks(ids) {
 
 // The request budget is the fetcher's page allowance. Tools run outside it (see tools.py),
 // so a job can still spend proxy bandwidth after this is exhausted.
-function limitsFrom(inputId) {
-  const value = parseInt((document.getElementById(inputId) || {}).value, 10);
-  return Number.isFinite(value) && value > 0 ? { requests: value } : {};
+function limitsFrom(inputId, secondsId) {
+  const read = (id) => parseInt((document.getElementById(id) || {}).value, 10);
+  const limits = {};
+  if (read(inputId) > 0) limits.requests = read(inputId);
+  if (secondsId && read(secondsId) > 0) limits.seconds = read(secondsId);
+  return limits;
 }
 
 function statusBadge(status) {
@@ -120,6 +126,7 @@ function setNavActive(hash) {
 }
 
 let toolsEnabled = [];
+let capabilityDetails = {};
 
 // Pure decision: does the model deployment support "Use model reasoning"? Kept separate
 // from the DOM so the Investigation tab's checkbox/hint wiring is easy to test in isolation.
@@ -157,6 +164,7 @@ async function checkAuthAndConfig() {
   try {
     const meta = await api("/meta");
     toolsEnabled = Array.isArray(meta.tools_enabled) ? meta.tools_enabled : [];
+    capabilityDetails = meta.capabilities || {};
     document.getElementById("topnav").hidden = false;
     document.getElementById("logout").hidden = false;
     const warning = document.getElementById("config-warning");
@@ -291,6 +299,11 @@ function renderPlanPreview(node, plan, onSeedsChange) {
     el("option", { value: "500", text: "Top 500 sites (smaller scan)" }),
     el("option", { value: "100", text: "Top 100 sites (smallest scan)" }),
   ]);
+  // A suggested tool this deployment cannot run is named with the reason, not hidden.
+  for (const t of (plan.tools || []).filter((t) => !toolsEnabled.includes(t.name))) {
+    const detail = (capabilityDetails[t.name] || {}).detail || "not enabled on this deployment";
+    node.appendChild(el("div", { class: "hint", text: `Unavailable: ${t.name} for ${t.target} (${detail})` }));
+  }
   if (offered.length) {
     node.appendChild(el("label", { text: "External tools (opt-in; each runs outside request budgets)" }));
     node.appendChild(
@@ -420,7 +433,7 @@ function initInvestigationForm() {
       fields: currentEditor.fields(),
       tools: currentEditor.tools(),
       use_model: useModel,
-      limits: limitsFrom("inv-requests"),
+      limits: limitsFrom("inv-requests", "inv-seconds"),
     };
     try {
       const job = await api("/jobs", { method: "POST", body: spec });
@@ -601,10 +614,69 @@ function renderRecords(node, records, missingFields) {
         el("div", { class: "field-row" }, [el("span", { class: "field-name", text: name }), valueNode])
       );
       if (!field.missing) {
-        card.appendChild(el("ul", { class: "candidates" }, field.candidates.map(renderCandidate)));
+        const n = field.candidates.length;
+        card.appendChild(
+          el("details", {}, [
+            el("summary", {
+              class: "hint",
+              text: `evidence: ${n} source${n === 1 ? "" : "s"}${field.via ? ` (from ${field.via})` : ""}`,
+            }),
+            el("ul", { class: "candidates" }, field.candidates.map(renderCandidate)),
+          ])
+        );
       }
     }
     node.appendChild(card);
+  }
+}
+
+function renderOverview(node, overview, jobId, active) {
+  clear(node);
+  const head = `${overview.accounts.length} reported account(s), ${overview.verified_pages} page(s) naming the identifier, requests ${overview.requests}`;
+  node.appendChild(el("p", { text: head }));
+  if (overview.accounts.length) {
+    const rows = overview.accounts.map((a) => {
+      const action = el("td");
+      if (!active && a.page_check.startsWith("unchecked") && /^https?:/.test(a.url)) {
+        action.appendChild(
+          el("button", {
+            class: "secondary",
+            text: "Follow up",
+            onclick: async () => {
+              try {
+                const child = await api(`/jobs/${encodeURIComponent(jobId)}/followup`, {
+                  method: "POST",
+                  body: { url: a.url },
+                });
+                location.hash = `#/jobs/${child.id}`;
+              } catch (err) {
+                action.textContent = err.message;
+              }
+            },
+          })
+        );
+      }
+      return el("tr", {}, [
+        el("td", { text: a.site || "" }),
+        el("td", {}, [safeLink(a.url, a.url)]),
+        el("td", { text: a.existence || "" }),
+        el("td", { class: a.page_check === "identifier_present" ? "" : "hint", text: a.page_check }),
+        el("td", { text: a.ownership || "" }),
+        el("td", { class: "mono", text: a.display_name ? JSON.stringify(a.display_name) : "" }),
+        action,
+      ]);
+    });
+    node.appendChild(
+      el("table", {}, [
+        el("thead", {}, [
+          el("tr", {}, ["Site", "URL", "Exists (tool)", "Page check", "Ownership", "Display name", ""].map((h) => el("th", { text: h }))),
+        ]),
+        el("tbody", {}, rows),
+      ])
+    );
+  }
+  if (overview.unknowns.length) {
+    node.appendChild(el("ul", {}, overview.unknowns.map((u) => el("li", { class: "hint", text: `Unknown: ${u}` }))));
   }
 }
 
@@ -692,13 +764,14 @@ async function renderSources(node, jobId) {
 
 function eventSeverity(type) {
   if (["failed", "blocked"].includes(type)) return "severity-failed";
-  if (["deferred", "extraction_limit", "frontier_limit", "lease_expired"].includes(type)) return "severity-warn";
+  if (["deferred", "extraction_limit", "frontier_limit", "lease_expired", "task_done"].includes(type)) return "severity-warn";
   if (["budget_exhausted", "plateau", "cancelled"].includes(type)) return "severity-stopped";
   return null;
 }
 
 function describeEvent(event) {
   const d = event.details || {};
+  if (event.type === "task_done" && d.partial) return `Task ${d.task} kept partial results: ${d.partial}`;
   switch (event.type) {
     case "failed":
       return `Task ${d.task} failed: ${d.reason || "unknown reason"}`;
@@ -712,6 +785,8 @@ function describeEvent(event) {
       return `Extraction limit on task ${d.task}: ${d.reason || ""}`;
     case "frontier_limit":
       return `Task frontier limit reached (${d.limit})`;
+    case "tool_started":
+      return `Running ${d.tool} (task ${d.task}) for up to ${d.max_seconds}s; the job waits for it`;
     case "budget_exhausted":
       return `Job stopped: budget exhausted${d.reason ? ` (${d.reason})` : ""}`;
     case "plateau":
@@ -787,8 +862,8 @@ async function renderJobDetail(jobId) {
   if (job.status === "budget_exhausted") {
     summary.appendChild(
       el("div", { class: "warning" }, [
-        `Stopped early: budget exhausted${job.reason ? ` (${job.reason})` : ""}. ` +
-          `Results are partial. Relaunch with a higher request budget to crawl further.`,
+        `Stopped early: budget exhausted${job.reason ? ` (${job.reason})` : ""}. Results are partial` +
+          (job.stop_advice ? `; ${job.stop_advice}.` : "."),
       ])
     );
   }
@@ -827,10 +902,12 @@ async function renderJobDetail(jobId) {
 
   renderProgress(progressNode, job);
 
-  const [records, events] = await Promise.all([
+  const [records, events, overview] = await Promise.all([
     api(`/jobs/${encodeURIComponent(jobId)}/records`),
     api(`/jobs/${encodeURIComponent(jobId)}/events?limit=200`),
+    api(`/jobs/${encodeURIComponent(jobId)}/summary`),
   ]);
+  renderOverview(document.getElementById("job-overview"), overview, jobId, active);
   renderRecords(recordsNode, records, job.missing_fields);
   renderWarnings(warningsNode, events);
   await renderSources(sourcesNode, jobId);
