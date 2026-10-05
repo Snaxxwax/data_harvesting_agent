@@ -36,6 +36,10 @@ _STOP_ADVICE = (
 def stop_advice(status, reason):
     if status == "plateau":
         return "stopped because recent pages added nothing new; results are what was found"
+    if status == "partial":
+        if "time allowance" in (reason or ""):
+            return "a tool scan ran out of time: raise limits.seconds (or HARVEST_TOOL_TIMEOUT)"
+        return "some sources failed, were blocked or hit an extraction limit; see Warnings"
     if status == "cancelled":
         return "cancelled; evidence collected before the cancellation is kept"
     if status != "budget_exhausted":
@@ -947,11 +951,21 @@ class Store:
                 ).fetchone()
                 if limited:
                     status = "partial"
+                reason = "frontier exhausted"
+                # A tool run cut short by its time allowance kept partial results; the job
+                # must not read as complete because its remaining tasks then ran out.
+                if db.execute(
+                    """SELECT 1 FROM events WHERE job_id=? AND type='task_done'
+                    AND details LIKE '%"partial":%' LIMIT 1""",
+                    (row["id"],),
+                ).fetchone():
+                    status = "partial"
+                    reason += "; a tool run hit its time allowance and kept partial results"
                 if not counts.get("done", 0):
                     status = "failed"
                 db.execute(
-                    "UPDATE jobs SET status=?,finished=?,reason='frontier exhausted' WHERE id=?",
-                    (status, time.time(), row["id"]),
+                    "UPDATE jobs SET status=?,finished=?,reason=? WHERE id=?",
+                    (status, time.time(), reason, row["id"]),
                 )
                 self.event(db, row["id"], "finished", {"status": status, "tasks": counts})
 
