@@ -85,6 +85,11 @@ services:
       # upstream, so a proxied request to postgres/redis would be sent to Webshare. Names
       # and the Docker DNS resolver are both listed because requests matches on hostname.
       NO_PROXY: localhost,127.0.0.1,postgres,redis,sf-postgres,sf-redis,api,sf-api,searxng,.local
+      # One scan per celery child process. A child that ran a long scan kept its Postgres
+      # pool checked out (2026-10-04: an 81-minute scan, 501 "connection pool exhausted"),
+      # and the NEXT scan given to that child died in 0.1s without ever starting -- Harvest
+      # then waited out its whole timeout. A fresh child per scan releases the pool.
+      SF_CELERY_MAX_TASKS_PER_CHILD: "1"
     healthcheck:
       test: ["CMD-SHELL", "python -m celery -b \"$$SF_REDIS_URL\" inspect ping --timeout 2"]
       interval: 30s

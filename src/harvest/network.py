@@ -336,7 +336,12 @@ class Fetcher:
                 location = kept_headers.get("location")
                 if not location:
                     raise PolicyDenied("redirect without location")
-                current = canonical_url(urljoin(current, location))
+                try:
+                    current = canonical_url(urljoin(current, location))
+                except ValueError:
+                    # e.g. an app-scheme or oversized sign-in redirect: a policy stop, not a
+                    # parser failure, and the location itself is not echoed.
+                    raise PolicyDenied("redirect to a non-HTTP(S) or invalid URL") from None
                 headers = None  # Do not forward conditionals across destinations.
                 continue
             if status in {408, 425, 429} or status >= 500:
