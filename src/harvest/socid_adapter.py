@@ -22,9 +22,10 @@ def _normalized(key: str) -> str:
 
 def _structural_span(page: str, field: str, value: str):
     """(start, end) of `value` where markup assigns it to a key naming `field`
-    (`"followerCount":22` for follower_count, `uid:1`/`data-uid='1'` for mal_uid) when
-    exactly one such occurrence exists; otherwise None. A site-prefixed field may match its
-    bare key (mal_uid ~ uid); a mere suffix (username ~ name) may not."""
+    (`"followerCount":22` for follower_count, `uid:1`/`data-uid='1'` for mal_uid): the first
+    such occurrence, since every one of them sits under the field's own key (TikTok repeats
+    its stats); None when none does. A site-prefixed field may match its bare key
+    (mal_uid ~ uid); a mere suffix (username ~ name) may not."""
     names = {_normalized(field)}
     if "_" in field:
         names.add(_normalized(field.split("_", 1)[1]))
@@ -32,7 +33,7 @@ def _structural_span(page: str, field: str, value: str):
         rf"""(?<![A-Za-z0-9_])["']?([A-Za-z0-9_]+)["']?\s*[:=]\s*["']?({re.escape(value)})(?![\w])"""
     )
     hits = [m.span(2) for m in pattern.finditer(page) if _normalized(m.group(1)) in names]
-    return hits[0] if len(hits) == 1 else None
+    return hits[0] if hits else None
 
 
 class SocidHtmlAdapter(HtmlAdapter):

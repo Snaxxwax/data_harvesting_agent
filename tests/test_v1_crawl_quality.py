@@ -265,7 +265,11 @@ def test_an_ambiguous_socid_value_needs_structural_evidence_or_is_omitted(monkey
 
 
 def test_an_ambiguous_socid_value_is_located_by_its_own_key(monkeypatch):
-    html = '<html><p>22</p><script>{"followingCount":22,"followerCount":22}</script></html>'
+    # TikTok repeats its stats (stats + statsV2): both occurrences are under the field's key.
+    html = (
+        '<html><p>22</p><script>{"followingCount":22,"followerCount":22,'
+        '"statsV2":{"followerCount":"22"}}</script></html>'
+    )
     claims, _ = _socid(monkeypatch, html, {"follower_count": "22"})
     locator = claims["follower_count"].locator
     assert locator.startswith("socid:X:field:")

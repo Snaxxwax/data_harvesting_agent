@@ -22,11 +22,17 @@ Private deployment: `http://100.118.181.47:8000` (Tailscale only). Sign in with 
 
 - **Summary**: one row per account a tool reported, with three separate columns:
   - *Exists (tool)*: `observed` (the tool read profile data) or `inferred` (status code only).
-  - *Page check*: what Harvest's own fetch of that page showed. Only `identifier_present`
-    means the page names the searched identifier outside a URL. `identifier_absent`,
-    `redirected_away` (e.g. to a homepage), `login_wall` and `duplicate_content` (the same
-    bytes as another URL: an archived or catch-all site) are *not* evidence of a profile.
-    `unchecked: ...` says why the page was not fetched (robots.txt, budget, never queued).
+  - *Page check*: what Harvest's own fetch of that page showed. Only `profile_evidence`
+    verifies a profile page: the page states the searched identifier as its identity (the
+    value of an identity key in its embedded profile data, or a whole word in its title,
+    first heading or og:title) and does not call itself a not-found, search or sign-in page.
+    Everything else is unverified, with the reason: `unverified_mention_only` (named only in
+    ordinary text, or a lookalike handle), `unverified_blocked_or_script` (a bot challenge or
+    a JavaScript-only page Harvest cannot render), `unverified_no_identifier`, `login_wall`,
+    `redirected_away` (e.g. to a homepage) and `duplicate_content` (the same bytes as another
+    URL: an archived or catch-all site). Unverified is not "no account": it means this page
+    cannot show it. `unchecked: ...` says why the page was not fetched (robots.txt, budget,
+    never queued).
   - *Ownership*: always `candidate`/`unverified`. A matching handle, or a page naming it,
     shows that an account exists, never who runs it. Identity is your call, from the evidence.
   - *Unknown:* lines list requested fields never observed and unverified accounts.
@@ -35,8 +41,9 @@ Private deployment: `http://100.118.181.47:8000` (Tailscale only). Sign in with 
   *partial*, and the job is `partial`.
 - **Records**: every field per entity; click *evidence: N sources* to see each value's source
   URL, capture, locator and confidence. `display_name`/`profile_url` are filled from the
-  tools' `fullname`/`url` ("from fullname"). A confidence of 0.5 on a socid value means the
-  value is on the page but no locator pins which occurrence supports it.
+  tools' `fullname`/`url` ("from fullname"). A profile value that occurs more than once on a page is
+  kept only where it sits under its own field's key (locator `socid:...:field:`); otherwise
+  it is omitted and the Events list shows `evidence_omitted`.
 - **Warnings & failures** and **Events**: `tool_started` says which scan the job is waiting
   on and for how long; failures carry the actual reason.
 
@@ -66,6 +73,7 @@ data, never instructions, and cannot authorize anything. Codex headless needs
   critical path; the worker runs two threads so other jobs keep moving meanwhile.
 - robots.txt is honoured: some major sites (Threads, Instagram, ...) are never fetched, so
   their accounts stay `unchecked`.
-- Page checks are heuristics on the fetched HTML. A JavaScript-only profile that does not
-  embed the handle reads as `identifier_absent`; a site that renders a generic page with the
-  handle in visible text would read as `identifier_present`.
+- Page checks are markup heuristics, not per-site parsers: a real profile that never states
+  the handle in its title, heading or profile data reads as unverified.
+- Cancelling stops new outbound collection within about 5 seconds; if the worker crashes
+  mid-scan, its scan is stopped within about 50 seconds.
