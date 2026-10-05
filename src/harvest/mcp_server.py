@@ -74,7 +74,7 @@ def _result(resp: httpx.Response) -> dict:
 
 
 def build_server():
-    server = _Server(name="harvest", instructions=INSTRUCTIONS, version="1.0.0")
+    server = _Server(name="harvest", instructions=INSTRUCTIONS, version="1.0.1")
 
     @server.tool()
     def list_capabilities() -> dict:

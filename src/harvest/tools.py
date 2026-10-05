@@ -1022,6 +1022,7 @@ def _spiderfoot(
     timeout: float,
     cancelled: threading.Event | None = None,
     settings=None,
+    task_id: int | None = None,
 ) -> list[dict]:
     """Run one SpiderFoot scan to completion and return its events as records."""
     import httpx
@@ -1054,7 +1055,8 @@ def _spiderfoot(
             created = client.post(
                 "/api/v1/scans",
                 json={
-                    "name": f"harvest-{target}",
+                    # The owning task id lets the orphan sweep stop exactly this scan.
+                    "name": f"harvest-t{task_id}-{target}" if task_id else f"harvest-{target}",
                     "target": target,
                     "target_type": target_type,
                     "modules": modules,
@@ -1143,11 +1145,18 @@ def _spiderfoot(
 _SPIDERFOOT_TERMINAL = {"FINISHED", "ABORTED", "ERROR-FAILED", "ABORT-REQUESTED"}
 
 
-def stop_orphaned_spiderfoot_scans(settings) -> int:
-    """Stop every unfinished `harvest-*` scan. The caller guarantees no Harvest task is
-    running one, so any such scan was left behind by a worker that died mid-run (restart,
-    OOM, deploy): nothing else would ever stop it, and it keeps making requests outside
-    every budget. Stopped, not deleted -- the scan record stays as evidence."""
+_OWNER = re.compile(r"^harvest-t(\d+)-")
+
+
+def stop_orphaned_spiderfoot_scans(settings, live_task_ids: set[int]) -> int:
+    """Stop unfinished Harvest scans whose owning task no longer holds a live lease.
+
+    A worker that died mid-run (restart, OOM, deploy) leaves its scan running with nothing
+    to stop it, making requests outside every budget. Scans are named harvest-t<task>-...,
+    so only those whose task is not live are stopped; a scan another worker is running is
+    left alone, and non-Harvest scans are never touched. A legacy harvest-<target> scan
+    (no task id) is stopped only when no SpiderFoot task is live at all. Stopped, not
+    deleted: the scan record and its events stay as evidence."""
     import httpx
 
     headers = {"X-API-Key": settings.spiderfoot_api_key}
@@ -1159,9 +1168,13 @@ def stop_orphaned_spiderfoot_scans(settings) -> int:
         listing.raise_for_status()
         for scan in listing.json().get("items") or []:
             name, state = str(scan.get("name") or ""), str(scan.get("status") or "").upper()
-            if name.startswith("harvest-") and state not in _SPIDERFOOT_TERMINAL:
-                _stop_spiderfoot_scan(client, scan.get("scan_id") or scan.get("id"))
-                stopped += 1
+            if not name.startswith("harvest-") or state in _SPIDERFOOT_TERMINAL:
+                continue
+            owner = _OWNER.match(name)
+            if (int(owner.group(1)) in live_task_ids) if owner else bool(live_task_ids):
+                continue
+            _stop_spiderfoot_scan(client, scan.get("scan_id") or scan.get("id"))
+            stopped += 1
     return stopped
 
 
@@ -1189,6 +1202,7 @@ def run(
     cancelled: threading.Event | None = None,
     top_sites: int | None = None,
     timeout: float | None = None,
+    task_id: int | None = None,
 ) -> Capture:
     """Run one allowlisted tool and return its output as an immutable capture."""
     tool = TOOLS.get(name)
@@ -1207,6 +1221,8 @@ def run(
         # so adding one does not mean another branch here. `top_sites` is maigret's scan
         # breadth; a tool whose run function does not take it simply does not see it.
         kwargs = {"top_sites": top_sites} if top_sites and name == "maigret" else {}
+        if task_id is not None and name == "spiderfoot":
+            kwargs["task_id"] = task_id
         timeout = settings.tool_timeout if timeout is None else min(timeout, settings.tool_timeout)
         records = tool["run"](target, workdir, timeout, cancelled, settings, **kwargs)
     result = {"tool": name, "target": target, "results": records}
