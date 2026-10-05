@@ -219,6 +219,11 @@ def test_ambiguous_socid_values_are_not_full_confidence(monkeypatch):
         ("budget_exhausted", "investigation requests limit reached", "limits.requests"),
         ("budget_exhausted", "investigation tool_runs budget exhausted (3/3 used)", "tool_runs"),
         ("completed", None, None),
+        (
+            "partial",
+            "frontier exhausted; a tool run hit its time allowance and kept",
+            "limits.seconds",
+        ),
     ],
 )
 def test_stop_advice_names_the_limit_that_stopped_the_job(status, reason, fragment):
@@ -429,3 +434,19 @@ def test_orphaned_spiderfoot_scans_are_stopped_only_when_no_task_owns_one(tmp_pa
         db.execute("UPDATE tasks SET lease_until=0 WHERE id=?", (task["id"],))
     assert engine.recover_external_scans() == 1
     assert calls == ["GET /api/v1/scans", "POST /api/v1/scans/A1/stop"]
+
+
+def test_a_partial_tool_run_makes_the_job_partial(tmp_path, monkeypatch):
+    from harvest.network import Capture
+
+    engine, job_id = _tool_engine(tmp_path, seconds=900)
+
+    def partial_run(name, target, settings, cancelled=None, top_sites=None, timeout=None):
+        body = json.dumps({"tool": name, "results": [], "partial": "scan stopped after 30s"})
+        url = f"tool://{name}/{target}"
+        return Capture(url, url, 200, {"content-type": "application/json"}, body.encode(), 0)
+
+    monkeypatch.setattr("harvest.engine.run_tool", partial_run)
+    job = engine.run(job_id)
+    assert job["status"] == "partial"
+    assert "time allowance" in job["reason"] and "limits.seconds" in job["stop_advice"]
