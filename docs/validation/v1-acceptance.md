@@ -27,6 +27,8 @@ present since the feature that carries it.
 
 ## Checklist
 
+Rows marked v1.0.0 use that release's page-check labels (`identifier_present` / `identifier_absent`); v1.0.1 replaced them with the stricter `profile_evidence` / `unverified_*` verdicts described below.
+
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
 | 1a | Enter identifier, see capabilities and limits, launch | PASS | Headless Chrome on the deployed UI: username preview lists maigret/spiderfoot, request + time budget inputs, Create enabled; ambiguous bare handle asks for the input type explicitly |
@@ -34,10 +36,10 @@ present since the feature that carries it.
 | 1c | Inspect findings and evidence; follow leads; export | PASS | Job `de9fa72e`: Summary table, 174 expandable evidence entries, JSONL (166 lines) and CSV exports include `page_check`; live follow-up (job `a3cb6f71`) turned an unchecked account into `identifier_present` |
 | 1d | Unavailable capabilities explain what is missing | PASS | `/meta` per-capability reason; preview lists an unavailable suggested tool with its reason; unknown tool → 422 "unknown tool 'holehe'"; no token → 401 |
 | 2a | Concise summary, expandable evidence, explicit unknowns | PASS | `GET /jobs/{id}/summary` + UI; unknowns list missing fields, unverified accounts, ownership |
-| 2b | Existence separate from ownership; generic pages, login walls, matching handles never establish identity | PASS | Columns Exists / Page check / Ownership; ownership never confirmed; `test_page_checks_separate_real_profiles_from_generic_pages`; agents asserted only the labelled anchor |
-| 2c | Field mappings; evidence locations support fields | PASS | Aliases test; `identifier_present` locator verified against the capture bytes; harness `evidence_support` 1.0 over 276–285 checked observations per agent run |
+| 2b | Existence separate from ownership; generic pages, login walls, matching handles never establish identity | PASS (v1.0.1) | Only `profile_evidence` (structural) verifies a page; mentions in generic text, echoed URLs, lookalike handles, JS shells, challenges, search/not-found/sign-in pages are `unverified_*`/`login_wall`; 10 controlled cases in `test_only_structural_evidence_verifies_a_profile_page`; ownership never confirmed |
+| 2c | Field mappings; evidence locations support fields | PASS (v1.0.1) | Ambiguous socid values need a field locator (value under the field's own key) or are omitted; replay of capture 394: 5 counts kept, each under its own key (`followerCount`, ...), `fullname`/`tiktok_username` omitted; harness `evidence_support` 1.0 (v1.0.0 runs) |
 | 3a | Investigation-wide budgets hold across concurrent/chained follow-ups | PASS | Live follow-ups held 20/20 and 30/30; refused with 409 `budget_exhausted` when spent; agents ≤ 10/10 |
-| 3b | Cancel / timeout / recovery stop external work without deleting evidence | PARTIAL | Harvest stops promptly and keeps evidence; timeout keeps partial events (job `12771d5b` → `partial`); worker restart → orphaned scan ABORTED at +133 s (job `0e4ba970`/rerun). **SpiderFoot itself honours a stop late**: a cancelled username scan kept running its `sfp_accounts` passes for ~466 s before ABORTED (see Limitations) |
+| 3b | Cancel / timeout / recovery stop external work without deleting evidence | PASS (v1.0.1) | Measured at the egress relay (new outbound tunnels from the scanner after the action): cancel +2.4 s, deadline +2.8 s, worker SIGKILL +37.9 s; scans end ABORTED with results and history kept. See "v1.0.1" below. (v1.0.0: ~466 s) |
 | 3c | Errors actionable and secret-free; partial results explain the stop | PASS | Failure reasons persisted verbatim from Harvest's own messages; job reason names the first failure; `partial` with "time allowance" advice |
 | 3d | Crawl avoids auth/navigation loops and duplicate expansion | PASS | Live job `de9fa72e`: 0 auth-like task keys; `redirected_away`/`identifier_absent`/`duplicate_content` pages expand nothing |
 | 4 | Agents conduct and resume by job id; Harvest enforces scope/budget | PASS | `docs/validation/v1/*-interrupted.json` (below); undiscovered URL → 403 `authorization_required` |
@@ -54,20 +56,91 @@ Every agent asserted only the labelled anchor as owned; none made an incorrect o
 association. One run per agent, single labelled case: this shows the configurations work
 and stay bounded; it does not measure discovery quality or variance.
 
+## v1.0.1 (2026-10-05): the remaining failures
+
+Deployed: Harvest `745451b` + docs (tag `v1.0.1`), SpiderFoot fork `fix/auth-db-reconnect`
+at `1a05a8a1` (PRs #3, #4). 478 Python + 13 JS tests; fork tests 23 passed in the built image.
+
+### 1. SpiderFoot cancellation, end to end
+
+Root cause, from an instrumented worker (one controlled scan, stop after 20 s, 483 s to
+ABORTED): `SpiderFootScanner.waitForThreads()` reads the scan status only in its outer
+loop. Once module queues are empty it enters a "final pass" wait that polls
+`threadsFinished()` every 10 ms until the slowest module returns, and never reads the status
+(one status read, loop counter 47,961). `sfp_accounts` runs two ~716-site passes, so a stop
+was seen ~8 minutes later. Fix (fork PR #3): the wait checks for ABORT-REQUESTED about once
+a second; the existing finally block then sets `_stopScanning` on every module and the
+per-site check (fork PR #2) returns them. Regression test fails on the old scanner.
+
+Harvest side: tool tasks renew a 30 s lease (was 120 s), the orphan sweep runs every 15 s
+(was 60 s), and scans are named `harvest-t<task>-<target>`, so the sweep stops exactly the
+scans whose task lost its lease: never a live task's scan, never a non-Harvest scan.
+
+Measured live (bounded scans of the authorized handle, `scripts` in the session: one job
+each, stop through Harvest, tunnels counted from the tinyproxy relay log by the scanner's
+address):
+
+| Trigger | Last new outbound tunnel | Scan ABORTED | Job | Evidence |
+|---|---|---|---|---|
+| Cancel (UI/API) | +2.4 s | +5.7 s | `cancelled` | scan record + 1 result kept |
+| Deadline (tool allowance) | +2.8 s | +4.5 s | `partial`, reason names the allowance | partial capture kept |
+| Worker crash (`docker kill -s KILL`) | +37.9 s | +37.9 s | `failed`, "worker stopped mid-task ... rerun" | scan record kept |
+
+Documented bound: a stop through Harvest ends new outbound collection within ~5 s (in-flight
+site checks finish, bounded by the module's fetch timeout); after a worker crash within
+lease (30 s) + sweep (≤ 15 s) + ~5 s ≈ 50 s. The sweep also stopped two scans left running
+by an aborted measurement script, as designed.
+
+### 2. Database credentials in SpiderFoot logs and responses
+
+- `DbCore` logged and raised `Error connecting to PostgreSQL database <DSN with password>`;
+  psycopg2 can echo the DSN too. Now masked in the log line, the exception text and the
+  traceback (raised `from None` with a redacted reason). Unit test with an unreachable and a
+  malformed DSN; live check in the deployed image against the real Postgres with a wrong
+  password: "authentication failed" reported, password in log/exception/traceback: false.
+- Found while testing: `GET /api/v1/config`, `/config/export` and `/config/diff` returned
+  the DSN with its password to any API-key holder (all endpoints require auth; verified 401
+  without a key). A route class on the config router now masks credentialed URLs in every
+  response; verified live: no credentialed URL in any of the three, JSON intact.
+- Exposure assessment (contents never printed): no Docker log file held the password (the
+  leaking worker containers had been recreated, which removes their logs); a world-readable
+  config dump `/tmp/sfcfg.json` (2026-10-03) held it and was deleted. Rotation: new random
+  password set with `ALTER USER` over stdin (`log_statement=none`), written to
+  `spiderfoot-ng/.env` and `/opt/harvest/credentials.env` (both 600), postgres/api/worker
+  recreated together, `harvest-egress` re-attached. Verified: old password rejected; API-key
+  auth (Postgres-backed) 200; verify-deployment 44/44; a host-wide search (Docker logs and
+  configs, /opt/harvest, /home, /root, /tmp, /var/log) finds the old value nowhere. The
+  new value exists only in the two credential files and Docker's root-only container config.
+  Database backed up first (`/opt/harvest/backups/sf-postgres-pre-rotation.dump`, verified
+  readable). The old value also appeared in an earlier operator session transcript; rotation
+  is what makes that copy harmless.
+
+### 3. Evidence semantics
+
+- A page verifies a profile only with structural evidence (`profile_evidence`): the
+  identifier as the value of an identity key in embedded data, or a whole word in the first
+  title/h1/og:title of a page that does not call itself not-found, search or sign-in. Every
+  other outcome is unverified with its reason: `unverified_mention_only` (generic text,
+  lookalike), `unverified_blocked_or_script` (challenge page or JavaScript shell),
+  `unverified_no_identifier`, `login_wall`, `redirected_away`, `duplicate_content`. Only
+  `profile_evidence` pages expand the crawl or count as verified.
+- socid: a value occurring more than once needs the value under the field's own key
+  (`followerCount` for follower_count, `uid:1` for mal_uid; a bare suffix like
+  name≈username does not count) or it is omitted and logged as `evidence_omitted` (not
+  `partial`). A lowered confidence is no longer used as if it were proof.
+- Offline replay of the saved captures (job 8986aa5c and live job de9fa72e) with the new
+  rules: TikTok and Geocaching profiles `profile_evidence`; the redirected homepage, sign-in
+  pages, archived forum unverified; Twitch (JavaScript shell) `unverified_blocked_or_script`;
+  Periscope, previously `identifier_present` from a non-profile mention, now unverified.
+
 ## Limitations (honest)
 
-- **SpiderFoot stop latency.** After Harvest's stop request, SpiderFoot reported
-  `ABORT-REQUESTED` but completed both `sfp_accounts` passes (716 sites each) before
-  `ABORTED`, ~8 min, through the egress proxy. The fork patch that checks for a stop
-  between sites is correct but did not shorten this live: the running module instance never
-  sees `_stopScanning`. Next step: log in `SpiderFootScanner.waitForThreads` when
-  ABORT-REQUESTED is seen and compare the module object it flags with the one executing
-  `handleEvent` (modern-module wrapper suspected).
-- SpiderFoot's celery log prints its Postgres DSN including the password on connection
-  errors (upstream `db_core` message). The logs are on the private host only; redacting it
-  is a fork patch not yet made.
-- Page checks are HTML heuristics (identifier outside URL context; redirect/path; sign-in
-  path names). See `docs/USER_GUIDE.md`.
+- After a worker crash, collection continues up to ~50 s (lease + sweep). A shorter lease
+  would risk reclaiming a live scan when SQLite is briefly busy.
+- Page checks are markup heuristics (identity keys, first title/h1/og:title, not-found and
+  sign-in wording, challenge phrases, rendered-text size), not per-site parsers: a real
+  profile that states the handle nowhere structural reads as unverified, never the reverse
+  by design. See `docs/USER_GUIDE.md`.
 - robots.txt-disallowed profiles (Threads, Instagram, ...) remain `unchecked`.
 - Repository visibility: `Snaxxwax/data_harvesting_agent` and the fork are **public** on
   GitHub (pre-existing). Committed fixtures are redacted; no secrets are committed. Making
