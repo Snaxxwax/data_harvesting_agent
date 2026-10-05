@@ -450,3 +450,15 @@ def test_a_partial_tool_run_makes_the_job_partial(tmp_path, monkeypatch):
     job = engine.run(job_id)
     assert job["status"] == "partial"
     assert "time allowance" in job["reason"] and "limits.seconds" in job["stop_advice"]
+
+
+def test_a_tool_run_lost_to_a_worker_restart_says_so(tmp_path):
+    engine, job_id = _tool_engine(tmp_path, seconds=900)
+    task = engine.store.claim(job_id, lease_seconds=0)  # the worker died holding the lease
+    assert task["kind"] == "tool"
+    engine.store.claim(job_id)  # the next claim reclaims it: failed, never relaunched
+    engine.store.settle(job_id)
+    job = engine.store.job(job_id)
+    assert job["status"] == "failed"
+    assert "worker stopped mid-task" in job["reason"]
+    assert "rerun the job" in job["stop_advice"]

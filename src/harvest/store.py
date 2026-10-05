@@ -40,6 +40,10 @@ def stop_advice(status, reason):
         if "time allowance" in (reason or ""):
             return "a tool scan ran out of time: raise limits.seconds (or HARVEST_TOOL_TIMEOUT)"
         return "some sources failed, were blocked or hit an extraction limit; see Warnings"
+    if status == "failed":
+        if "lease expired" in (reason or ""):
+            return "the worker stopped mid-task (restart or crash): rerun the job"
+        return "no task succeeded; the reason names the first failure (see Warnings)"
     if status == "cancelled":
         return "cancelled; evidence collected before the cancellation is kept"
     if status != "budget_exhausted":
@@ -543,8 +547,17 @@ class Store:
                     "failed" if task["kind"] == "tool" or task["attempts"] >= limit else "pending"
                 )
                 db.execute(
-                    "UPDATE tasks SET status=?,token=NULL,error='worker lease expired' WHERE id=?",
-                    (status, task["id"]),
+                    "UPDATE tasks SET status=?,token=NULL,error=? WHERE id=?",
+                    (
+                        status,
+                        "worker lease expired: the worker stopped mid-task (restart or crash)"
+                        + (
+                            "; a tool run is never repeated automatically, rerun the job"
+                            if task["kind"] == "tool"
+                            else ""
+                        ),
+                        task["id"],
+                    ),
                 )
                 self.event(
                     db, task["job_id"], "lease_expired", {"task": task["id"], "status": status}
@@ -963,6 +976,16 @@ class Store:
                     reason += "; a tool run hit its time allowance and kept partial results"
                 if not counts.get("done", 0):
                     status = "failed"
+                if status != "completed":
+                    # Say what actually went wrong, not just that the queue emptied.
+                    first = db.execute(
+                        """SELECT error FROM tasks WHERE job_id=? AND status IN ('failed','blocked')
+                        AND error IS NOT NULL ORDER BY kind='tool' DESC,id LIMIT 1""",
+                        (row["id"],),
+                    ).fetchone()
+                    if first:
+                        failed = counts.get("failed", 0) + counts.get("blocked", 0)
+                        reason += f"; {failed} task(s) failed or blocked, e.g. {first[0]}"
                 db.execute(
                     "UPDATE jobs SET status=?,finished=?,reason=? WHERE id=?",
                     (status, time.time(), reason, row["id"]),
