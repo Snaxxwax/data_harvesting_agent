@@ -255,9 +255,10 @@ def test_tool_run_is_bounded_by_the_remaining_wall_clock(tmp_path, monkeypatch):
 
     monkeypatch.setattr("harvest.engine.run_tool", fake_run)
     engine.step(job_id)
-    assert 55 <= seen["timeout"] <= 60
+    # Ends 15s before the 60s deadline, leaving time to read results and save the capture.
+    assert 40 <= seen["timeout"] <= 45
     events = engine.store.events(job_id)
-    assert any(e["type"] == "tool_started" and e["details"]["max_seconds"] <= 60 for e in events)
+    assert any(e["type"] == "tool_started" and e["details"]["max_seconds"] <= 45 for e in events)
     failed = next(e for e in events if e["type"] == "failed")
     # The actual reason, not "ValueError: invalid source or adapter result".
     assert failed["details"]["reason"] == "spiderfoot exceeded its 60s time allowance"

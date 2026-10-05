@@ -7,6 +7,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .models import FIELD_ALIASES, BudgetExceeded, JobSpec, LostLease, canonical_url
 
@@ -1363,7 +1364,7 @@ class Store:
                 check = f"unchecked: {error or status}"
             accounts.append(
                 {
-                    "site": value(fields, "sitename"),
+                    "site": value(fields, "sitename") or urlsplit(url).hostname,
                     "url": url,
                     "existence": value(fields, "existence"),
                     "page_check": check,
