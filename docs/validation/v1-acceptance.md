@@ -86,6 +86,14 @@ address):
 | Deadline (tool allowance) | +2.8 s | +4.5 s | `partial`, reason names the allowance | partial capture kept |
 | Worker crash (`docker kill -s KILL`) | +37.9 s | +37.9 s | `failed`, "worker stopped mid-task ... rerun" | scan record kept |
 
+An earlier run of the same three checks on the first fixed build (SpiderFoot `bd35ac2b`,
+Harvest `79306e5`, upstream proxy still serving, ~3.4 tunnels/s = SpiderFoot's normal
+rate) gave cancel +2.5 s (ABORTED +5.5 s), deadline +3.3 s (+4.9 s), crash +36.4 s
+(+36.9 s); a direct SpiderFoot stop probe gave ABORTED +2.3 s, last tunnel +2.2 s. The final
+runs above were likely made after the upstream proxy began refusing (see below; ~6
+tunnels/s from fast failures); the stop latency is set by the scanner's abort check, not by
+request speed, and both sets agree.
+
 Documented bound: a stop through Harvest ends new outbound collection within ~5 s (in-flight
 site checks finish, bounded by the module's fetch timeout); after a worker crash within
 lease (30 s) + sweep (≤ 15 s) + ~5 s ≈ 50 s. The sweep also stopped two scans left running
@@ -132,6 +140,16 @@ by an aborted measurement script, as designed.
   rules: TikTok and Geocaching profiles `profile_evidence`; the redirected homepage, sign-in
   pages, archived forum unverified; Twitch (JavaScript shell) `unverified_blocked_or_script`;
   Periscope, previously `identifier_present` from a non-profile mention, now unverified.
+
+### Deployment status at the v1.0.1 tag
+
+`verify-deployment.sh`: **43/44**. The failing check is "could not read the scanner's exit
+IP": the upstream Webshare proxy answers `402 Payment Required` to every request (from both
+SpiderFoot and Harvest, persistent on 2026-10-05 ~05:30 UTC), i.e. the proxy plan's quota or
+billing is exhausted; the acceptance measurements (several 700-site scans) consumed part of
+it. Egress stays fail-closed: nothing leaves directly, so live collection fails rather than
+exposing the host. Live collection resumes once the Webshare plan is topped up; then rerun
+`./verify-deployment.sh` (expect 44/44). No code change is needed.
 
 ## Limitations (honest)
 
