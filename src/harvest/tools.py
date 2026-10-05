@@ -1140,6 +1140,31 @@ def _spiderfoot(
                 _stop_spiderfoot_scan(client, scan_id)
 
 
+_SPIDERFOOT_TERMINAL = {"FINISHED", "ABORTED", "ERROR-FAILED", "ABORT-REQUESTED"}
+
+
+def stop_orphaned_spiderfoot_scans(settings) -> int:
+    """Stop every unfinished `harvest-*` scan. The caller guarantees no Harvest task is
+    running one, so any such scan was left behind by a worker that died mid-run (restart,
+    OOM, deploy): nothing else would ever stop it, and it keeps making requests outside
+    every budget. Stopped, not deleted -- the scan record stays as evidence."""
+    import httpx
+
+    headers = {"X-API-Key": settings.spiderfoot_api_key}
+    stopped = 0
+    with httpx.Client(base_url=settings.spiderfoot_url, headers=headers, timeout=30.0) as client:
+        listing = client.get(
+            "/api/v1/scans", params={"page_size": 50, "sort_by": "created", "sort_order": "desc"}
+        )
+        listing.raise_for_status()
+        for scan in listing.json().get("items") or []:
+            name, state = str(scan.get("name") or ""), str(scan.get("status") or "").upper()
+            if name.startswith("harvest-") and state not in _SPIDERFOOT_TERMINAL:
+                _stop_spiderfoot_scan(client, scan.get("scan_id") or scan.get("id"))
+                stopped += 1
+    return stopped
+
+
 def _stop_spiderfoot_scan(client, scan_id) -> None:
     import httpx
 

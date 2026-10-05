@@ -11,6 +11,7 @@ from urllib.parse import urlencode, urlsplit
 import httpcore
 import httpx
 
+from . import tools
 from .config import Settings
 from .extract import Extractors, http_url
 from .models import (
@@ -793,9 +794,34 @@ class Engine:
                 time.sleep(poll)
         return self.store.job(job_id)
 
+    def recover_external_scans(self):
+        """Stop SpiderFoot scans orphaned by a dead worker, when no live task owns one."""
+        if "spiderfoot" not in self.settings.tools or not self.settings.spiderfoot_url:
+            return 0
+        with self.store.connection() as db:
+            live = db.execute(
+                """SELECT count(*) FROM tasks WHERE kind='tool' AND status='running'
+                AND lease_until>? AND payload LIKE '%"tool":"spiderfoot"%'""",
+                (time.time(),),
+            ).fetchone()[0]
+        if live:
+            return 0
+        try:
+            stopped = tools.stop_orphaned_spiderfoot_scans(self.settings)
+        except httpx.HTTPError as exc:
+            log.warning("spiderfoot orphan sweep failed: %s", type(exc).__name__)
+            return 0
+        if stopped:
+            log.warning("stopped %d orphaned spiderfoot scan(s)", stopped)
+        return stopped
+
     def worker(self, stop=None, once=False):
         stop = stop or threading.Event()
+        next_sweep = 0.0
         while not stop.is_set():
+            if time.monotonic() >= next_sweep:
+                next_sweep = time.monotonic() + 60
+                self.recover_external_scans()
             worked = self.step()
             if once:
                 return

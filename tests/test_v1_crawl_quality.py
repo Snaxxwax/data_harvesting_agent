@@ -397,3 +397,34 @@ def test_a_long_tool_scan_does_not_stall_other_jobs(engine, source, monkeypatch)
         stop.set()
         for thread in threads:
             thread.join(10)
+
+
+def test_orphaned_spiderfoot_scans_are_stopped_only_when_no_task_owns_one(tmp_path, monkeypatch):
+    """A worker that dies mid-scan leaves the SpiderFoot scan running; the sweep stops it,
+    but never while a live Harvest task is running a scan."""
+    calls = []
+
+    def handler(request):
+        calls.append(request.method + " " + request.url.path)
+        items = [
+            {"scan_id": "A1", "name": "harvest-exampleuser", "status": "RUNNING"},
+            {"scan_id": "A2", "name": "harvest-example.org", "status": "FINISHED"},
+            {"scan_id": "A3", "name": "manual-scan", "status": "RUNNING"},
+        ]
+        return httpx.Response(200, json={"items": items})
+
+    real = httpx.Client
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda *a, **k: real(*a, **{**k, "transport": httpx.MockTransport(handler)}),
+    )
+    engine, job_id = _tool_engine(tmp_path, seconds=900)
+    engine.settings.spiderfoot_url = "http://sf.test"
+    engine.settings.spiderfoot_api_key = "k"
+    task = engine.store.claim(job_id)  # a live lease: a worker is running this scan
+    assert engine.recover_external_scans() == 0 and calls == []
+    with engine.store.connection() as db:
+        db.execute("UPDATE tasks SET lease_until=0 WHERE id=?", (task["id"],))
+    assert engine.recover_external_scans() == 1
+    assert calls == ["GET /api/v1/scans", "POST /api/v1/scans/A1/stop"]

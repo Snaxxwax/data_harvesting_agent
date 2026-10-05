@@ -55,6 +55,7 @@ check_marker "worker HARVEST_EGRESS_MODE"     "services.worker.environment.HARVE
 check_marker "worker HOME off tmpfs"          "services.worker.environment.HOME"             "/home/harvest"  compose.ghunt.yaml
 check_marker "ghunt home volume declared"     "volumes.harvest-ghunt-home"                   "*"              compose.ghunt.yaml
 check_marker "tool pin reaches the build arg" "services.worker.build.args.HARVEST_TOOL_PACKAGES" "*"           compose.override.yaml
+check_marker "worker runs 2 threads"          "services.worker.environment.HARVEST_WORKER_THREADS" "2"         compose.override.yaml
 
 # And confirm the mechanism itself, so the NEXT bare command is also correct.
 if grep -q '^COMPOSE_FILE=.*compose.egress-proxy.yaml' .env 2>/dev/null &&
@@ -343,6 +344,13 @@ else
             ok "the scanner container carries HTTPS_PROXY pointing at the relay"
         else
             bad "sf-celery-worker has no HTTPS_PROXY to the relay -- its modules egress DIRECTLY from this host"
+        fi
+        # A long scan leaks the celery child's Postgres pool; the next scan in that child
+        # then dies before starting (2026-10-04). One scan per child releases it.
+        if [[ "$(docker exec sf-celery-worker printenv SF_CELERY_MAX_TASKS_PER_CHILD 2>/dev/null)" == "1" ]]; then
+            ok "the scanner recycles its worker process after every scan"
+        else
+            bad "sf-celery-worker lacks SF_CELERY_MAX_TASKS_PER_CHILD=1 -- a leaked DB pool can kill the next scan before it starts"
         fi
         if docker inspect sf-celery-worker --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null | grep -q harvest-egress; then
             ok "the scanner is attached to harvest-egress (so the relay resolves)"
