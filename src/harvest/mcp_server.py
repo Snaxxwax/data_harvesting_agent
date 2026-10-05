@@ -140,11 +140,12 @@ def build_server():
 
     @server.tool()
     def get_summary(job_id: str) -> dict:
-        """Per reported account: `existence` (the tool's verdict), `page_check` (whether
-        Harvest's own fetch showed the searched identifier on that page; only
-        identifier_present counts, a redirect, sign-in wall, duplicate or absent page does
-        not) and `ownership` (never confirmed by tool evidence), plus explicit unknowns and
-        which limit stopped the job. Accounts marked `unchecked` are follow-up candidates."""
+        """Per reported account: `existence` (the tool's verdict), `page_check` (Harvest's own
+        fetch of that page: only `profile_evidence` -- the page states the identifier as its
+        identity in its title, heading or profile data -- is verified; every `unverified_*`,
+        redirect, sign-in wall or duplicate is not) and `ownership` (never confirmed by tool
+        evidence), plus explicit unknowns and which limit stopped the job. Accounts marked
+        `unchecked` were never fetched and are follow-up candidates."""
         with _client() as c:
             return _result(c.get(f"/jobs/{job_id}/summary"))
 

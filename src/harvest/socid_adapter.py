@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 
 import socid_extractor
 
@@ -13,6 +14,25 @@ from .models import Claim, canonical_url
 def _warn(result, message: str):
     if message not in result.warnings and len(result.warnings) < 50:
         result.warnings.append(message)
+
+
+def _normalized(key: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", key.lower())
+
+
+def _structural_span(page: str, field: str, value: str):
+    """(start, end) of `value` where markup assigns it to a key naming `field`
+    (`"followerCount":22` for follower_count, `uid:1`/`data-uid='1'` for mal_uid) when
+    exactly one such occurrence exists; otherwise None. A site-prefixed field may match its
+    bare key (mal_uid ~ uid); a mere suffix (username ~ name) may not."""
+    names = {_normalized(field)}
+    if "_" in field:
+        names.add(_normalized(field.split("_", 1)[1]))
+    pattern = re.compile(
+        rf"""(?<![A-Za-z0-9_])["']?([A-Za-z0-9_]+)["']?\s*[:=]\s*["']?({re.escape(value)})(?![\w])"""
+    )
+    hits = [m.span(2) for m in pattern.finditer(page) if _normalized(m.group(1)) in names]
+    return hits[0] if len(hits) == 1 else None
 
 
 class SocidHtmlAdapter(HtmlAdapter):
@@ -59,12 +79,19 @@ class SocidHtmlAdapter(HtmlAdapter):
             # A short ID may occur in unrelated markup before the parser's actual
             # source. Without an offset from socid, do not pretend the first match
             # identifies the supporting occurrence.
-            ambiguous = page.find(evidence, start + 1) >= 0
-            locator = (
-                f"socid:{scheme}:ambiguous-value:{field}"
-                if ambiguous
-                else f"socid:{scheme}:chars:{start}-{start + len(evidence)}"
-            )
+            locator = f"socid:{scheme}:chars:{start}-{start + len(evidence)}"
+            if page.find(evidence, start + 1) >= 0:
+                # The value occurs more than once ("22", "0", a name in title and body), so a
+                # literal match does not show which occurrence supports this field. Use the
+                # structural occurrence -- the value under this field's own key in embedded
+                # data -- or drop the claim; a lowered confidence is not field-level proof.
+                span = _structural_span(page, field, evidence)
+                if span is None:
+                    _warn(
+                        result, "socid value omitted: ambiguous on the page, no structural locator"
+                    )
+                    continue
+                locator = f"socid:{scheme}:field:{span[0]}-{span[1]}"
             result.claims.append(
                 Claim(
                     entity_key=page_key,
@@ -73,9 +100,6 @@ class SocidHtmlAdapter(HtmlAdapter):
                     evidence=evidence,
                     locator=locator,
                     method="html",
-                    # The value is on the page, but no locator pins the occurrence that
-                    # supports this field (a "22" or "0" appears all over markup).
-                    confidence=0.5 if ambiguous else 1.0,
                 )
             )
             result.extractor = self.name

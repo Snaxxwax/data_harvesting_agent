@@ -741,9 +741,14 @@ class Store:
                 )
             if extraction and capture_id is not None:
                 for warning in extraction.warnings:
-                    self.event(
-                        db, job["id"], "extraction_limit", {"task": task["id"], "reason": warning}
+                    # A value dropped for lack of field-level evidence is a deliberate evidence
+                    # decision, not an incomplete extraction: visible, but not "partial".
+                    kind = (
+                        "evidence_omitted"
+                        if warning.startswith("socid value")
+                        else "extraction_limit"
                     )
+                    self.event(db, job["id"], kind, {"task": task["id"], "reason": warning})
                 cap = db.execute("SELECT * FROM captures WHERE id=?", (capture_id,)).fetchone()
                 if task["kind"] == "reason":
                     revision = db.execute(
@@ -1412,7 +1417,7 @@ class Store:
             )
         accounts.sort(
             key=lambda a: (
-                a["page_check"] != "identifier_present",
+                a["page_check"] != "profile_evidence",
                 a["existence"] != "observed",
                 a["site"] or "",
             )
@@ -1433,7 +1438,7 @@ class Store:
             "stop_advice": job["stop_advice"],
             "requests": f"{job['requests']}/{job['spec']['limits']['requests']}",
             "accounts": accounts,
-            "verified_pages": sum(a["page_check"] == "identifier_present" for a in accounts),
+            "verified_pages": sum(a["page_check"] == "profile_evidence" for a in accounts),
             "unknowns": unknowns,
         }
 

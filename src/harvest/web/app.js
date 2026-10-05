@@ -661,7 +661,7 @@ function renderOverview(node, overview, jobId, active) {
         el("td", { text: a.site || "" }),
         el("td", {}, [safeLink(a.url, a.url)]),
         el("td", { text: a.existence || "" }),
-        el("td", { class: a.page_check === "identifier_present" ? "" : "hint", text: a.page_check }),
+        el("td", { class: a.page_check === "profile_evidence" ? "" : "hint", text: a.page_check }),
         el("td", { text: a.ownership || "" }),
         el("td", { class: "mono", text: a.display_name ? JSON.stringify(a.display_name) : "" }),
         action,
@@ -765,7 +765,7 @@ async function renderSources(node, jobId) {
 
 function eventSeverity(type) {
   if (["failed", "blocked"].includes(type)) return "severity-failed";
-  if (["deferred", "extraction_limit", "frontier_limit", "lease_expired", "task_done"].includes(type)) return "severity-warn";
+  if (["deferred", "extraction_limit", "evidence_omitted", "frontier_limit", "lease_expired", "task_done"].includes(type)) return "severity-warn";
   if (["budget_exhausted", "plateau", "cancelled"].includes(type)) return "severity-stopped";
   return null;
 }
@@ -782,6 +782,8 @@ function describeEvent(event) {
       return `Task ${d.task} deferred, retrying in ${typeof d.delay === "number" ? d.delay.toFixed(1) : "?"}s: ${d.reason || ""}`;
     case "lease_expired":
       return `Task ${d.task} lease expired; now ${d.status}`;
+    case "evidence_omitted":
+      return `Value omitted on task ${d.task} (no field-level evidence): ${d.reason || ""}`;
     case "extraction_limit":
       return `Extraction limit on task ${d.task}: ${d.reason || ""}`;
     case "frontier_limit":

@@ -152,8 +152,10 @@
     <h2>Summary</h2>
     <p class="hint">One row per account a tool reported. <em>Exists</em> is the tool's own
       verdict; <em>Page check</em> is what Harvest's fetch of that page showed (only
-      <code>identifier_present</code> means the page names the searched identifier); ownership
-      is never confirmed by tool evidence. Follow up fetches an unchecked page inside this
+      <code>profile_evidence</code> means the page states the searched identifier as its
+      identity, in its title, heading or profile data; every <code>unverified_*</code>,
+      redirect, sign-in wall or duplicate is not evidence); ownership is never confirmed by
+      tool evidence. Follow up fetches a never-fetched page inside this
       investigation's remaining budget.</p>
     <div id="job-overview"></div>
     <h2>Progress</h2>

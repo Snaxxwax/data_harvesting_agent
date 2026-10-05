@@ -34,6 +34,8 @@ from .tools import run as run_tool
 log = logging.getLogger("harvest")
 ACTIVE = {"queued", "running"}
 TOOL_FINISH_MARGIN = 15  # seconds a tool run leaves before the deadline to save its results
+TOOL_LEASE = 30  # seconds; with SWEEP_SECONDS, bounds a dead worker's orphaned scan to ~45 s
+SWEEP_SECONDS = 15
 
 # ponytail: name heuristics, not a site-specific map. Misses an unconventional sign-in path;
 # add a pattern when a capture shows one.
@@ -53,31 +55,61 @@ def auth_like(url: str, text: str = "") -> bool:
     return any(_AUTH_SEGMENT.match(seg) for seg in segments) or bool(_AUTH_TEXT.search(text))
 
 
-def identifier_in_text(text: str, identifier: str):
-    """(start, end) of the first occurrence of `identifier` that is NOT inside a URL.
+# ponytail: markup heuristics, not a per-site parser. Where a page states the handle in a
+# profile position is where it can be shown; extend the patterns when a capture needs it.
+_ID_KEYS = "username|uniqueid|unique_id|login|screen_name|screenname|handle|user_name|nickname|slug"
+_TITLE = re.compile(r"(?is)<title[^>]*>(.*?)</title>")
+_HEADING = re.compile(r"(?is)<h1[^>]*>(.*?)</h1>")
+_META_TITLE = re.compile(
+    r"""(?is)<meta[^>]+(?:property|name)=["'](?:og:title|twitter:title|profile:username)["'][^>]*>"""
+)
+_NOT_PROFILE = re.compile(
+    r"(?i)\b(?:not found|page not found|404|doesn'?t exist|does not exist|no such user|"
+    r"user not found|search|results for|suspended|unavailable|sign ?in|log ?in)\b"
+)
+_BLOCKED = re.compile(
+    r"(?i)just a moment|attention required|access denied|captcha|are you a robot|"
+    r"verify you are human|enable javascript|javascript is (?:disabled|required)"
+)
 
-    Profile-not-found and sign-in pages routinely echo the requested handle back inside
-    `?next=/handle/` or `returnUrl=...%3Dhandle`; that is the request, not the subject."""
-    lowered, needle = text.lower(), identifier.lower()
-    start = lowered.find(needle)
-    while start >= 0:
-        if not (start and lowered[start - 1] in "/=") and lowered[
-            max(0, start - 3) : start
-        ] not in (
-            "%2f",
-            "%3d",
-        ):
-            return start, start + len(needle)
-        start = lowered.find(needle, start + 1)
+
+def _visible_text(html: str) -> str:
+    html = re.sub(r"(?is)<(script|style|noscript)\b.*?</\1>", " ", html)
+    return " ".join(re.sub(r"(?s)<[^>]+>", " ", html).split())
+
+
+def profile_evidence(html: str, identifier: str):
+    """(start, end) of the identifier where the page states it AS the profile's identity:
+    the value of an identity key in embedded data (`"uniqueId":"<h>"`), or a whole word in
+    the <title>, first <h1> or og/twitter title -- and only when those do not say the page
+    is a not-found, search or sign-in page. A mention elsewhere (body text, an echoed
+    `?next=`/`returnUrl=`) is not evidence of a profile."""
+    needle = re.escape(identifier)
+    data = re.search(rf'(?i)"(?:{_ID_KEYS})"\s*:\s*"(@?{needle})"', html)
+    if data:
+        return data.span(1)
+    title = _TITLE.search(html)
+    if title and _NOT_PROFILE.search(_visible_text(title.group(1))):
+        return None  # the page names itself as a not-found, search or sign-in page
+    for pattern in (_TITLE, _HEADING, _META_TITLE):
+        if not (match := pattern.search(html)):
+            continue  # only the FIRST title / h1 / meta title states what the page is
+        if pattern is _HEADING and _NOT_PROFILE.search(_visible_text(match.group(1))):
+            return None
+        if word := re.search(rf"(?i)(?<![\w/=%.-])@?{needle}(?![\w/=%-])", match.group(0)):
+            return match.start() + word.start(), match.start() + word.end()
     return None
 
 
 def page_check(identifiers, requested_url, final_url, text, duplicate_of=None):
     """What a fetched page says about a searched identifier: verdict, evidence, locator.
 
-    Only `identifier_present` lets a page count as (or expand from) the subject's profile.
-    A redirect away from the profile, a sign-in wall, a page byte-identical to another URL's
-    (an archived or catch-all site) and a page that never names the identifier do not."""
+    Only `profile_evidence` (the page states the identifier as its identity, see
+    profile_evidence()) counts as a verified profile page and is crawled further. Every
+    other verdict is unverified, and says why: a redirect away, a sign-in wall, a
+    byte-identical page under another URL (archived or catch-all site), a blocked or
+    JavaScript-only page whose content cannot show a profile, a handle merely mentioned in
+    text, or no mention at all."""
     if duplicate_of is not None:
         return "duplicate_content", f"capture {duplicate_of}", f"capture:{duplicate_of}"
     requested, final = urlsplit(requested_url).path, urlsplit(final_url).path
@@ -88,9 +120,18 @@ def page_check(identifiers, requested_url, final_url, text, duplicate_of=None):
     if auth_like(final_url):
         return "login_wall", final_url, "final_url"
     for identifier in identifiers:
-        if span := identifier_in_text(text, identifier):
-            return "identifier_present", text[span[0] : span[1]], f"chars:{span[0]}-{span[1]}"
-    return "identifier_absent", final_url, "final_url"
+        if span := profile_evidence(text, identifier):
+            return "profile_evidence", text[span[0] : span[1]], f"chars:{span[0]}-{span[1]}"
+    visible = _visible_text(text)
+    if blocked := _BLOCKED.search(visible[:5000]):
+        return "unverified_blocked_or_script", blocked.group(0), "visible_text"
+    if len(visible) < 200 and re.search(r"(?i)<script\b", text):
+        # Little rendered text but scripts: a JavaScript app shell. Its content (and so the
+        # profile, or its absence) only exists after rendering, which Harvest does not do.
+        return "unverified_blocked_or_script", final_url, "final_url"
+    if any(identifier.lower() in visible.lower() for identifier in identifiers):
+        return "unverified_mention_only", final_url, "final_url"
+    return "unverified_no_identifier", final_url, "final_url"
 
 
 class Engine:
@@ -364,7 +405,7 @@ class Engine:
         offline = task["execution"] == "offline_replay"
         crawl = task["payload"].get("crawl", True)
         verdict = self.check_page(task, cap, extraction) if batch is None else None
-        if verdict not in (None, "identifier_present"):
+        if verdict not in (None, "profile_evidence"):
             crawl = False  # a generic page's links are the site's, not the subject's
         accepted = [] if offline or not crawl else self.select_leads(task, extraction.leads)
         # Every lead the extraction produced that did not become a task: already seen, out of
@@ -471,7 +512,7 @@ class Engine:
                 evidence=evidence[:20000],
                 locator=locator,
                 method="derived:page-check/1",
-                confidence=1.0 if verdict == "identifier_present" else 0.9,
+                confidence=1.0 if verdict == "profile_evidence" else 0.9,
             )
         )
         return verdict
@@ -715,7 +756,9 @@ class Engine:
         def heartbeat():
             while not stop_heartbeat.wait(1 if task["kind"] == "tool" else 15):
                 try:
-                    self.store.heartbeat(task)
+                    # A tool run heartbeats every second, so a short lease costs nothing and
+                    # bounds how long a dead worker's scan runs on before the sweep stops it.
+                    self.store.heartbeat(task, TOOL_LEASE if task["kind"] == "tool" else 120)
                 except LostLease:
                     cancelled.set()
                     return
@@ -824,7 +867,7 @@ class Engine:
         next_sweep = 0.0
         while not stop.is_set():
             if time.monotonic() >= next_sweep:
-                next_sweep = time.monotonic() + 60
+                next_sweep = time.monotonic() + SWEEP_SECONDS
                 self.recover_external_scans()
             worked = self.step()
             if once:

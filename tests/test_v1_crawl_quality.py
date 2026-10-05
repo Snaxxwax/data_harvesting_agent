@@ -14,7 +14,7 @@ import pytest
 
 from harvest import tools
 from harvest.config import Settings
-from harvest.engine import Engine, auth_like, identifier_in_text, page_check
+from harvest.engine import Engine, auth_like, page_check, profile_evidence
 from harvest.models import ActionableError, JobSpec
 from harvest.socid_adapter import SocidHtmlAdapter
 from harvest.store import stop_advice
@@ -126,10 +126,10 @@ def test_page_checks_separate_real_profiles_from_generic_pages(investigation):
     summary = engine.store.job_summary(job["id"])
     checks = {a["site"]: a["page_check"] for a in summary["accounts"]}
     assert checks == {
-        "TikTok": "identifier_present",
-        "Geocaching": "identifier_present",
+        "TikTok": "profile_evidence",  # "uniqueId":"<handle>" in the embedded profile data
+        "Geocaching": "profile_evidence",  # the handle is the page's <h1>
         "Streaming": "redirected_away",
-        "forum.archived": "identifier_absent",
+        "forum.archived": "unverified_no_identifier",
     }
     # The .json probe served the same bytes as the profile URL: a catch-all page.
     rows = [
@@ -140,7 +140,7 @@ def test_page_checks_separate_real_profiles_from_generic_pages(investigation):
     assert {a["ownership"] for a in summary["accounts"]} == {"candidate"}
     assert any("ownership" in u for u in summary["unknowns"])
     # Evidence for a present identifier sits exactly at its locator in the capture.
-    present = next(o for o in rows if o["value"] == "identifier_present")
+    present = next(o for o in rows if o["value"] == "profile_evidence")
     capture = engine.store.capture(present["capture_ids"][0])
     start, end = map(int, present["locator"].removeprefix("chars:").split("-"))
     text = capture["body"].decode()
@@ -162,12 +162,59 @@ def test_requested_fields_map_to_tool_field_names(investigation):
     )
 
 
-def test_identifier_echoed_in_urls_is_not_presence():
+LONG = "<p>" + "Forum boilerplate text. " * 20 + "</p>"
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        # A handle named only in generic body text is a mention, not a profile.
+        (
+            "<title>Community</title><h1>Latest posts</h1>" + LONG + "<p>thanks exampleuser!</p>",
+            "unverified_mention_only",
+        ),
+        # Search, not-found and sign-in pages that put the handle in a heading.
+        (
+            "<title>Search results for exampleuser</title><h1>exampleuser</h1>" + LONG,
+            "unverified_mention_only",
+        ),
+        ("<title>Page not found</title><h1>exampleuser</h1>" + LONG, "unverified_mention_only"),
+        (
+            "<title>App</title><h1>User not found</h1><p>exampleuser</p>" + LONG,
+            "unverified_mention_only",
+        ),
+        # A JavaScript-only shell or a bot challenge cannot show anything either way.
+        (
+            "<title>App</title><div id=root></div><script>boot()</script>",
+            "unverified_blocked_or_script",
+        ),
+        (
+            "<title>Just a moment...</title><p>Verify you are human</p>" + LONG,
+            "unverified_blocked_or_script",
+        ),
+        # A lookalike handle is not the handle.
+        ("<title>exampleuser2 profile</title>" + LONG, "unverified_mention_only"),
+        # Structural evidence: profile data key, title word, og:title.
+        ('<script>{"user":{"uniqueId":"exampleuser"}}</script>' + LONG, "profile_evidence"),
+        ("<title>exampleuser (Example Name) / Site</title>" + LONG, "profile_evidence"),
+        ('<meta property="og:title" content="@exampleuser on Site">' + LONG, "profile_evidence"),
+    ],
+)
+def test_only_structural_evidence_verifies_a_profile_page(html, expected):
+    verdict = page_check(
+        ["exampleuser"], "https://x.test/u/exampleuser", "https://x.test/u/exampleuser", html
+    )[0]
+    assert verdict == expected
+
+
+def test_identifier_echoed_in_urls_is_not_profile_evidence():
     home = (FIXTURES / "chaturbate_home.html").read_text()
     signin = (FIXTURES / "geocaching_signin.html").read_text()
-    assert identifier_in_text(home, "exampleuser") is None
-    assert identifier_in_text(signin, "exampleuser") is None
-    assert identifier_in_text((FIXTURES / "tiktok_profile.html").read_text(), "exampleuser")
+    assert profile_evidence(home, "exampleuser") is None
+    assert profile_evidence(signin, "exampleuser") is None
+    assert profile_evidence((FIXTURES / "tiktok_profile.html").read_text(), "exampleuser")
+    same_path = page_check(["exampleuser"], "https://x.test/", "https://x.test/", home)[0]
+    assert same_path.startswith("unverified_")
     assert (
         page_check(
             ["exampleuser"],
@@ -196,19 +243,35 @@ def test_auth_like(url, text, expected):
     assert auth_like(url, text) is expected
 
 
-def test_ambiguous_socid_values_are_not_full_confidence(monkeypatch):
-    html = '<html><p>22</p><script>{"followers":"22","id":"7000000000000000001"}</script></html>'
+def _socid(monkeypatch, html, fields):
     monkeypatch.setattr(
-        "harvest.socid_adapter.socid_extractor.extract",
-        lambda page: {"_extractor": "X", "follower_count": "22", "uid": "7000000000000000001"},
+        "harvest.socid_adapter.socid_extractor.extract", lambda page: {"_extractor": "X", **fields}
     )
-    claims = {
-        c.field: c for c in SocidHtmlAdapter().extract(html.encode(), "https://x.test/u").claims
-    }
-    assert "ambiguous-value" in claims["follower_count"].locator
-    assert claims["follower_count"].confidence == 0.5
+    result = SocidHtmlAdapter().extract(html.encode(), "https://x.test/u")
+    return {c.field: c for c in result.claims}, result.warnings
+
+
+def test_an_ambiguous_socid_value_needs_structural_evidence_or_is_omitted(monkeypatch):
+    # "22" occurs twice and no key names the field: no field-level proof, so no claim.
+    claims, warnings = _socid(
+        monkeypatch,
+        '<html><p>22</p><script>{"followers":"22","id":"7000000000000000001"}</script></html>',
+        {"follower_count": "22", "uid": "7000000000000000001"},
+    )
+    assert "follower_count" not in claims
+    assert any("no structural locator" in w for w in warnings)
+    # A value that occurs once is pinned by its own position.
     assert claims["uid"].locator.startswith("socid:X:chars:")
-    assert claims["uid"].confidence == 1.0
+
+
+def test_an_ambiguous_socid_value_is_located_by_its_own_key(monkeypatch):
+    html = '<html><p>22</p><script>{"followingCount":22,"followerCount":22}</script></html>'
+    claims, _ = _socid(monkeypatch, html, {"follower_count": "22"})
+    locator = claims["follower_count"].locator
+    assert locator.startswith("socid:X:field:")
+    start, end = map(int, locator.rsplit(":", 1)[1].split("-"))
+    assert html[start:end] == "22"
+    assert html[:start].endswith('"followerCount":')
 
 
 @pytest.mark.parametrize(
@@ -462,3 +525,28 @@ def test_a_tool_run_lost_to_a_worker_restart_says_so(tmp_path):
     assert job["status"] == "failed"
     assert "worker stopped mid-task" in job["reason"]
     assert "rerun the job" in job["stop_advice"]
+
+
+def test_a_running_tool_holds_only_a_short_lease(tmp_path, monkeypatch):
+    """A dead worker's scan is orphaned only until its lease lapses (then the sweep stops
+    it), so tool tasks renew a 30 s lease every second instead of the 120 s default."""
+    import time as clock
+
+    from harvest.network import Capture
+
+    engine, job_id = _tool_engine(tmp_path, seconds=900)
+    seen = {}
+
+    def slow_run(name, target, settings, cancelled=None, top_sites=None, timeout=None):
+        clock.sleep(2.5)  # two heartbeats
+        with engine.store.connection() as db:
+            seen["lease"] = (
+                db.execute("SELECT lease_until FROM tasks WHERE kind='tool'").fetchone()[0]
+                - clock.time()
+            )
+        url = f"tool://{name}/{target}"
+        return Capture(url, url, 200, {"content-type": "application/json"}, b'{"results":[]}', 0)
+
+    monkeypatch.setattr("harvest.engine.run_tool", slow_run)
+    engine.step(job_id)
+    assert 25 < seen["lease"] <= 30
