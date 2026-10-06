@@ -318,3 +318,15 @@ def test_rerun_endpoint_rejects_continuous_job(engine, source):
     job_id = client.post("/jobs", headers=headers, json=data).json()["id"]
     response = client.post(f"/jobs/{job_id}/rerun", headers=headers)
     assert response.status_code == 422
+
+
+def test_login_ticket_exchanges_for_session_cookie(engine):
+    from harvest import sessions
+
+    client = client_for(engine)
+    token = engine.settings.api_token
+    # A session cookie value is not a login ticket.
+    assert client.post("/session", json={"token": sessions.issue(token)}).status_code == 401
+    ticket = sessions.issue(token, seconds=sessions.TICKET_SECONDS, purpose=sessions.TICKET_PURPOSE)
+    assert client.post("/session", json={"token": ticket}).status_code == 200
+    assert client.get("/meta").status_code == 200
