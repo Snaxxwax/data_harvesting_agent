@@ -3,25 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Harvest Platform</title>
+<title>Harvest</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">Harvest Platform</div>
+  <a class="brand" href="#/launch">Harvest</a>
   <nav class="topnav" id="topnav" hidden>
     <a href="#/launch">Launch</a>
     <a href="#/jobs">Jobs</a>
     <a href="#/schedules">Schedules</a>
   </nav>
   <div class="topbar-right">
-    <span id="config-warning" class="warning" hidden></span>
-    <!-- Which SpiderFoot modules a scan will actually run. "spiderfoot" in the tool list
-         says nothing about breadth: one passive resolver and a dozen identity modules look
-         identical in the job form and produce wildly different scans. -->
-    <span id="spiderfoot-modules" class="hint" hidden></span>
-    <button id="logout" type="button" hidden>Log out</button>
+    <a id="system-status" class="sys-status" href="#/status" hidden>
+      <span class="dot" aria-hidden="true"></span><span id="system-status-text">Checking…</span>
+    </a>
+    <button id="logout" type="button" class="secondary" hidden>Log out</button>
   </div>
 </header>
 
@@ -41,148 +39,242 @@
   </section>
 
   <section id="launch-view" class="view" hidden>
-    <h1>Launch a job</h1>
-    <div class="tabs" id="launch-tabs">
-      <button type="button" class="tab active" data-tab="investigation">Investigation</button>
-      <button type="button" class="tab" data-tab="dataset">Build Dataset</button>
-      <button type="button" class="tab" data-tab="continuous">Refresh / Continuous</button>
+    <div class="tabs" id="launch-tabs" role="tablist" aria-label="What do you want to do?">
+      <button type="button" role="tab" class="tab active" id="tab-investigation" data-tab="investigation" aria-selected="true" aria-controls="panel-investigation">Investigate</button>
+      <button type="button" role="tab" class="tab" id="tab-dataset" data-tab="dataset" aria-selected="false" aria-controls="panel-dataset" tabindex="-1">Build Dataset</button>
+      <button type="button" role="tab" class="tab" id="tab-continuous" data-tab="continuous" aria-selected="false" aria-controls="panel-continuous" tabindex="-1">Monitor</button>
     </div>
 
-    <form id="investigation-form" class="tab-panel" data-panel="investigation">
-      <label for="inv-value">Email, phone, person name, username, organization, domain, URL, address, or known identifier</label>
-      <input id="inv-value" name="value" type="text" required placeholder="e.g. jane.doe@example.org or example.org">
-      <label for="inv-kind">Input type</label>
-      <select id="inv-kind" name="kind">
-        <option value="">Auto-detect</option>
-        <option value="email">Email</option>
-        <option value="phone">Phone</option>
-        <option value="person">Person name</option>
-        <option value="username">Username</option>
-        <option value="organization">Organization</option>
-        <option value="domain">Domain</option>
-        <option value="url">URL</option>
-        <option value="address">Address</option>
-        <option value="identifier">Known identifier</option>
-      </select>
-      <label for="inv-dataset">Dataset name</label>
-      <input id="inv-dataset" name="dataset" type="text" value="default" pattern="[a-zA-Z0-9_\-]{1,80}" required>
-      <label for="inv-requests">Request budget (pages fetched; external tools run outside this)</label>
-      <input id="inv-requests" name="requests" type="number" min="1" max="1000000" value="100" required>
-      <label for="inv-seconds">Time budget in seconds (the whole investigation, tool scans included)</label>
-      <input id="inv-seconds" name="seconds" type="number" min="10" max="86400" value="900" required>
-      <label class="checkbox"><input id="inv-model" type="checkbox"> Use model reasoning (requires a configured model)</label>
-      <p id="inv-model-hint" class="hint" hidden>Model reasoning is not configured on this deployment.</p>
-      <button type="button" id="inv-preview">Preview plan</button>
-      <div id="inv-preview-result" class="plan-preview" hidden></div>
-      <p id="inv-create-hint" class="warning" hidden></p>
-      <button type="submit" id="inv-submit" disabled>Create investigation job</button>
-      <p id="investigation-error" class="error" role="alert" hidden></p>
-    </form>
+    <div id="panel-investigation" class="tab-panel launch-grid" data-panel="investigation" role="tabpanel" aria-labelledby="tab-investigation">
+      <form id="investigation-form" class="launch-form" novalidate>
+        <h1>Start an investigation</h1>
+        <label for="inv-value" class="lead-label">Enter a name, email, username, phone number, domain, URL, or other identifier</label>
+        <input id="inv-value" name="value" class="lead-input" type="text" required autocomplete="off" spellcheck="false" placeholder="e.g. jane.doe@example.org" aria-describedby="inv-detect">
+        <p id="inv-detect" class="detect" aria-live="polite"></p>
+        <fieldset id="inv-kind-picker" class="pill-group" hidden>
+          <legend>What kind of identifier is this?</legend>
+          <label class="pill"><input type="radio" name="inv-kind" value="person"> Person name</label>
+          <label class="pill"><input type="radio" name="inv-kind" value="username"> Username</label>
+          <label class="pill"><input type="radio" name="inv-kind" value="organization"> Organization</label>
+          <label class="pill"><input type="radio" name="inv-kind" value="address"> Street address</label>
+          <label class="pill"><input type="radio" name="inv-kind" value="email"> Email</label>
+          <label class="pill"><input type="radio" name="inv-kind" value="phone"> Phone</label>
+          <label class="pill"><input type="radio" name="inv-kind" value="domain"> Domain</label>
+          <label class="pill"><input type="radio" name="inv-kind" value="url"> URL</label>
+          <label class="pill"><input type="radio" name="inv-kind" value="identifier"> Other identifier</label>
+        </fieldset>
 
-    <form id="dataset-form" class="tab-panel" data-panel="dataset" hidden>
-      <label for="ds-description">Describe the dataset</label>
-      <textarea id="ds-description" name="description" required placeholder="e.g. used RTX 3090 marketplace listings"></textarea>
-      <label for="ds-dataset">Dataset name</label>
-      <input id="ds-dataset" name="dataset" type="text" value="default" pattern="[a-zA-Z0-9_\-]{1,80}" required>
-      <label for="ds-requests">Request budget (pages fetched; external tools run outside this)</label>
-      <input id="ds-requests" name="requests" type="number" min="1" max="1000000" value="100" required>
-      <button type="button" id="ds-preview">Preview plan</button>
-      <div id="ds-preview-result" class="plan-preview" hidden></div>
-      <button type="submit" id="ds-submit" disabled>Create dataset job</button>
-      <p id="dataset-error" class="error" role="alert" hidden></p>
-    </form>
+        <fieldset class="presets">
+          <legend>Investigation depth</legend>
+          <label class="preset">
+            <input type="radio" name="inv-preset" value="quick">
+            <span class="preset-title">Quick</span>
+            <span class="preset-desc">A fast first look: web search and the lightest account checks.</span>
+            <span class="preset-meta" data-preset-meta="quick"></span>
+          </label>
+          <label class="preset">
+            <input type="radio" name="inv-preset" value="standard" checked>
+            <span class="preset-title">Standard <span class="badge">Recommended</span></span>
+            <span class="preset-desc">Search, account checks and linked-record lookups, then follows up on what they find.</span>
+            <span class="preset-meta" data-preset-meta="standard"></span>
+          </label>
+          <label class="preset">
+            <input type="radio" name="inv-preset" value="deep">
+            <span class="preset-title">Deep</span>
+            <span class="preset-desc">Every available source at full breadth, with a larger page and time allowance.</span>
+            <span class="preset-meta" data-preset-meta="deep"></span>
+          </label>
+        </fieldset>
 
-    <div class="tab-panel" data-panel="continuous" hidden>
-      <section class="subsection">
-        <h2>Rerun or refresh an existing job</h2>
-        <form id="rerun-form">
-          <label for="rerun-job-id">Job ID</label>
-          <input id="rerun-job-id" name="job_id" type="text" required>
-          <button type="submit">Rerun as new job</button>
-          <p id="rerun-error" class="error" role="alert" hidden></p>
-          <p class="hint">Creates a new durable job from the same seeds/discovery objective.
-            Prior evidence and history are untouched. Continuous jobs refresh automatically
-            through their schedule and cannot be rerun here.</p>
-        </form>
-      </section>
-      <section class="subsection">
-        <h2>Start continuous monitoring</h2>
-        <form id="continuous-form">
-          <label for="cont-value">Email, phone, person name, username, organization, domain, URL, address, or known identifier</label>
-          <input id="cont-value" name="value" type="text" required>
-          <label for="cont-kind">Input type</label>
-          <select id="cont-kind" name="kind">
-            <option value="">Auto-detect</option>
-            <option value="email">Email</option>
-            <option value="phone">Phone</option>
-            <option value="person">Person name</option>
-            <option value="username">Username</option>
-            <option value="organization">Organization</option>
-            <option value="domain">Domain</option>
-            <option value="url">URL</option>
-            <option value="address">Address</option>
-            <option value="identifier">Known identifier</option>
-          </select>
-          <label for="cont-dataset">Dataset name</label>
-          <input id="cont-dataset" name="dataset" type="text" value="default" pattern="[a-zA-Z0-9_\-]{1,80}" required>
-      <label for="cont-requests">Request budget (pages fetched; external tools run outside this)</label>
-      <input id="cont-requests" name="requests" type="number" min="1" max="1000000" value="100" required>
-          <label for="cont-interval">Refresh interval (seconds)</label>
-          <input id="cont-interval" name="interval" type="number" min="60" max="31536000" value="86400" required>
-          <button type="submit">Start continuous job</button>
-          <p id="continuous-error" class="error" role="alert" hidden></p>
-        </form>
-      </section>
+        <label class="checkbox follow"><input id="inv-followup" type="checkbox" checked> Explore related profiles and identifiers automatically</label>
+        <p id="inv-followup-hint" class="hint">Visits the profile pages and identifiers that account checks report.</p>
+
+        <details id="inv-advanced" class="advanced">
+          <summary>Advanced options</summary>
+          <div class="advanced-body">
+            <label for="inv-dataset">Investigation name</label>
+            <input id="inv-dataset" name="dataset" type="text" pattern="[a-zA-Z0-9_\-]{1,80}" maxlength="80" aria-describedby="inv-dataset-hint">
+            <p id="inv-dataset-hint" class="hint">Letters, digits, - and _. Leave blank to name it after the target. Results from investigations with the same name are grouped together.</p>
+            <div class="field-pair">
+              <div>
+                <label for="inv-requests">Pages to visit (max)</label>
+                <input id="inv-requests" name="requests" type="number" min="1" max="1000000" value="100" required>
+              </div>
+              <div>
+                <label for="inv-minutes">Time limit (minutes)</label>
+                <input id="inv-minutes" name="minutes" type="number" min="1" max="1440" value="15" required>
+              </div>
+            </div>
+            <fieldset id="inv-sources" class="checks">
+              <legend>Sources</legend>
+              <p class="hint">Enter an identifier to see the sources available for it.</p>
+            </fieldset>
+            <div id="inv-breadth-row" hidden>
+              <label for="inv-breadth">Profile sites to check</label>
+              <select id="inv-breadth">
+                <option value="100">Top 100 sites</option>
+                <option value="500">Top 500 sites</option>
+                <option value="">All supported sites</option>
+              </select>
+            </div>
+            <label for="inv-seeds">Starting web pages (one per line)</label>
+            <textarea id="inv-seeds" rows="3" spellcheck="false" placeholder="https://example.org/about"></textarea>
+            <fieldset id="inv-fields" class="checks">
+              <legend>Details to collect</legend>
+            </fieldset>
+            <label for="inv-fields-extra">Other details to collect (comma-separated)</label>
+            <input id="inv-fields-extra" type="text" spellcheck="false" placeholder="e.g. job_title, location">
+            <label class="checkbox"><input id="inv-model" type="checkbox"> Use AI reasoning to fill gaps</label>
+            <p id="inv-model-hint" class="hint" hidden>AI reasoning is not configured on this deployment.</p>
+          </div>
+        </details>
+
+        <p id="inv-create-hint" class="warning" hidden></p>
+        <button type="submit" id="inv-submit" class="primary" disabled>Start investigation</button>
+        <p id="investigation-error" class="error" role="alert" hidden></p>
+      </form>
+
+      <aside id="inv-summary" class="summary-card" aria-labelledby="inv-summary-title">
+        <h2 id="inv-summary-title">Investigation summary</h2>
+        <dl id="inv-summary-list">
+          <dt>Target</dt><dd id="sum-target" class="muted">Not entered yet</dd>
+          <dt>Detected type</dt><dd id="sum-kind" class="muted">—</dd>
+          <dt>Investigation depth</dt><dd id="sum-depth">Standard</dd>
+          <dt>Harvest will look for</dt><dd id="sum-lookfor" class="muted">—</dd>
+          <dt>Sources</dt><dd id="sum-sources" class="muted">—</dd>
+          <dt>Estimated duration</dt><dd id="sum-duration">—</dd>
+          <dt>Proxy usage</dt><dd id="sum-proxy">—</dd>
+        </dl>
+      </aside>
+    </div>
+
+    <div id="panel-dataset" class="tab-panel" data-panel="dataset" role="tabpanel" aria-labelledby="tab-dataset" hidden>
+      <form id="dataset-form" class="launch-form">
+        <h1>Build a dataset</h1>
+        <label for="ds-description" class="lead-label">Describe the records you want collected</label>
+        <textarea id="ds-description" name="description" required placeholder="e.g. used RTX 3090 marketplace listings"></textarea>
+        <details class="advanced">
+          <summary>Advanced options</summary>
+          <div class="advanced-body">
+            <label for="ds-dataset">Dataset name</label>
+            <input id="ds-dataset" name="dataset" type="text" pattern="[a-zA-Z0-9_\-]{1,80}" maxlength="80" placeholder="named after the description">
+            <label for="ds-requests">Pages to visit (max)</label>
+            <input id="ds-requests" name="requests" type="number" min="1" max="1000000" value="100" required>
+          </div>
+        </details>
+        <button type="button" id="ds-preview" class="secondary">Preview plan</button>
+        <div id="ds-preview-result" class="plan-preview" hidden></div>
+        <button type="submit" id="ds-submit" class="primary" disabled>Build dataset</button>
+        <p id="dataset-error" class="error" role="alert" hidden></p>
+      </form>
+    </div>
+
+    <div id="panel-continuous" class="tab-panel" data-panel="continuous" role="tabpanel" aria-labelledby="tab-continuous" hidden>
+      <form id="continuous-form" class="launch-form">
+        <h1>Monitor an identifier</h1>
+        <label for="cont-value" class="lead-label">Enter a name, email, username, phone number, domain, URL, or other identifier</label>
+        <input id="cont-value" name="value" type="text" required autocomplete="off" spellcheck="false">
+        <label for="cont-kind">Identifier type</label>
+        <select id="cont-kind" name="kind">
+          <option value="">Auto-detect</option>
+          <option value="email">Email</option>
+          <option value="phone">Phone</option>
+          <option value="person">Person name</option>
+          <option value="username">Username</option>
+          <option value="organization">Organization</option>
+          <option value="domain">Domain</option>
+          <option value="url">URL</option>
+          <option value="address">Street address</option>
+          <option value="identifier">Other identifier</option>
+        </select>
+        <label for="cont-interval-hours">Check again every (hours)</label>
+        <input id="cont-interval-hours" name="interval" type="number" min="1" max="8760" value="24" required>
+        <details class="advanced">
+          <summary>Advanced options</summary>
+          <div class="advanced-body">
+            <label for="cont-dataset">Investigation name</label>
+            <input id="cont-dataset" name="dataset" type="text" pattern="[a-zA-Z0-9_\-]{1,80}" maxlength="80" placeholder="named after the target">
+            <label for="cont-requests">Pages to visit per check (max)</label>
+            <input id="cont-requests" name="requests" type="number" min="1" max="1000000" value="100" required>
+          </div>
+        </details>
+        <button type="submit" class="primary">Start monitoring</button>
+        <p id="continuous-error" class="error" role="alert" hidden></p>
+      </form>
+      <form id="rerun-form" class="launch-form subsection">
+        <h2>Run an earlier job again</h2>
+        <label for="rerun-job-id">Job ID</label>
+        <input id="rerun-job-id" name="job_id" type="text" required spellcheck="false">
+        <p class="hint">Creates a new job from the same starting points. Earlier results are
+          kept. Monitored jobs refresh on their own schedule and cannot be rerun here.</p>
+        <button type="submit" class="secondary">Run again</button>
+        <p id="rerun-error" class="error" role="alert" hidden></p>
+      </form>
     </div>
   </section>
 
   <section id="jobs-view" class="view" hidden>
     <h1>Jobs</h1>
-    <table id="jobs-table">
+    <div class="scroll-x"><table id="jobs-table">
       <thead><tr><th>ID</th><th>Status</th><th>Created</th><th>Reason</th></tr></thead>
       <tbody></tbody>
-    </table>
+    </table></div>
   </section>
 
   <section id="job-detail-view" class="view" hidden>
-    <a href="#/jobs">&larr; back to jobs</a>
+    <a href="#/jobs" class="back">&larr; All jobs</a>
     <h1 id="job-detail-title"></h1>
     <div id="job-summary"></div>
     <div class="actions" id="job-actions"></div>
-    <h2>Summary</h2>
-    <p class="hint">One row per account a tool reported. <em>Exists</em> is the tool's own
-      verdict; <em>Page check</em> is what Harvest's fetch of that page showed (only
-      <code>profile_evidence</code> means the page states the searched identifier as its
-      identity, in its title, heading or profile data; every <code>unverified_*</code>,
-      redirect, sign-in wall or duplicate is not evidence); ownership is never confirmed by
-      tool evidence. Follow up fetches a never-fetched page inside this
-      investigation's remaining budget.</p>
-    <div id="job-overview"></div>
-    <h2>Progress</h2>
-    <p class="hint">An active job refreshes this page automatically until it reaches a
-      terminal status.</p>
-    <div id="job-progress"></div>
-    <h2>Sources</h2>
-    <p class="hint">Every acquired source, its HTTP status and its extraction state. Capture
-      links open the authenticated capture metadata or raw body.</p>
-    <div id="job-sources"></div>
+    <section class="stage-panel" aria-labelledby="job-stages-title">
+      <h2 id="job-stages-title">Progress</h2>
+      <ol id="job-stages" class="stages"></ol>
+      <div id="job-counters" class="counters" aria-live="polite"></div>
+    </section>
+    <h2>Findings</h2>
+    <p class="hint">One row per account a source reported. <em>Exists</em> is the source's own
+      verdict; <em>Page check</em> is what Harvest saw when it opened that page (only
+      <code>profile_evidence</code> means the page itself names the searched identifier).
+      Ownership is never confirmed automatically. <em>Follow up</em> visits a page that has not
+      been opened yet, within this investigation's remaining allowance.</p>
+    <div id="job-overview" class="scroll-x"></div>
+    <h2>Records</h2>
+    <p class="hint">Every value is shown with its source and evidence. Conflicting values are
+      flagged rather than silently chosen, and requested details that were never found are
+      listed as missing.</p>
+    <div id="job-records"></div>
     <h2>Warnings &amp; failures</h2>
     <ul id="job-warnings"></ul>
-    <h2>Records</h2>
-    <p class="hint">Every candidate value is shown with its source, evidence, locator,
-      capture and extraction metadata. A conflicting field shows no silently chosen value,
-      and a requested field with no observations anywhere in the job is shown as missing.</p>
-    <div id="job-records"></div>
-    <h2>Events</h2>
-    <ul id="job-events"></ul>
+    <details id="job-technical" class="technical">
+      <summary>Technical activity</summary>
+      <h3>Task counts</h3>
+      <div id="job-progress"></div>
+      <h3>Sources</h3>
+      <p class="hint">Every acquired source, its HTTP status and its extraction state. Capture
+        links open the authenticated capture metadata or raw body.</p>
+      <div id="job-sources" class="scroll-x"></div>
+      <h3>Events</h3>
+      <ul id="job-events"></ul>
+    </details>
+  </section>
+
+  <section id="status-view" class="view" hidden>
+    <h1>System status</h1>
+    <ul id="status-list" class="status-list"></ul>
+    <details id="status-modules" class="technical">
+      <summary>SpiderFoot modules</summary>
+      <div id="status-modules-body"></div>
+    </details>
+    <p class="hint">The API does not report worker liveness or upstream proxy health; run
+      <code>verify-deployment.sh</code> on the host for those.</p>
   </section>
 
   <section id="schedules-view" class="view" hidden>
     <h1>Schedules</h1>
-    <table id="schedules-table">
+    <div class="scroll-x"><table id="schedules-table">
       <thead><tr><th>ID</th><th>Interval (s)</th><th>Next run</th><th>Last job</th><th>Enabled</th><th></th></tr></thead>
       <tbody></tbody>
-    </table>
+    </table></div>
   </section>
 
 </main>
