@@ -111,7 +111,7 @@ function hideError(node) {
   node.textContent = "";
 }
 
-const views = ["login-view", "launch-view", "jobs-view", "job-detail-view", "schedules-view"];
+const views = ["login-view", "launch-view", "jobs-view", "job-detail-view", "schedules-view", "status-view"];
 
 function showView(id) {
   for (const name of views) {
@@ -127,6 +127,7 @@ function setNavActive(hash) {
 
 let toolsEnabled = [];
 let capabilityDetails = {};
+let lastMeta = null;
 
 // Pure decision: does the model deployment support "Use model reasoning"? Kept separate
 // from the DOM so the Investigation tab's checkbox/hint wiring is easy to test in isolation.
@@ -167,42 +168,15 @@ async function checkAuthAndConfig() {
     capabilityDetails = meta.capabilities || {};
     document.getElementById("topnav").hidden = false;
     document.getElementById("logout").hidden = false;
-    const warning = document.getElementById("config-warning");
     capabilities = {
       search_configured: !!meta.search_configured,
       model_configured: !!meta.model_configured,
     };
-    // One line per capability that is configured but not usable. A tool listed in
-    // tools_enabled can still refuse every run (spiderfoot did, for weeks, because its
-    // container egress was undeclared), and that reads exactly like "found nothing" unless
-    // it is said out loud here.
-    const caps = meta.capabilities || {};
-    const blocked = [];
-    if (!meta.search_configured) {
-      blocked.push(
-        "Discovery search is not configured: only URL/domain seeds will work." +
-          (caps.discovery_search && caps.discovery_search.detail
-            ? ` (${caps.discovery_search.detail})`
-            : "")
-      );
-    }
-    const sf = caps.spiderfoot;
-    if (sf && !sf.ready && sf.detail && sf.detail !== "not in HARVEST_TOOLS") {
-      blocked.push(`SpiderFoot cannot run: ${sf.detail}.`);
-    }
-    if (blocked.length) {
-      warning.textContent = blocked.join(" ");
-      warning.hidden = false;
-    } else {
-      warning.hidden = true;
-    }
-    if (sf && sf.ready && Array.isArray(sf.modules) && sf.modules.length) {
-      const node = document.getElementById("spiderfoot-modules");
-      if (node) {
-        node.textContent = `SpiderFoot modules (${sf.modules.length}): ${sf.modules.join(", ")}`;
-        node.hidden = false;
-      }
-    }
+    // A tool listed in tools_enabled can still refuse every run (spiderfoot did, for weeks,
+    // because its container egress was undeclared), and that reads exactly like "found
+    // nothing" unless the header says so; details live on #/status.
+    lastMeta = meta;
+    renderSystemIndicator(meta);
     applyModelCapability();
     return true;
   } catch (err) {
@@ -220,6 +194,7 @@ async function doLogout() {
   await api("/logout", { method: "POST" });
   document.getElementById("topnav").hidden = true;
   document.getElementById("logout").hidden = true;
+  document.getElementById("system-status").hidden = true;
   location.hash = "#/launch";
   showView("login-view");
 }
@@ -245,16 +220,29 @@ function initLogin() {
 }
 
 function initLaunchTabs() {
-  const tabs = document.querySelectorAll("#launch-tabs .tab");
-  for (const tab of tabs) {
-    tab.addEventListener("click", () => {
-      for (const t of tabs) t.classList.toggle("active", t === tab);
-      const name = tab.dataset.tab;
-      for (const panel of document.querySelectorAll(".tab-panel")) {
-        panel.hidden = panel.dataset.panel !== name;
-      }
+  const tabs = Array.from(document.querySelectorAll("#launch-tabs .tab"));
+  const select = (tab) => {
+    for (const t of tabs) {
+      const on = t === tab;
+      t.classList.toggle("active", on);
+      t.setAttribute("aria-selected", String(on));
+      t.tabIndex = on ? 0 : -1;
+    }
+    for (const panel of document.querySelectorAll(".tab-panel")) {
+      panel.hidden = panel.dataset.panel !== tab.dataset.tab;
+    }
+  };
+  tabs.forEach((tab, i) => {
+    tab.addEventListener("click", () => select(tab));
+    // Arrow keys move between tabs, as for any ARIA tablist.
+    tab.addEventListener("keydown", (event) => {
+      const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+      if (!step) return;
+      const next = tabs[(i + step + tabs.length) % tabs.length];
+      select(next);
+      next.focus();
     });
-  }
+  });
 }
 
 function parseList(text) {
@@ -271,9 +259,9 @@ function parseList(text) {
 function renderPlanPreview(node, plan, onSeedsChange) {
   clear(node);
   node.hidden = false;
-  node.appendChild(el("div", { text: `Detected type: ${plan.kind}` }));
+  if (plan.kind !== "dataset") node.appendChild(el("div", { text: `Detected type: ${kindLabel(plan.kind)}` }));
   if (plan.discovery_queries.length) {
-    node.appendChild(el("div", { text: "Discovery queries:" }));
+    node.appendChild(el("div", { text: "Searches Harvest will run:" }));
     node.appendChild(
       el(
         "div",
@@ -321,7 +309,7 @@ function renderPlanPreview(node, plan, onSeedsChange) {
       node.appendChild(breadthSelect);
     }
   }
-  const seedsLabel = el("label", { text: "Seed URLs (editable, one per line; no search required)" });
+  const seedsLabel = el("label", { text: "Starting web pages (one per line; optional)" });
   const seedsInput = el("textarea", { class: "plan-edit-seeds", rows: "3" });
   seedsInput.value = plan.seeds.join("\n");
   if (onSeedsChange) {
@@ -332,7 +320,7 @@ function renderPlanPreview(node, plan, onSeedsChange) {
       box.addEventListener("change", () => onSeedsChange(parseList(seedsInput.value)));
     }
   }
-  const fieldsLabel = el("label", { text: "Fields (editable, comma-separated)" });
+  const fieldsLabel = el("label", { text: "Details to collect (comma-separated)" });
   const fieldsInput = el("textarea", { class: "plan-edit-fields", rows: "2" });
   fieldsInput.value = plan.fields.join(", ");
   node.appendChild(seedsLabel);
@@ -356,24 +344,317 @@ function renderPlanPreview(node, plan, onSeedsChange) {
   };
 }
 
+// ---- Investigate tab: plain-language labels, presets and the job spec they produce. ----
+
+const KIND_LABELS = {
+  email: "Email address",
+  phone: "Phone number",
+  person: "Person name",
+  username: "Username",
+  organization: "Organization",
+  domain: "Domain",
+  url: "Web address",
+  address: "Street address",
+  identifier: "Other identifier",
+};
+
+function kindLabel(kind) {
+  return KIND_LABELS[kind] || kind;
+}
+
+// What a source is to a user, keyed by capability/tool name. Tool names stay visible only
+// in Advanced options and the status view.
+const SOURCE_LABELS = {
+  discovery_search: "Web discovery",
+  fetch: "Website analysis",
+  ghunt: "Google account enrichment",
+  maigret: "Profile & account discovery",
+  spiderfoot: "Linked accounts & breach records",
+};
+
+function sourceLabel(name) {
+  return SOURCE_LABELS[name] || name;
+}
+
+const FIELD_LABELS = {
+  full_name: "Full name",
+  display_name: "Display name",
+  name: "Name",
+  email: "Email addresses",
+  contact_email: "Contact email",
+  phone: "Phone numbers",
+  organization: "Organization",
+  profile_url: "Profile pages",
+  username: "Usernames",
+  bio: "Profile bio",
+  address: "Addresses",
+  formatted_address: "Address",
+  website: "Website",
+  title: "Page title",
+  description: "Description",
+};
+
+function fieldLabel(field) {
+  if (FIELD_LABELS[field]) return FIELD_LABELS[field];
+  const words = String(field).replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+// Real configuration, not labels: each preset sets the page and time budgets, which offered
+// tools run, Maigret's breadth and whether tool findings are followed up. Deep raises
+// budgets and breadth only; concurrency is unchanged and the SpiderFoot module set stays
+// whatever the deployment allowlisted. Tool runs never exceed the default limits.tool_runs (3).
+const PRESETS = {
+  quick: {
+    label: "Quick",
+    requests: 30,
+    seconds: 300,
+    crawl: false,
+    tools: ["ghunt", "maigret"],
+    topSites: 100,
+  },
+  standard: {
+    label: "Standard",
+    requests: 100,
+    seconds: 900,
+    crawl: true,
+    tools: ["ghunt", "maigret", "spiderfoot"],
+    topSites: 500,
+  },
+  deep: {
+    label: "Deep",
+    requests: 300,
+    seconds: 2700,
+    crawl: true,
+    tools: ["ghunt", "maigret", "spiderfoot"],
+    topSites: null,
+  },
+};
+
+// The preset's settings for the tools this plan actually offers.
+function presetSettings(presetKey, offeredToolNames) {
+  const preset = PRESETS[presetKey] || PRESETS.standard;
+  return {
+    requests: preset.requests,
+    seconds: preset.seconds,
+    crawl: preset.crawl,
+    topSites: preset.topSites,
+    tools: (offeredToolNames || []).filter((name) => preset.tools.includes(name)),
+  };
+}
+
+// Coarse, from the cost notes in capabilities.py: a full Maigret sweep is ~50 MiB of proxy
+// traffic, a SpiderFoot email sweep a few minutes of its own requests, GHunt ~100 KiB.
+function proxyUsage(requests, tools, topSites) {
+  let level = requests >= 300 ? 2 : requests >= 100 ? 1 : 0;
+  if (tools.includes("spiderfoot")) level = Math.max(level, 1);
+  if (tools.includes("maigret")) {
+    level = Math.max(level, topSites == null ? 2 : topSites > 100 ? 1 : 0);
+  }
+  return ["Low", "Medium", "High"][level];
+}
+
+// The time budget is a hard stop for the whole investigation, tool scans included, so
+// "up to" is the honest estimate.
+function durationLabel(seconds) {
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  return minutes >= 60 && minutes % 60 === 0
+    ? `Up to ${minutes / 60} hour${minutes === 60 ? "" : "s"}`
+    : `Up to ${minutes} min`;
+}
+
+function sourceCategories(plan, toolNames, caps) {
+  const out = [];
+  if (plan.discovery_queries && plan.discovery_queries.length && caps && caps.search_configured) {
+    out.push(sourceLabel("discovery_search"));
+  }
+  if (plan.seeds && plan.seeds.length) out.push(sourceLabel("fetch"));
+  for (const name of toolNames) out.push(sourceLabel(name));
+  return out;
+}
+
+// Named after the target so repeat investigations of the same identifier share a dataset.
+function autoDatasetName(text) {
+  const slug = String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80)
+    .replace(/-+$/, "");
+  return slug || "investigation";
+}
+
+// The exact JobSpec POST /jobs receives -- the same shape the previous form sent.
+function buildInvestigationSpec(opts) {
+  const tools = (opts.plan.tools || [])
+    .filter((t) => opts.tools.includes(t.name))
+    .map((t) => {
+      const run = { name: t.name, target: t.target, crawl: opts.crawl };
+      // Only maigret reads top_sites; omitted means its full site database.
+      if (t.name === "maigret" && opts.topSites) run.top_sites = opts.topSites;
+      return run;
+    });
+  return {
+    objective: `Investigate ${opts.plan.normalized}`.slice(0, 4000),
+    dataset: opts.dataset || autoDatasetName(opts.plan.normalized),
+    mode: "targeted",
+    seeds: opts.seeds,
+    discovery_queries: opts.plan.discovery_queries,
+    fields: opts.fields,
+    tools,
+    use_model: !!opts.useModel,
+    limits: { requests: opts.requests, seconds: opts.seconds },
+  };
+}
+
+function setText(id, text, muted) {
+  const node = document.getElementById(id);
+  node.textContent = text;
+  node.classList.toggle("muted", !!muted);
+}
+
 function initInvestigationForm() {
   const form = document.getElementById("investigation-form");
   const errorNode = document.getElementById("investigation-error");
-  const previewNode = document.getElementById("inv-preview-result");
   const submitButton = document.getElementById("inv-submit");
   const createHintNode = document.getElementById("inv-create-hint");
-  let currentPlan = null;
-  let currentEditor = null;
+  const valueInput = document.getElementById("inv-value");
+  const detectNode = document.getElementById("inv-detect");
+  const kindPicker = document.getElementById("inv-kind-picker");
+  const sourcesNode = document.getElementById("inv-sources");
+  const fieldsNode = document.getElementById("inv-fields");
+  const followup = document.getElementById("inv-followup");
+  const followupHint = document.getElementById("inv-followup-hint");
+  const breadthRow = document.getElementById("inv-breadth-row");
+  const breadth = document.getElementById("inv-breadth");
+  const requestsInput = document.getElementById("inv-requests");
+  const minutesInput = document.getElementById("inv-minutes");
+  const seedsInput = document.getElementById("inv-seeds");
+  const fieldsExtra = document.getElementById("inv-fields-extra");
+  const datasetInput = document.getElementById("inv-dataset");
+
+  let plan = null;
+  let planFor = null;
+  let chosenKind = null;
+  let customized = false;
+  let planSeq = 0;
+  let debounce = null;
 
   const SEEDLESS_HINT =
-    "Add a seed URL above, or select an external tool — search is not configured on this deployment, so an objective alone cannot be used to discover pages.";
+    "Search is not configured on this deployment, so this investigation needs a starting web page or a source under Advanced options.";
 
-  function updateCreateAvailability(seeds) {
-    const tools = currentEditor ? currentEditor.tools() : [];
-    if (canCreateInvestigationJob(seeds, capabilities, tools)) {
+  const preset = () => (form.querySelector('input[name="inv-preset"]:checked') || {}).value || "standard";
+  const offeredTools = () => (plan ? (plan.tools || []).filter((t) => toolsEnabled.includes(t.name)) : []);
+  const selectedTools = () =>
+    Array.from(sourcesNode.querySelectorAll("input.tool-box"))
+      .filter((box) => box.checked)
+      .map((box) => box.dataset.tool);
+  const selectedFields = () =>
+    Array.from(new Set([
+      ...Array.from(fieldsNode.querySelectorAll("input:checked")).map((box) => box.value),
+      ...parseList(fieldsExtra.value),
+    ]));
+  const minutes = () => parseInt(minutesInput.value, 10);
+  const topSites = () => (breadth.value ? Number(breadth.value) : null);
+
+  for (const key of Object.keys(PRESETS)) {
+    const meta = form.querySelector(`[data-preset-meta="${key}"]`);
+    if (meta) meta.textContent = `${durationLabel(PRESETS[key].seconds)} · up to ${PRESETS[key].requests} pages`;
+  }
+
+  function applyPreset() {
+    const settings = presetSettings(preset(), offeredTools().map((t) => t.name));
+    requestsInput.value = settings.requests;
+    minutesInput.value = Math.round(settings.seconds / 60);
+    for (const box of sourcesNode.querySelectorAll("input.tool-box")) {
+      box.checked = settings.tools.includes(box.dataset.tool);
+    }
+    breadth.value = settings.topSites == null ? "" : String(settings.topSites);
+    // Nothing to follow up without an account check; unchecked so it doesn't read as active.
+    followup.checked = settings.crawl && settings.tools.length > 0;
+    customized = false;
+  }
+
+  function renderSources() {
+    clear(sourcesNode);
+    sourcesNode.appendChild(el("legend", { text: "Sources" }));
+    if (!plan) {
+      sourcesNode.appendChild(el("p", { class: "hint", text: "Enter an identifier to see the sources available for it." }));
+      breadthRow.hidden = true;
+      return;
+    }
+    const builtin = sourceCategories(plan, [], capabilities);
+    if (builtin.length) {
+      sourcesNode.appendChild(el("p", { class: "hint", text: `Always included: ${builtin.join(", ")}.` }));
+    }
+    // Only tools this deployment enabled are offered; the rest are named with the reason.
+    for (const t of offeredTools()) {
+      const box = el("input", { type: "checkbox", class: "tool-box", "data-tool": t.name, "data-target": t.target });
+      box.addEventListener("change", () => {
+        customized = true;
+        refresh();
+      });
+      sourcesNode.appendChild(
+        el("label", { class: "checkbox" }, [box, ` ${sourceLabel(t.name)} `, el("span", { class: "hint", text: `(${t.name})` })])
+      );
+    }
+    const unavailable = [
+      ...(plan.unavailable_tools || []),
+      ...(plan.tools || [])
+        .filter((t) => !toolsEnabled.includes(t.name))
+        .map((t) => ({ name: t.name, detail: (capabilityDetails[t.name] || {}).detail || "not enabled on this deployment" })),
+    ];
+    for (const t of unavailable) {
+      sourcesNode.appendChild(el("p", { class: "hint", text: `Unavailable: ${sourceLabel(t.name)} (${t.name}) — ${t.detail}` }));
+    }
+    if (!offeredTools().length && !builtin.length) {
+      sourcesNode.appendChild(el("p", { class: "hint", text: "No automatic sources for this input; add a starting web page below." }));
+    }
+    breadthRow.hidden = !offeredTools().some((t) => t.name === "maigret");
+  }
+
+  function renderFields() {
+    clear(fieldsNode);
+    fieldsNode.appendChild(el("legend", { text: "Details to collect" }));
+    for (const field of plan ? plan.fields : []) {
+      const box = el("input", { type: "checkbox", value: field });
+      box.checked = true;
+      box.addEventListener("change", refresh);
+      fieldsNode.appendChild(el("label", { class: "checkbox" }, [box, ` ${fieldLabel(field)}`]));
+    }
+  }
+
+  function renderSummary() {
+    const tools = selectedTools();
+    setText("sum-target", plan ? plan.normalized : valueInput.value.trim() || "Not entered yet", !plan);
+    setText("sum-kind", plan ? kindLabel(plan.kind) : "—", !plan);
+    setText("sum-depth", PRESETS[preset()].label + (customized ? " (customized)" : ""));
+    const fields = selectedFields();
+    setText("sum-lookfor", plan && fields.length ? fields.map(fieldLabel).join(", ") : "—", !plan);
+    const seeds = parseList(seedsInput.value);
+    const sources = plan ? sourceCategories({ ...plan, seeds }, tools, capabilities) : [];
+    setText("sum-sources", sources.length ? sources.join(", ") : "—", !sources.length);
+    const seconds = (minutes() || 0) * 60;
+    setText("sum-duration", seconds ? durationLabel(seconds) : "—");
+    setText("sum-proxy", proxyUsage(parseInt(requestsInput.value, 10) || 0, tools, topSites()));
+  }
+
+  function refresh() {
+    const tools = selectedTools();
+    const hasTools = offeredTools().length > 0;
+    followup.disabled = !hasTools || !tools.length;
+    followupHint.textContent = hasTools
+      ? "Visits the profile pages and identifiers that account checks report."
+      : "No account checks run for this kind of input, so there is nothing to follow up.";
+    renderSummary();
+    if (!plan) {
+      submitButton.disabled = true;
+      createHintNode.hidden = true;
+      return;
+    }
+    if (canCreateInvestigationJob(parseList(seedsInput.value), capabilities, tools)) {
       submitButton.disabled = false;
       createHintNode.hidden = true;
-      createHintNode.textContent = "";
     } else {
       submitButton.disabled = true;
       createHintNode.textContent = SEEDLESS_HINT;
@@ -381,67 +662,154 @@ function initInvestigationForm() {
     }
   }
 
-  async function preview() {
-    hideError(errorNode);
-    const value = document.getElementById("inv-value").value.trim();
-    const kind = document.getElementById("inv-kind").value || null;
-    if (!value) return;
-    try {
-      currentPlan = await api("/plan/investigation", { method: "POST", body: { value, kind } });
-      currentEditor = renderPlanPreview(previewNode, currentPlan, updateCreateAvailability);
-      updateCreateAvailability(currentEditor.seeds());
-    } catch (err) {
-      currentPlan = null;
-      currentEditor = null;
-      submitButton.disabled = true;
-      createHintNode.hidden = true;
-      showError(errorNode, err);
+  function setPlan(next) {
+    plan = next;
+    if (!next) planFor = null;
+    seedsInput.value = plan ? plan.seeds.join("\n") : "";
+    datasetInput.placeholder = plan ? autoDatasetName(plan.normalized) : "";
+    renderSources();
+    renderFields();
+    applyPreset();
+    refresh();
+  }
+
+  function showDetect(text, tone, withChange) {
+    clear(detectNode);
+    detectNode.className = `detect${tone ? ` detect-${tone}` : ""}`;
+    detectNode.appendChild(document.createTextNode(text));
+    if (withChange) {
+      detectNode.appendChild(document.createTextNode(" "));
+      detectNode.appendChild(
+        el("button", {
+          type: "button",
+          class: "link",
+          text: chosenKind ? "Detect automatically" : "Change",
+          onclick: () => {
+            if (chosenKind) {
+              chosenKind = null;
+              for (const r of kindPicker.querySelectorAll("input")) r.checked = false;
+              kindPicker.hidden = true;
+              detect();
+            } else {
+              kindPicker.hidden = false;
+              const current = kindPicker.querySelector(`input[value="${plan ? plan.kind : ""}"]`);
+              if (current) current.checked = true;
+              (current || kindPicker.querySelector("input")).focus();
+            }
+          },
+        })
+      );
     }
   }
 
-  document.getElementById("inv-preview").addEventListener("click", preview);
-  for (const field of ["inv-value", "inv-kind"]) {
-    document.getElementById(field).addEventListener("change", () => {
-      submitButton.disabled = true;
-      currentPlan = null;
-      currentEditor = null;
-      createHintNode.hidden = true;
+  async function detect() {
+    const value = valueInput.value.trim();
+    const seq = ++planSeq;
+    hideError(errorNode);
+    if (!value) {
+      chosenKind = null;
+      kindPicker.hidden = true;
+      showDetect("", null, false);
+      setPlan(null);
+      return;
+    }
+    try {
+      const next = await api("/plan/investigation", { method: "POST", body: { value, kind: chosenKind } });
+      if (seq !== planSeq) return; // a newer keystroke owns the form now
+      showDetect(chosenKind ? `Treating this as: ${kindLabel(next.kind)}.` : `${kindLabel(next.kind)} detected.`, "ok", true);
+      planFor = value;
+      setPlan(next);
+    } catch (err) {
+      if (seq !== planSeq) return;
+      setPlan(null);
+      if (err.status === 422 && !chosenKind) {
+        // The planner only auto-classifies structurally unambiguous input; free text could
+        // be a name, organization or address, so the user says which.
+        showDetect("Choose what kind of identifier this is.", "ask", false);
+        kindPicker.hidden = false;
+      } else if (err.status === 422) {
+        showDetect(err.message, "error", true);
+      } else {
+        showError(errorNode, err);
+      }
+    }
+  }
+
+  valueInput.addEventListener("input", () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(detect, 350);
+  });
+  kindPicker.addEventListener("change", (event) => {
+    chosenKind = event.target.value;
+    detect();
+  });
+  for (const radio of form.querySelectorAll('input[name="inv-preset"]')) {
+    radio.addEventListener("change", () => {
+      applyPreset();
+      refresh();
     });
   }
+  for (const input of [requestsInput, minutesInput, breadth, followup]) {
+    input.addEventListener("change", () => {
+      customized = true;
+      refresh();
+    });
+  }
+  for (const input of [seedsInput, fieldsExtra]) input.addEventListener("input", refresh);
+  refresh();
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     hideError(errorNode);
-    if (!currentPlan) {
-      await preview();
-      if (!currentPlan) return;
+    clearTimeout(debounce);
+    // Enter can arrive before the debounced detection: plan for exactly what is typed.
+    if (!plan || planFor !== valueInput.value.trim()) await detect();
+    if (!plan) {
+      valueInput.focus();
+      return;
     }
-    const seeds = currentEditor.seeds();
-    if (!canCreateInvestigationJob(seeds, capabilities, currentEditor.tools())) {
-      updateCreateAvailability(seeds);
+    const seeds = parseList(seedsInput.value);
+    const tools = selectedTools();
+    if (!canCreateInvestigationJob(seeds, capabilities, tools)) {
+      refresh();
       showError(errorNode, new Error(SEEDLESS_HINT));
       return;
     }
-    const dataset = document.getElementById("inv-dataset").value.trim();
-    const useModel = document.getElementById("inv-model").checked;
-    const spec = {
-      objective: `Investigate ${currentPlan.normalized}`.slice(0, 4000),
+    const dataset = datasetInput.value.trim();
+    if (dataset && !datasetInput.checkValidity()) {
+      document.getElementById("inv-advanced").open = true;
+      showError(errorNode, new Error("Investigation name may only use letters, digits, - and _."));
+      datasetInput.focus();
+      return;
+    }
+    const requests = parseInt(requestsInput.value, 10);
+    if (!(requests >= 1) || !(minutes() >= 1)) {
+      document.getElementById("inv-advanced").open = true;
+      showError(errorNode, new Error("Pages to visit and time limit must be at least 1."));
+      return;
+    }
+    const spec = buildInvestigationSpec({
+      plan,
       dataset,
-      mode: "targeted",
       seeds,
-      discovery_queries: currentPlan.discovery_queries,
-      fields: currentEditor.fields(),
-      tools: currentEditor.tools(),
-      use_model: useModel,
-      limits: limitsFrom("inv-requests", "inv-seconds"),
-    };
+      fields: selectedFields(),
+      tools,
+      crawl: followup.checked,
+      topSites: topSites(),
+      useModel: document.getElementById("inv-model").checked,
+      requests,
+      seconds: minutes() * 60,
+    });
+    submitButton.disabled = true;
     try {
       const job = await api("/jobs", { method: "POST", body: spec });
       location.hash = `#/jobs/${job.id}`;
     } catch (err) {
       showError(errorNode, err);
+      refresh();
     }
   });
+
 }
 
 function initDatasetForm() {
@@ -482,7 +850,8 @@ function initDatasetForm() {
       await preview();
       if (!currentPlan) return;
     }
-    const dataset = document.getElementById("ds-dataset").value.trim();
+    const dataset =
+      document.getElementById("ds-dataset").value.trim() || autoDatasetName(currentPlan.normalized);
     const spec = {
       objective: `Build dataset: ${currentPlan.normalized}`.slice(0, 4000),
       dataset,
@@ -526,10 +895,10 @@ function initContinuousForm() {
     hideError(errorNode);
     const value = document.getElementById("cont-value").value.trim();
     const kind = document.getElementById("cont-kind").value || null;
-    const dataset = document.getElementById("cont-dataset").value.trim();
-    const interval = parseInt(document.getElementById("cont-interval").value, 10);
+    const interval = parseInt(document.getElementById("cont-interval-hours").value, 10) * 3600;
     try {
       const plan = await api("/plan/investigation", { method: "POST", body: { value, kind } });
+      const dataset = document.getElementById("cont-dataset").value.trim() || autoDatasetName(plan.normalized);
       const spec = {
         objective: `Continuously monitor ${plan.normalized}`.slice(0, 4000),
         dataset,
@@ -846,10 +1215,12 @@ async function renderJobDetail(jobId) {
 
   const job = await api(`/jobs/${encodeURIComponent(jobId)}`);
   const active = ACTIVE_STATUSES.includes(job.status);
+  title.textContent = job.spec.objective;
   summary.appendChild(
     el("div", {}, [
       statusBadge(job.status),
-      el("span", { text: ` · dataset ${job.spec.dataset} · mode ${job.spec.mode}` }),
+      el("span", { class: "hint", text: ` · ${job.spec.dataset} · job ` }),
+      el("span", { class: "hint mono", text: jobId }),
       active ? el("span", { class: "hint", text: " · auto-refreshing" }) : null,
     ])
   );
@@ -870,7 +1241,8 @@ async function renderJobDetail(jobId) {
       ])
     );
   }
-  if (job.missing_fields && job.missing_fields.length) {
+  // Nothing is "missing" before the job has had a chance to find it.
+  if (!active && job.missing_fields && job.missing_fields.length) {
     summary.appendChild(
       el("div", { class: "warning", text: `Missing requested fields: ${job.missing_fields.join(", ")}` })
     );
@@ -905,11 +1277,15 @@ async function renderJobDetail(jobId) {
 
   renderProgress(progressNode, job);
 
-  const [records, events, overview] = await Promise.all([
+  // ponytail: one page of 1000 tasks; limits.tasks defaults to 300, page with `after` if raised.
+  const [records, events, overview, tasks] = await Promise.all([
     api(`/jobs/${encodeURIComponent(jobId)}/records`),
     api(`/jobs/${encodeURIComponent(jobId)}/events?limit=200`),
     api(`/jobs/${encodeURIComponent(jobId)}/summary`),
+    api(`/jobs/${encodeURIComponent(jobId)}/tasks?limit=1000`),
   ]);
+  renderStages(document.getElementById("job-stages"), deriveStages(job, tasks));
+  renderCounters(document.getElementById("job-counters"), job, overview, records);
   renderOverview(document.getElementById("job-overview"), overview, jobId, active);
   renderRecords(recordsNode, records, job.missing_fields);
   renderWarnings(warningsNode, events);
@@ -962,6 +1338,189 @@ async function renderSchedules() {
   }
 }
 
+// ---- Job progress: plain-language stages derived from the job's real tasks. ----
+
+const STAGES = [
+  ["prepare", "Preparing investigation"],
+  ["public", "Checking public sources"],
+  ["discover", "Discovering profiles"],
+  ["enrich", "Enriching identifiers"],
+  ["correlate", "Correlating findings"],
+  ["report", "Building report"],
+];
+const ENRICH_TOOLS = ["ghunt", "spiderfoot"];
+
+// Which stage a task belongs to. Fetches descended from a tool run are the profile pages
+// that tool reported; every other fetch or search is a public-source check.
+function taskStage(task, byId) {
+  if (task.kind === "tool") {
+    return ENRICH_TOOLS.includes(String(task.key).split(":")[0]) ? "enrich" : "discover";
+  }
+  if (task.kind === "extract") return "correlate";
+  if (task.kind === "reason") return "report";
+  for (let parent = byId.get(task.parent); parent; parent = byId.get(parent.parent)) {
+    if (parent.kind === "tool") return "discover";
+  }
+  return "public";
+}
+
+// Each stage is done / active / waiting / skipped / failed, from task statuses only. A stage
+// with no tasks is shown only if this job's spec says it will have some.
+function deriveStages(job, tasks) {
+  const spec = job.spec || {};
+  const active = ACTIVE_STATUSES.includes(job.status);
+  const toolNames = (spec.tools || []).map((t) => t.name);
+  const expected = {
+    prepare: true,
+    public: !!((spec.seeds || []).length || (spec.discovery_queries || []).length),
+    discover:
+      toolNames.some((n) => !ENRICH_TOOLS.includes(n)) || (spec.tools || []).some((t) => t.crawl),
+    enrich: toolNames.some((n) => ENRICH_TOOLS.includes(n)),
+    correlate: true,
+    report: true,
+  };
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const groups = {};
+  for (const task of tasks) (groups[taskStage(task, byId)] ||= []).push(task);
+
+  const stages = [];
+  for (const [key, label] of STAGES) {
+    const group = groups[key] || [];
+    const open = group.filter((t) => t.status === "pending" || t.status === "running").length;
+    const done = group.filter((t) => t.status === "done").length;
+    let state;
+    if (key === "prepare") {
+      state = job.status === "queued" ? "active" : "done";
+    } else if (key === "report" && !open) {
+      // The report is the job reaching a terminal status, whatever the last task was.
+      state = !active ? (job.status === "failed" || job.status === "cancelled" ? "failed" : "done")
+        : stages.every((s) => s.state === "done" || s.state === "skipped") ? "active" : "waiting";
+    } else if (!group.length) {
+      if (!expected[key]) continue;
+      state = active ? "waiting" : "skipped";
+    } else if (job.status === "queued") {
+      state = "waiting"; // tasks exist but no worker has picked the job up yet
+    } else if (open) {
+      state = "active";
+    } else {
+      state = done ? "done" : "failed";
+    }
+    const failed = group.length - open - done;
+    stages.push({ key, label, state, total: group.length, done, failed });
+  }
+  return stages;
+}
+
+const STAGE_STATE_TEXT = {
+  done: "Done",
+  active: "In progress",
+  waiting: "Waiting",
+  skipped: "Not reached",
+  failed: "Did not complete",
+};
+
+function renderStages(node, stages) {
+  clear(node);
+  for (const stage of stages) {
+    const detail = stage.total
+      ? ` · ${stage.done} of ${stage.total} step${stage.total === 1 ? "" : "s"}` +
+        (stage.failed ? ` (${stage.failed} failed)` : "")
+      : "";
+    node.appendChild(
+      el("li", { class: `stage stage-${stage.state}`, "aria-current": stage.state === "active" ? "step" : null }, [
+        el("span", { class: "stage-dot", "aria-hidden": "true" }),
+        el("span", { class: "stage-label", text: stage.label }),
+        el("span", { class: "stage-state", text: STAGE_STATE_TEXT[stage.state] + detail }),
+      ])
+    );
+  }
+}
+
+function renderCounters(node, job, overview, records) {
+  clear(node);
+  const limits = (job.spec && job.spec.limits) || {};
+  const end = job.finished || Date.now() / 1000;
+  const elapsed = job.started ? Math.max(0, Math.round(end - job.started)) : 0;
+  const counters = [
+    ["Pages visited", `${job.requests}${limits.requests ? ` / ${limits.requests}` : ""}`],
+    ["Sources captured", String(job.captures)],
+    ["Accounts reported", String(overview.accounts.length)],
+    ["Pages naming the target", String(overview.verified_pages)],
+    ["Records", String(records.length)],
+    ["Elapsed", `${Math.floor(elapsed / 60)}m ${String(elapsed % 60).padStart(2, "0")}s`],
+  ];
+  for (const [label, value] of counters) {
+    node.appendChild(el("div", { class: "counter" }, [el("span", { class: "counter-value", text: value }), el("span", { class: "counter-label", text: label })]));
+  }
+}
+
+// ---- System status: the header indicator and the #/status details view. ----
+
+function systemIssues(meta) {
+  const caps = meta.capabilities || {};
+  const issues = [];
+  if (!meta.search_configured) {
+    issues.push(
+      "Web discovery is not configured: only web addresses and domains can be investigated without a starting page." +
+        (caps.discovery_search && caps.discovery_search.detail ? ` (${caps.discovery_search.detail})` : "")
+    );
+  }
+  const sf = caps.spiderfoot;
+  if (sf && !sf.ready && sf.detail && sf.detail !== "not in HARVEST_TOOLS") {
+    issues.push(`${sourceLabel("spiderfoot")} cannot run: ${sf.detail}.`);
+  }
+  return issues;
+}
+
+function renderSystemIndicator(meta) {
+  const link = document.getElementById("system-status");
+  const issues = systemIssues(meta);
+  link.hidden = false;
+  link.classList.toggle("sys-warn", issues.length > 0);
+  document.getElementById("system-status-text").textContent = issues.length ? "Needs attention" : "System ready";
+  link.title = issues.length ? issues.join(" ") : "All configured sources are ready";
+}
+
+function renderStatusView(meta) {
+  const list = document.getElementById("status-list");
+  clear(list);
+  const caps = meta.capabilities || {};
+  const row = (ok, name, detail) =>
+    list.appendChild(
+      el("li", { class: ok ? "ok" : "bad" }, [
+        el("span", { class: "dot", "aria-hidden": "true" }),
+        el("strong", { text: name }),
+        el("span", { class: "hint", text: ` ${ok ? "Ready" : "Unavailable"}${detail ? ` — ${detail}` : ""}` }),
+      ])
+    );
+  row(true, "Harvest API", `version ${meta.version}`);
+  row(!!meta.search_configured, `${sourceLabel("discovery_search")} (search)`, caps.discovery_search && caps.discovery_search.detail);
+  row(!!meta.model_configured, "AI reasoning (model)", meta.model_configured ? "" : "not configured");
+  for (const name of ["ghunt", "maigret", "spiderfoot"]) {
+    const cap = caps[name];
+    if (!cap) continue;
+    let detail = cap.detail;
+    if (name === "spiderfoot" && cap.ready && Array.isArray(cap.modules)) {
+      detail = `${cap.modules.length} modules enabled, egress ${cap.egress}`;
+    }
+    row(!!cap.ready, `${sourceLabel(name)} (${name})`, detail);
+  }
+  for (const issue of systemIssues(meta)) list.appendChild(el("li", { class: "bad hint", text: issue }));
+
+  const body = document.getElementById("status-modules-body");
+  clear(body);
+  const sf = caps.spiderfoot;
+  document.getElementById("status-modules").hidden = !(sf && Array.isArray(sf.modules) && sf.modules.length);
+  if (sf && sf.plans) {
+    for (const [type, plan] of Object.entries(sf.plans)) {
+      body.appendChild(el("p", { class: "hint", text: `${type}: ${plan.modules.length} module(s) run — ${plan.modules.join(", ") || "none"}` }));
+    }
+  }
+  if (sf && Array.isArray(sf.modules)) {
+    body.appendChild(el("div", { class: "chip-list" }, sf.modules.map((m) => el("span", { class: "chip mono", text: m }))));
+  }
+}
+
 async function route() {
   stopJobPolling();
   const authenticated = await checkAuthAndConfig();
@@ -979,6 +1538,10 @@ async function route() {
     setNavActive("#/jobs");
     showView("job-detail-view");
     await renderJobDetail(decodeURIComponent(jobMatch[1]));
+  } else if (hash === "#/status") {
+    setNavActive("#/status");
+    showView("status-view");
+    renderStatusView(lastMeta);
   } else if (hash === "#/schedules") {
     setNavActive("#/schedules");
     showView("schedules-view");
@@ -1021,5 +1584,22 @@ if (typeof document !== "undefined") {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { api, formatApiErrorDetail, canCreateInvestigationJob, modelCapabilityState };
+  module.exports = {
+    api,
+    formatApiErrorDetail,
+    canCreateInvestigationJob,
+    modelCapabilityState,
+    kindLabel,
+    sourceLabel,
+    fieldLabel,
+    PRESETS,
+    presetSettings,
+    proxyUsage,
+    durationLabel,
+    sourceCategories,
+    autoDatasetName,
+    buildInvestigationSpec,
+    deriveStages,
+    systemIssues,
+  };
 }
