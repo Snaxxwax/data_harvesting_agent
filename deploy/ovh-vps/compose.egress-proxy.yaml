@@ -28,6 +28,10 @@ services:
     # 0600 bind-mounted file that entrypoint.sh reads, and the assembled config is written
     # to the tmpfs below so the only at-rest copy inside the container never touches disk.
     entrypoint: ["/usr/local/bin/egress-entrypoint.sh"]
+    environment:
+      # The deployment-wide outbound connection limit, enforced here as MaxClients. The
+      # worker and api read the same variable, so set it once in .env, never per service.
+      HARVEST_EGRESS_MAX_CONNECTIONS: ${HARVEST_EGRESS_MAX_CONNECTIONS:-128}
     volumes:
       - /opt/harvest/egress-relay/tinyproxy.conf.template:/etc/tinyproxy/tinyproxy.conf.template:ro
       - /opt/harvest/egress-relay/entrypoint.sh:/usr/local/bin/egress-entrypoint.sh:ro
@@ -54,6 +58,7 @@ services:
     environment:
       HARVEST_EGRESS_MODE: proxy
       HARVEST_EGRESS_PROXY: http://egress-relay:8888
+      HARVEST_EGRESS_MAX_CONNECTIONS: ${HARVEST_EGRESS_MAX_CONNECTIONS:-128}
       # Must be unreachable without the proxy. If this connects, tools refuse to run.
       HARVEST_EGRESS_PROBE: ${HARVEST_EGRESS_PROBE:-1.1.1.1:443}
       # OPTIONAL extra restriction, empty by default. When set, the fetcher allows
@@ -70,6 +75,7 @@ services:
     environment:
       HARVEST_EGRESS_MODE: proxy
       HARVEST_EGRESS_PROXY: http://egress-relay:8888
+      HARVEST_EGRESS_MAX_CONNECTIONS: ${HARVEST_EGRESS_MAX_CONNECTIONS:-128}
       # Must match the worker's value: the api plans jobs and has to agree about policy.
       HARVEST_PROXY_PUBLIC_HOSTS: ${HARVEST_PROXY_PUBLIC_HOSTS:-}
 
