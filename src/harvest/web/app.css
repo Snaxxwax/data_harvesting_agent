@@ -141,7 +141,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .entity-card h3 { margin: 0 0 0.4rem; font-size: 0.95rem; }
 .field-row { display: flex; align-items: baseline; gap: 0.5rem; padding: 0.2rem 0; border-bottom: 1px dashed var(--border); }
 .field-name { color: var(--muted); min-width: 140px; }
-.field-value { font-weight: 600; }
+.field-value { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .field-conflict { color: var(--warn); font-weight: 600; }
 .field-missing { color: var(--muted); font-style: italic; }
 .candidates { margin: 0.3rem 0 0.6rem 0.2rem; padding-left: 1rem; font-size: 0.85rem; color: var(--muted); }
@@ -303,7 +303,8 @@ td { overflow-wrap: anywhere; }
   .topbar-right { flex: 0 0 auto; }
   .topnav { order: 3; flex: 1 1 100%; flex-wrap: wrap; gap: 0.9rem; }
   form { max-width: none; }
-  .field-name { min-width: 0; }
+  .field-row { flex-wrap: wrap; }
+  .field-name { min-width: 0; flex: 0 0 auto; }
   main > section > table { display: block; overflow-x: auto; }
   table { white-space: nowrap; }
   td { overflow-wrap: normal; }
