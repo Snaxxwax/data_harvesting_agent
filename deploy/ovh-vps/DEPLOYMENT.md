@@ -653,6 +653,14 @@ the silent-direct-egress state above — is not an easy mistake to make.
 
 **Moving the credential did not rotate it.** See "Rotating the upstream credential".
 
+#### Outbound concurrency (2026-10-06)
+
+`HARVEST_EGRESS_MAX_CONNECTIONS` in `.env` (128 here) is the deployment-wide limit on open
+upstream connections: the relay applies it as `MaxClients` (before this it ran on
+tinyproxy's compiled-in 100, set by nobody) and Maigret runs at limit ÷ (2 × worker
+threads). Webshare's cap is 500 per *account*. Details and measurements: OPERATIONS.md
+"Outbound concurrency"; `verify-deployment.sh` asserts relay and worker agree.
+
 #### Rotating the upstream credential
 
 Storage and rotation are separate. The value that was in the 0644 config is the same value
@@ -945,6 +953,7 @@ Rebuild Harvest after a repo update. **Pass no `-f` flags.**
     git -C /opt/harvest/app fetch origin && git -C /opt/harvest/app checkout <commit>
     cd /opt/harvest/app
     cp -f deploy/ovh-vps/compose.*.yaml .      # overlays are tracked under deploy/
+    cp -f deploy/ovh-vps/egress-relay/{entrypoint.sh,tinyproxy.conf.template} /opt/harvest/egress-relay/
     docker compose build api worker
     docker compose up -d
     ./verify-deployment.sh                     # confirm, do not assume

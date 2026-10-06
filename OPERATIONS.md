@@ -52,7 +52,7 @@ and GitHub Actions major tags are not digest-pinned.
 | `HARVEST_TOOLS` | External OSINT CLIs permitted as acquisition tasks (`maigret`, `ghunt`, `spiderfoot`); default empty, meaning none |
 | `HARVEST_TOOL_PACKAGES` | Build-time only: pinned tool packages to install into the image; default empty |
 | `HARVEST_TOOL_TIMEOUT` | Wall-clock seconds one tool run may take before the task fails; default 300 |
-| `HARVEST_MAIGRET_RETRIES` | Retry transient failures for individual Maigret sites, 0–3; default 0 |
+| `HARVEST_MAIGRET_RETRIES` | Retry transient failures for individual Maigret sites, 0–3; default 1 |
 | `HARVEST_MAIGRET_CLOUDFLARE_BYPASS` | Pass Maigret `--cloudflare-bypass` when true; default false; requires a separately configured local bypass service |
 | `HARVEST_SPIDERFOOT_URL` | SpiderFoot NG REST base URL on a private network; empty disables the tool |
 | `HARVEST_SPIDERFOOT_API_KEY` | Bearer credential sent as `X-API-Key` on every SpiderFoot call |
@@ -67,6 +67,7 @@ and GitHub Actions major tags are not digest-pinned.
 | `HARVEST_PROXY_PUBLIC_HOSTS` | Exact public hostnames permitted through that proxy; default empty |
 | `HARVEST_EGRESS_MODE` | `direct` (default) or `proxy`; `proxy` is fail-closed and refuses any path it cannot prove is proxied |
 | `HARVEST_EGRESS_PROBE` | Address proxy mode probes to confirm direct egress is blocked; default `1.1.1.1:443` |
+| `HARVEST_EGRESS_MAX_CONNECTIONS` | Outbound connections the whole deployment may hold open at once, 1–500; default 128. The egress relay enforces it (tinyproxy `MaxClients`) and Maigret gets `-n` = this ÷ (2 × `HARVEST_WORKER_THREADS`). See "Outbound concurrency" |
 
 Service/model endpoints are administrator configuration, never model output. A configured
 SearXNG host on the private network must also be in `HARVEST_PRIVATE_HOSTS`. In containers,
@@ -119,6 +120,28 @@ FlareSolverr have their own containers and need their own policy.
 The probe tests one destination, not every possible route, so it detects an absent or
 ineffective egress policy rather than proving a correct one. Pair it with a default-deny
 egress rule that permits only the proxy endpoint.
+
+### Outbound concurrency
+
+Upstream proxy providers cap simultaneous connections per account (Webshare: 500 on a
+standard plan, answered with `429 client_connect_high_concurrency`). A full Maigret scan is
+about 3,000 site checks at Maigret's default of 100 at once, per worker thread, and
+SpiderFoot, SearXNG and the fetcher share the same exit. `HARVEST_EGRESS_MAX_CONNECTIONS`
+is the one limit for all of them:
+
+- the egress relay is configured from it (`MaxClients`), so the deployment never holds more
+  upstream connections than that; excess clients queue in the relay rather than fail;
+- Maigret gets `-n` = the limit ÷ (2 × `HARVEST_WORKER_THREADS`) -- it holds about two
+  tunnels per check slot -- so it does its own queueing before a check's timeout starts,
+  instead of waiting in the relay with the clock running;
+- recovery: Maigret's retry pass (`HARVEST_MAIGRET_RETRIES`, default 1) re-checks throttled
+  or timed-out sites after the main pass drains; the fetcher defers a task on a proxy error
+  with exponential backoff and jitter.
+
+Set the variable once in `.env`: the relay, the worker and the API all read it there, and
+the relay refuses to start on a non-numeric or out-of-range value rather than fall back to
+an unconfigured limit. Keep it well under the provider's account cap if anything else uses
+the same account.
 
 ## Job budgets
 
@@ -291,8 +314,9 @@ question before an engagement, not only a volume one.
 For a strict no-direct-egress guarantee, run the worker on authorized infrastructure with
 network rules that permit outbound traffic only to the proxy.
 
-Maigret receives `--retries` from `HARVEST_MAIGRET_RETRIES` (default 0). These are
-retries of temporarily failed site checks inside one scan; they can increase requests
+Maigret receives `--retries` from `HARVEST_MAIGRET_RETRIES` (default 1). These are
+retries of temporarily failed site checks inside one scan -- including a check the upstream
+proxy throttled with a 429, which without a retry pass is reported as not-found; they can increase requests
 but never restart the whole durable tool task. Values above 3 are rejected before the
 binary starts. `HARVEST_MAIGRET_CLOUDFLARE_BYPASS=true` passes
 `--cloudflare-bypass` only when explicitly enabled. Maigret 0.6.6 requires a separate

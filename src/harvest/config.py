@@ -55,10 +55,23 @@ class Settings:
     tool_timeout: float = field(
         default_factory=lambda: float(os.getenv("HARVEST_TOOL_TIMEOUT", "300"))
     )
+    # Outbound connections this deployment may hold open at once, across every tool and
+    # every worker thread. The egress relay enforces it for everything that leaves
+    # (tinyproxy MaxClients, from the same variable), queueing the excess instead of letting
+    # it reach the upstream proxy, whose concurrency cap is per ACCOUNT. Harvest also splits it
+    # between worker threads for Maigret's own -n, so Maigret queues in its scheduler, where a
+    # waiting check's timeout has not started, rather than in the relay's accept backlog,
+    # where it has.
+    egress_max_connections: int = field(
+        default_factory=lambda: int(os.getenv("HARVEST_EGRESS_MAX_CONNECTIONS", "128"))
+    )
     # Maigret retries failed site checks inside one tool invocation. This is separate
-    # from retrying the entire durable task, which would rerun the full scan.
+    # from retrying the entire durable task, which would rerun the full scan. One pass by
+    # default: a throttled check (proxy 429, site "Rate limited", timeout) is a temporary
+    # error to Maigret, and without a retry pass it is silently reported as not-found. The
+    # retry pass runs after the main pass drains, so it is also the backoff.
     maigret_retries: int = field(
-        default_factory=lambda: int(os.getenv("HARVEST_MAIGRET_RETRIES", "0"))
+        default_factory=lambda: int(os.getenv("HARVEST_MAIGRET_RETRIES", "1"))
     )
     maigret_cloudflare_bypass: bool = field(
         default_factory=lambda: (
@@ -135,6 +148,9 @@ class Settings:
             raise ValueError("HARVEST_EGRESS_MODE must be 'direct' or 'proxy'")
         if self.egress_mode == "proxy" and not self.proxy:
             raise ValueError("HARVEST_EGRESS_MODE=proxy requires HARVEST_EGRESS_PROXY")
+        # 500 is Webshare's standard per-account cap; above it the relay cannot protect it.
+        if not 1 <= self.egress_max_connections <= 500:
+            raise ValueError("HARVEST_EGRESS_MAX_CONNECTIONS must be between 1 and 500")
         if self.proxy_only:
             host, _, port = self.egress_probe.rpartition(":")
             if not host or not port.isdigit() or not 0 < int(port) < 65536:

@@ -392,6 +392,16 @@ def _maigret(
     if not 0 <= retries <= 3:
         raise PolicyDenied("HARVEST_MAIGRET_RETRIES must be between 0 and 3")
     argv.extend(["--retries", str(retries)])
+    # Maigret's own default is 100 concurrent checks per run, and each worker thread can run
+    # one, while the relay holds the whole deployment to egress_max_connections. Anything over
+    # that waits in the relay's accept backlog with its per-check timeout already running, so
+    # it comes back as a false "Request timeout". Each thread's share keeps the waiting inside
+    # Maigret's scheduler instead. Halved because Maigret holds about two upstream tunnels per
+    # check slot (measured through the relay: -n 32 peaked at 63, -n 64 at the old cap of 100).
+    connections = getattr(settings, "egress_max_connections", 128) // (
+        2 * max(1, getattr(settings, "worker_threads", 1))
+    )
+    argv.extend(["--max-connections", str(max(1, connections))])
     proxy_only = bool(getattr(settings, "proxy_only", False))
     if cloudflare_bypass:
         if proxy_only:

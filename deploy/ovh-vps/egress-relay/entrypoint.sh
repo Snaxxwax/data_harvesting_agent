@@ -27,8 +27,10 @@ set -eu
 
 TEMPLATE=${TINYPROXY_TEMPLATE:-/etc/tinyproxy/tinyproxy.conf.template}
 SECRET=${TINYPROXY_UPSTREAM_FILE:-/run/secrets/egress-upstream}
-CONF=/run/tinyproxy/tinyproxy.conf
+CONF=${TINYPROXY_CONF:-/run/tinyproxy/tinyproxy.conf}
 KEY=HARVEST_EGRESS_UPSTREAM
+# Not a secret, so it is an ordinary env var, set once in .env for the relay, worker and api.
+MAX_CONNECTIONS=${HARVEST_EGRESS_MAX_CONNECTIONS:-128}
 
 die() { echo "egress-relay: $1" >&2; exit 1; }
 
@@ -66,6 +68,15 @@ case "$UPSTREAM" in
     *) die "$KEY is not in user:password@host:port form (value not shown)" ;;
 esac
 
+# The deployment-wide outbound connection limit. Without a MaxClients line tinyproxy silently
+# uses its compiled-in 100, which is how this relay ran before the limit was configurable, so
+# a bad value stops the relay instead of reverting to an unconfigured limit nobody chose.
+case "$MAX_CONNECTIONS" in
+    '' | *[!0-9]*) die "HARVEST_EGRESS_MAX_CONNECTIONS must be a whole number, got '$MAX_CONNECTIONS'" ;;
+esac
+[ "$MAX_CONNECTIONS" -ge 1 ] && [ "$MAX_CONNECTIONS" -le 500 ] ||
+    die "HARVEST_EGRESS_MAX_CONNECTIONS must be between 1 and 500, got $MAX_CONNECTIONS"
+
 mkdir -p "$(dirname "$CONF")"
 # Create empty and tighten the mode BEFORE any content lands, so the finished file is never
 # briefly world-readable. /run/tinyproxy is a tmpfs, so the assembled config -- the only
@@ -74,6 +85,10 @@ mkdir -p "$(dirname "$CONF")"
 chmod 600 "$CONF"
 cat "$TEMPLATE" >>"$CONF"
 cat >>"$CONF" <<EOF
+
+# Appended at startup by entrypoint.sh from HARVEST_EGRESS_MAX_CONNECTIONS. Clients beyond it
+# wait in the listen backlog until a slot frees; they are queued, not refused.
+MaxClients ${MAX_CONNECTIONS}
 
 # Appended at startup by entrypoint.sh from $SECRET. Never written to a tracked file.
 Upstream http ${UPSTREAM}
