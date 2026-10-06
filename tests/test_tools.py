@@ -145,8 +145,33 @@ def test_capture_flattens_one_record_per_claimed_account(fake_maigret):
     # The full site set is the point of the integration; losing this flag silently cuts
     # coverage by about ten times without any other visible change.
     assert "--all-sites" in argv
-    assert argv[argv.index("--retries") + 1] == "0"
+    # One retry pass by default: a check the proxy throttled is otherwise a silent not-found.
+    assert argv[argv.index("--retries") + 1] == "1"
     assert "--cloudflare-bypass" not in argv
+
+
+@pytest.mark.parametrize(
+    "limit, threads, expected",
+    [(128, 2, "32"), (128, 1, "64"), (100, 3, "16"), (1, 4, "1")],
+)
+def test_maigret_concurrency_is_a_share_of_the_egress_limit(fake_maigret, limit, threads, expected):
+    # Regression: Maigret ran at its own default of 100 per worker thread against a relay
+    # that admits egress_max_connections in total, so the excess sat in the relay's backlog
+    # with its timeout running. Each thread gets its share, never less than one.
+    tools.run(
+        "maigret",
+        "janedoe",
+        enabled(egress_max_connections=limit, worker_threads=threads),
+    )
+    argv = fake_maigret[0]
+    assert argv[argv.index("--max-connections") + 1] == expected
+
+
+@pytest.mark.parametrize("value", ["0", "501", "-5"])
+def test_egress_limit_out_of_range_is_rejected(monkeypatch, value):
+    monkeypatch.setenv("HARVEST_EGRESS_MAX_CONNECTIONS", value)
+    with pytest.raises(ValueError, match="HARVEST_EGRESS_MAX_CONNECTIONS"):
+        Settings()
 
 
 def test_maigret_optional_site_retries_and_bypass_are_explicit(fake_maigret):

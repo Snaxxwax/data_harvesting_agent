@@ -203,6 +203,15 @@ if [[ -n "$(docker ps -q -f name=harvest-egress-relay 2>/dev/null)" ]]; then
     else
         bad "/run/tinyproxy is NOT a tmpfs -- the assembled credential is being written to disk"
     fi
+    # The shared outbound limit: the relay enforces it, the worker sizes Maigret's -n from it,
+    # so the two must agree. A missing MaxClients line means tinyproxy's compiled-in 100.
+    RELAY_MAX=$(docker exec harvest-egress-relay sh -c "sed -n 's/^MaxClients //p' /run/tinyproxy/tinyproxy.conf" 2>/dev/null | tr -d '\r')
+    WORKER_MAX=$(dc exec -T worker python -c 'from harvest.config import Settings; print(Settings().egress_max_connections)' 2>/dev/null | tr -d '\r')
+    if [[ -n "$RELAY_MAX" && "$RELAY_MAX" == "$WORKER_MAX" ]]; then
+        ok "relay MaxClients $RELAY_MAX matches the worker's HARVEST_EGRESS_MAX_CONNECTIONS"
+    else
+        bad "relay MaxClients '${RELAY_MAX:-unset (tinyproxy default 100)}' != worker HARVEST_EGRESS_MAX_CONNECTIONS '${WORKER_MAX:-unknown}'"
+    fi
     # The credential must not be recoverable from container metadata either.
     if docker inspect harvest-egress-relay --format '{{json .Config.Env}} {{json .Config.Cmd}} {{json .Config.Entrypoint}}' 2>/dev/null | grep -qE '[^[:space:]:]+:[^[:space:]:]+@[0-9A-Za-z.-]+:[0-9]+'; then
         bad "a credential-shaped value is exposed in the relay's env/cmd/entrypoint (docker inspect)"
