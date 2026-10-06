@@ -499,7 +499,8 @@ def test_ui_only_offers_tools_that_meta_reports():
 
     source = (Path(harvest.__file__).parent / "web" / "app.js").read_text()
     assert "toolsEnabled.includes(t.name)" in source
-    # Nothing is preselected: a checkbox must be ticked before any binary runs.
+    # A tool runs only if its source checkbox is ticked -- by the visible depth preset or
+    # by hand in Advanced options -- so the submitted tool list is read from the boxes.
     assert "box.checked" in source
 
 

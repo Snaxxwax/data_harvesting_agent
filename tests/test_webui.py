@@ -1,5 +1,6 @@
 import csv
 import io
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -330,3 +331,21 @@ def test_login_ticket_exchanges_for_session_cookie(engine):
     ticket = sessions.issue(token, seconds=sessions.TICKET_SECONDS, purpose=sessions.TICKET_PURPOSE)
     assert client.post("/session", json={"token": ticket}).status_code == 200
     assert client.get("/meta").status_code == 200
+
+
+def test_every_planner_kind_and_tool_has_a_plain_language_label():
+    """The Investigate tab shows kinds and tools by label; a new kind or tool added to the
+    backend must not surface as a raw identifier in the normal UI."""
+    import re
+
+    import harvest
+    from harvest.planning import INVESTIGATION_TYPES
+    from harvest.tools import TOOLS
+
+    source = (Path(harvest.__file__).parent / "web" / "app.js").read_text()
+    kinds = re.search(r"const KIND_LABELS = \{(.*?)\};", source, re.S).group(1)
+    sources = re.search(r"const SOURCE_LABELS = \{(.*?)\};", source, re.S).group(1)
+    for kind in INVESTIGATION_TYPES:
+        assert re.search(rf"\b{kind}:", kinds), kind
+    for tool in TOOLS:
+        assert re.search(rf"\b{tool}:", sources), tool
