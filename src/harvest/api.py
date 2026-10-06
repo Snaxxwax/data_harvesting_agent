@@ -120,7 +120,11 @@ def create_app(settings: Settings | None = None):
 
     @app.post("/session")
     def login(body: LoginRequest, response: Response, request: Request):
-        if not hmac.compare_digest(body.token.encode(), settings.api_token.encode()):
+        # ponytail: a ticket is replayable until it expires (60s), not single-use; add a
+        # used-ticket table if tickets ever travel anywhere less private than a fragment.
+        if not hmac.compare_digest(
+            body.token.encode(), settings.api_token.encode()
+        ) and not sessions.verify(settings.api_token, body.token, purpose=sessions.TICKET_PURPOSE):
             raise HTTPException(status_code=401, detail="invalid token")
         response.set_cookie(
             sessions.COOKIE_NAME,

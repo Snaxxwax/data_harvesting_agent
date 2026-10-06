@@ -84,6 +84,10 @@ def main():
     command.add_argument("--output")
     commands.add_parser("backup").add_argument("path")
     commands.add_parser("disable-schedule").add_argument("schedule_id")
+    command = commands.add_parser(
+        "login-link", help="print a 60-second browser sign-in link for the web UI"
+    )
+    command.add_argument("--base-url", default="http://127.0.0.1:8000")
     command = commands.add_parser("serve")
     command.add_argument("--host", default="127.0.0.1")
     command.add_argument("--port", type=int, default=8000)
@@ -92,6 +96,15 @@ def main():
     settings = Settings()
     if args.db:
         settings.database = args.db
+    if args.command == "login-link":
+        from . import sessions
+
+        # The fragment never reaches the server or its access log; the UI strips it on load.
+        ticket = sessions.issue(
+            settings.api_token, seconds=sessions.TICKET_SECONDS, purpose=sessions.TICKET_PURPOSE
+        )
+        print(f"{args.base_url.rstrip('/')}/#login={ticket}")
+        return
     if args.command == "serve":
         import uvicorn
 
