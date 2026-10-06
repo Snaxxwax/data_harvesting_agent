@@ -33,3 +33,15 @@ def test_tampered_payload_rejected():
     payload, _, mac = cookie.partition(".")
     tampered = sessions._b64(b"9999999999") + "." + mac
     assert not sessions.verify(token, tampered)
+
+
+def test_login_ticket_is_short_lived_and_not_a_session():
+    token = "operator-secret-token-at-least-24-chars"
+    ticket = sessions.issue(
+        token, now=1000, seconds=sessions.TICKET_SECONDS, purpose=sessions.TICKET_PURPOSE
+    )
+    assert sessions.verify(token, ticket, now=1030, purpose=sessions.TICKET_PURPOSE)
+    assert not sessions.verify(token, ticket, now=1061, purpose=sessions.TICKET_PURPOSE)
+    # Neither kind of value can stand in for the other.
+    assert not sessions.verify(token, ticket, now=1030)
+    assert not sessions.verify(token, sessions.issue(token), purpose=sessions.TICKET_PURPOSE)

@@ -75,12 +75,18 @@ host gateway. No model is silently downloaded or paid API account provisioned.
 
 The browser UI at `/` authenticates with a session cookie instead of a bearer header.
 `POST /session` checks the submitted value against `HARVEST_API_TOKEN` with a
-constant-time comparison, then issues an HMAC-signed, 12-hour, HttpOnly, `SameSite=Strict`
+constant-time comparison, then issues an HMAC-signed, 30-day, HttpOnly, `SameSite=Strict`
 cookie keyed on that token (`src/harvest/sessions.py`); the raw token itself is never put
 in a cookie, rendered HTML, JavaScript, or a log line. `POST /logout` clears it. Every
 existing bearer-authenticated request keeps working unchanged; the cookie is only a second,
 narrower way to satisfy the same `authenticate` dependency, and sessions do not survive an
 API token rotation (the signature no longer verifies).
+
+`harvest login-link` (run where `HARVEST_API_TOKEN` is set, e.g. `docker compose exec -T api
+harvest login-link --base-url ...`) prints `/#login=<ticket>`: a 60-second signed ticket that
+`POST /session` also accepts. The UI reads it from the fragment, so it never reaches a server
+or access log, and strips it from the address bar before exchanging it.
+`deploy/ovh-vps/harvest-ui` does this over SSH and opens the browser.
 
 The remote-DNS proxy path permits only listed public hostnames. The proxy operator must
 enforce public destination addresses; this path cannot pin the proxy's resolved IP from

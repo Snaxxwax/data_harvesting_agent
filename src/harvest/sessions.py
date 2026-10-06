@@ -14,7 +14,12 @@ import time
 from hashlib import sha256
 
 COOKIE_NAME = "harvest_session"
-SESSION_SECONDS = 12 * 3600
+SESSION_SECONDS = 30 * 24 * 3600
+# A login ticket is a short-lived signed value handed to the browser in a URL fragment by
+# `harvest login-link`; POST /session trades it for a session cookie. The purpose prefix
+# keeps a ticket from verifying as a session cookie (int() rejects it) and vice versa.
+TICKET_SECONDS = 60
+TICKET_PURPOSE = "login:"
 
 
 def _b64(data: bytes) -> str:
@@ -29,13 +34,21 @@ def _mac(api_token: str, payload: bytes) -> bytes:
     return hmac.new(api_token.encode(), payload, sha256).digest()
 
 
-def issue(api_token: str, *, now: float | None = None) -> str:
-    expires = int((now if now is not None else time.time()) + SESSION_SECONDS)
-    payload = str(expires).encode()
+def issue(
+    api_token: str,
+    *,
+    now: float | None = None,
+    seconds: int = SESSION_SECONDS,
+    purpose: str = "",
+) -> str:
+    expires = int((now if now is not None else time.time()) + seconds)
+    payload = (purpose + str(expires)).encode()
     return _b64(payload) + "." + _b64(_mac(api_token, payload))
 
 
-def verify(api_token: str, cookie_value: str | None, *, now: float | None = None) -> bool:
+def verify(
+    api_token: str, cookie_value: str | None, *, now: float | None = None, purpose: str = ""
+) -> bool:
     if not cookie_value or "." not in cookie_value:
         return False
     payload_part, _, mac_part = cookie_value.partition(".")
@@ -46,8 +59,11 @@ def verify(api_token: str, cookie_value: str | None, *, now: float | None = None
         return False
     if not hmac.compare_digest(mac, _mac(api_token, payload)):
         return False
+    text = payload.decode()
+    if not text.startswith(purpose):
+        return False
     try:
-        expires = int(payload.decode())
+        expires = int(text[len(purpose) :])
     except ValueError:
         return False
     return (now if now is not None else time.time()) < expires

@@ -997,7 +997,23 @@ function init() {
   initRerunForm();
   initContinuousForm();
   window.addEventListener("hashchange", () => route().catch((err) => console.error(err)));
-  route().catch((err) => console.error(err));
+  ticketLogin()
+    .then(route)
+    .catch((err) => console.error(err));
+}
+
+// `harvest login-link` opens /#login=<ticket>. Drop it from the address bar and history
+// before anything else, then trade it for a session cookie; a stale ticket just falls
+// through to the normal sign-in form.
+async function ticketLogin() {
+  const match = location.hash.match(/^#login=(.+)$/);
+  if (!match) return;
+  history.replaceState(null, "", location.pathname + "#/launch");
+  try {
+    await doLogin(match[1]);
+  } catch {
+    showError(document.getElementById("login-error"), new Error("Sign-in link expired or invalid; run harvest-ui again."));
+  }
 }
 
 if (typeof document !== "undefined") {
