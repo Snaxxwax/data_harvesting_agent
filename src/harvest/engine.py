@@ -506,18 +506,15 @@ class Engine:
         if verdict not in (None, "profile_evidence"):
             crawl = False  # a generic page's links are the site's, not the subject's
         candidates = extraction.leads
-        if verdict == "profile_evidence":
-            # Even a verified profile page is mostly the site's own navigation: one Poshmark
-            # closet queued 50 category/brand pages and spent the job's whole byte budget on
-            # them. Follow only links that carry the identifier (the subject's own subpages,
-            # a bio link to the same handle elsewhere). ponytail: URL substring test; misses a
-            # bio link to an unrelated-looking URL.
-            ids = [i.casefold() for i in self.identifiers(task)]
-            candidates = [
-                lead
-                for lead in candidates
-                if lead.reason == "pagination" or any(i in lead.url.casefold() for i in ids)
-            ]
+        # In a tool-target investigation, only links that carry the identifier are the
+        # subject's (its own subpages, a bio link to the same handle elsewhere). Everything
+        # else is the site's: one verified Poshmark closet queued 50 category/brand pages and
+        # spent the job's byte budget, and GitHub's JSON API (batched, so never page-checked)
+        # paginated into received_events and queued other users' repositories. Pagination is
+        # not exempt: the subject's own listing pages carry the handle too. ponytail: URL
+        # substring test; misses a bio link to an unrelated-looking URL.
+        if ids := [i.casefold() for i in self.identifiers(task, declared=False)]:
+            candidates = [lead for lead in candidates if any(i in lead.url.casefold() for i in ids)]
         accepted = [] if offline or not crawl else self.select_leads(task, candidates)
         # Every lead the extraction produced that did not become a task: already seen, out of
         # scope, over the depth limit, deduplicated, past the per-task cap, or not crawled at
@@ -574,9 +571,10 @@ class Engine:
             },
         )
 
-    def identifiers(self, task):
-        """The identifiers this investigation searched for: tool targets and declared target
-        identifiers, of this job and of its root (a follow-up's own spec carries no tools)."""
+    def identifiers(self, task, *, declared=True):
+        """The identifiers this investigation searched for: tool targets and (unless
+        `declared=False`) declared target identifiers, of this job and of its root (a
+        follow-up's own spec carries no tools)."""
         specs = [JobSpec.model_validate_json(task["spec"])]
         root = self.store.job(task["job_id"]).get("root_id")
         if root:
@@ -584,7 +582,7 @@ class Engine:
         found = set()
         for spec in specs:
             found.update(t.target for t in spec.tools)
-            for target in spec.investigation.targets if spec.investigation else ():
+            for target in spec.investigation.targets if spec.investigation and declared else ():
                 found.update(v for values in target.identifiers.values() for v in values)
         # The local part is how a handle shows up on a profile page for an email target.
         return sorted(
