@@ -750,7 +750,24 @@ class Engine:
             left = self.store.seconds_left(task) - TOOL_FINISH_MARGIN
             if left < 5:
                 raise BudgetExceeded("wall-clock deadline reached before the tool could run")
-            allowance = min(self.settings.tool_timeout, left)
+            tool_name = task["payload"]["tool"]
+            allowance = min(self.settings.tool_timeout_for(tool_name), left)
+            effective = {
+                "timeout_seconds": round(allowance, 3),
+                "crawl": bool(task["payload"].get("crawl", True)),
+                "top_sites": task["payload"].get("top_sites"),
+                "egress_mode": self.settings.egress_mode,
+            }
+            if tool_name == "spiderfoot":
+                effective["spiderfoot_plan"] = tools.spiderfoot_plan(
+                    tools._spiderfoot_target_type(task["payload"]["target"]), self.settings
+                )
+            self.store.start_tool_execution(
+                task,
+                tool=tool_name,
+                target=task["payload"]["target"],
+                settings=effective,
+            )
             with self.store.transaction() as db:
                 # One task per job runs at a time, so a long scan is otherwise a silent gap.
                 self.store.event(
@@ -759,7 +776,7 @@ class Engine:
                     "tool_started",
                     {
                         "task": task["id"],
-                        "tool": task["payload"]["tool"],
+                        "tool": tool_name,
                         "max_seconds": round(allowance),
                     },
                 )
