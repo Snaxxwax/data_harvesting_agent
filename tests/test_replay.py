@@ -283,6 +283,31 @@ def test_schema_one_migration_preserves_data_keys_and_backup(tmp_path):
     assert Store(path).observations("old") == store.observations("old")
 
 
+def test_upgrade_verifier_reuses_schema_three_replay_keys_with_investigation(tmp_path):
+    from pathlib import Path
+
+    from harvest.models import Investigation, Target
+
+    path = tmp_path / "legacy.sqlite"
+    make_schema_one(path)
+    store = Store(path)
+    investigation = Investigation(targets=[Target(key="t", label="T", identifiers={})])
+    store.replay(ReplaySpec(capture_ids=[1], investigation=investigation), "replay-key")
+    # Production schema 3 predates the schema-4 execution tables.
+    with sqlite3.connect(path) as db:
+        for table in ("tool_checks", "artifacts", "executions", "operational_state", "incidents"):
+            db.execute(f"DROP TABLE {table}")
+        db.execute("PRAGMA user_version=3")
+    script = Path(__file__).resolve().parents[1] / "scripts/verify_upgrade.py"
+    result = subprocess.run(
+        [sys.executable, str(script), str(path), str(tmp_path / "upgraded.sqlite")],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["idempotency_keys_verified"] == 2
+
+
 def test_migration_failure_rolls_back_ddl_and_can_restart(tmp_path):
     path = tmp_path / "legacy.sqlite"
     make_schema_one(path)
