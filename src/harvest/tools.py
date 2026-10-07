@@ -1212,13 +1212,17 @@ def _spiderfoot(
             finished = partial is None
             # The scan id joins this capture to SpiderFoot's own scan record, its raw events
             # and its container logs; the counts say what normalisation discarded.
+            normalized = _spiderfoot_records(records, target)
             return {
-                "results": _spiderfoot_records(records, target),
+                "results": normalized,
                 "scan_id": scan_id,
                 "raw_events": len(records),
                 "dropped_empty_profiles": sum(
                     _spiderfoot_empty_profile(e.get("data")) for e in records if isinstance(e, dict)
                 ),
+                # Removed from the normalized capture by run(); persisted separately as the
+                # native structured artifact so future normalizers can be replayed honestly.
+                "_native_events": records,
                 **({"partial": partial} if partial else {}),
             }
         except httpx.HTTPError as exc:
@@ -1361,6 +1365,23 @@ def run(
             kwargs["task_id"] = task_id
         timeout = settings.tool_timeout if timeout is None else min(timeout, settings.tool_timeout)
         records = tool["run"](target, workdir, timeout, cancelled, settings, **kwargs)
+        native_body = None
+        native_events = None
+        if isinstance(records, dict):
+            # Hidden adapter-only material never enters the normalized capture.
+            records = dict(records)
+            native_events = records.pop("_native_events", None)
+        if name == "maigret":
+            native = Path(workdir) / f"report_{target}_simple.json"
+            if native.is_file():
+                native_body = native.read_bytes()
+        elif name == "ghunt":
+            native = Path(workdir) / "ghunt.json"
+            if native.is_file():
+                native_body = native.read_bytes()
+        elif name == "spiderfoot" and native_events is not None:
+            native_body = json.dumps(native_events, ensure_ascii=False).encode()
+
     result = {"tool": name, "target": target, "results": records}
     if isinstance(records, dict):
         # A run stopped early that still produced evidence: kept, and labelled as partial.
@@ -1369,6 +1390,32 @@ def run(
         # The executed module set is part of the evidence: what a scan did NOT look for is
         # what makes "no findings" interpretable.
         result["modules"] = spiderfoot_plan(_spiderfoot_target_type(target), settings)
+
+    normalized = result.get("results") or []
+    found = len(normalized) if isinstance(normalized, list) else 0
+    check_counts = {
+        "found": found,
+        "absent": 0,
+        "blocked": 0,
+        "errored": 0,
+        "unsupported": 0,
+        "skipped": 0,
+        "unfinished": 0,
+    }
+    # Until an adapter has native per-check reporting, say so explicitly instead of
+    # inferring successful coverage from a finished process.
+    coverage = "partial" if result.get("partial") else "unknown"
+    diagnostics = {"coverage": coverage}
+    run_id = result.get("scan_id") if name == "spiderfoot" else None
+    if name == "spiderfoot":
+        diagnostics.update(
+            {
+                "raw_events": result.get("raw_events", 0),
+                "dropped_empty_profiles": result.get("dropped_empty_profiles", 0),
+            }
+        )
+        if result.get("partial"):
+            check_counts["unfinished"] = 1
     body = json.dumps(result).encode()
     url = f"tool://{name}/{target}"
     return Capture(
@@ -1378,4 +1425,12 @@ def run(
         headers={"content-type": "application/json"},
         body=body,
         retrieved=started,
+        native_body=native_body,
+        tool_meta={
+            "run_id": run_id,
+            "version": None,
+            "partial": bool(result.get("partial")),
+            "checks": check_counts,
+            "diagnostics": diagnostics,
+        },
     )
