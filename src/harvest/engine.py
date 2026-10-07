@@ -279,9 +279,7 @@ class Engine:
         backup = self.store.latest_backup()
         backup_age = now - backup["created"] if backup else None
         offhost_age = (
-            now - backup["offhost_at"]
-            if backup and backup.get("offhost_at") is not None
-            else None
+            now - backup["offhost_at"] if backup and backup.get("offhost_at") is not None else None
         )
         checks["backup"] = {
             "ok": bool(
