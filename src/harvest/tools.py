@@ -1307,7 +1307,19 @@ def _spiderfoot_snapshot(client, scan_id, target, recorder=None, modules=()):
         response = client.get(f"/api/v1/scans/{scan_id}/logs", params={"limit": 10000})
         failures = {}
         if response.status_code == 200:
-            for row in response.json().get("logs", []):
+            # The scanner returns newest first; each site logs "scheduled" before its result,
+            # so replay chronologically or the stale marker overwrites the final outcome.
+            def chronological(row):
+                try:
+                    return (float(row.get("generated") or 0), int(row.get("rowid") or 0))
+                except (TypeError, ValueError):
+                    return (0.0, 0)
+
+            rows = sorted(
+                (r for r in response.json().get("logs", []) if isinstance(r, dict)),
+                key=chronological,
+            )
+            for row in rows:
                 message = str(row.get("message", ""))
                 if message.startswith("HARVEST_CHECK "):
                     try:
