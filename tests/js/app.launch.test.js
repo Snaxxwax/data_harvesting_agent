@@ -163,6 +163,18 @@ test("launch payload: unselected sources are dropped, top_sites goes to maigret 
   assert.deepEqual(allSites.tools, [{ name: "maigret", target: "janedoe", crawl: true }]);
 });
 
+test("Deep opts into pivots and budgets tool runs for them; other presets never pivot", () => {
+  assert.equal(app.presetSettings("deep", []).pivots, 3);
+  assert.equal(app.presetSettings("standard", []).pivots, 0);
+  assert.equal(app.presetSettings("quick", []).pivots, 0);
+  const base = { plan: EMAIL_PLAN, dataset: "", seeds: [], fields: [], crawl: true, topSites: null, requests: 300, seconds: 2700 };
+  const deep = app.buildInvestigationSpec({ ...base, tools: ["ghunt", "spiderfoot"], pivots: 3 });
+  // 2 root runs + up to 2 tools for each of 3 pivots.
+  assert.deepEqual(deep.limits, { requests: 300, seconds: 2700, pivots: 3, tool_runs: 8 });
+  const standard = app.buildInvestigationSpec({ ...base, tools: ["ghunt"], pivots: 0 });
+  assert.deepEqual(standard.limits, { requests: 300, seconds: 2700 });
+});
+
 function job(status, spec) {
   return { status, spec: { seeds: [], discovery_queries: ["q"], tools: [], ...spec } };
 }

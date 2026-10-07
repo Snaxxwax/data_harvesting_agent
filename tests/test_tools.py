@@ -1399,31 +1399,45 @@ _DEPLOYED_SF = (
 
 def test_spiderfoot_plan_differs_by_input_type():
     s = _sf_settings(spiderfoot_modules=tuple(_DEPLOYED_SF))
-    email = tools.spiderfoot_plan("EMAILADDR", s)["modules"]
+    email = tools.spiderfoot_plan("EMAILADDR", s)
     user = tools.spiderfoot_plan("USERNAME", s)["modules"]
     host = tools.spiderfoot_plan("INTERNET_NAME", s)
-    assert set(email) == set(_DEPLOYED_SF) - {"sfp_dnsresolve"}
+    # Each input runs its profile, not every allowlisted module that could fire on it.
+    assert email["modules"] == sorted(tools.SPIDERFOOT_PROFILES["EMAILADDR"])
     assert user == ["sfp_accounts", "sfp_hudsonrock", "sfp_tiktok_osint"]
-    # Host target: infrastructure modules only. The rest would be fed sfp_pgp's addresses --
-    # other people at the domain -- inside the scan, so they are left out with that reason.
     assert host["modules"] == ["sfp_dnsresolve", "sfp_pgp"]
-    for module in ("sfp_accounts", "sfp_hudsonrock", "sfp_wikileaks"):
-        assert "EMAILADDR from sfp_pgp" in host["excluded"][module], module
-    assert "consumes nothing reachable" in host["excluded"]["sfp_gravatar"]
-    # Without pgp there is no such hand-off, and DOMAIN_NAME (from dnsresolve) is what lets
-    # the DOMAIN_NAME-only modules fire: dependency, not just direct input.
-    no_pgp = tools.spiderfoot_plan(
-        "INTERNET_NAME", _sf_settings(spiderfoot_modules=tuple(set(_DEPLOYED_SF) - {"sfp_pgp"}))
+    # The name guesser is allowlisted but never runs on an address: everything it emits is
+    # a guess that sfp_accounts would sweep the web for.
+    assert "sfp_names" not in email["modules"]
+    assert "EMAILADDR profile" in email["excluded"]["sfp_names"]
+    for module in ("sfp_accounts", "sfp_hudsonrock", "sfp_wikileaks", "sfp_gravatar"):
+        assert "INTERNET_NAME profile" in host["excluded"][module], module
+    # Names a real profile states can still pass between person modules: disclosed.
+    assert {"from": "sfp_tiktok_osint", "event": "HUMAN_NAME", "to": "sfp_accounts"} in (
+        email["cascades"]
     )
-    assert no_pgp["consumes"]["sfp_wikileaks"] == ["DOMAIN_NAME"]
-    assert "sfp_accounts" in no_pgp["modules"]
-    # Non-unique names still pass between person modules: disclosed, not hidden.
-    assert {"from": "sfp_names", "event": "HUMAN_NAME", "to": "sfp_accounts"} in (
-        tools.spiderfoot_plan("EMAILADDR", s)["cascades"]
-    )
+    assert not any(c["from"] == "sfp_names" for c in email["cascades"])
 
 
-def test_spiderfoot_plan_gates_keyed_modules_on_declared_credentials():
+def test_spiderfoot_profile_is_capped_by_the_allowlist_and_keeps_the_leak_rule(monkeypatch):
+    # The allowlist stays the operator's ceiling: a profile module it omits never runs.
+    only = tools.spiderfoot_plan("EMAILADDR", _sf_settings(spiderfoot_modules=("sfp_accounts",)))
+    assert only["modules"] == ["sfp_accounts"]
+    # Inside a profile the in-scan leak rule still applies: a person module on a domain
+    # would be fed sfp_pgp's addresses (other people at the domain).
+    monkeypatch.setitem(
+        tools.SPIDERFOOT_PROFILES, "INTERNET_NAME", ("sfp_dnsresolve", "sfp_pgp", "sfp_accounts")
+    )
+    host = tools.spiderfoot_plan(
+        "INTERNET_NAME", _sf_settings(spiderfoot_modules=tuple(_DEPLOYED_SF))
+    )
+    assert "EMAILADDR from sfp_pgp" in host["excluded"]["sfp_accounts"]
+
+
+def test_spiderfoot_plan_gates_keyed_modules_on_declared_credentials(monkeypatch):
+    monkeypatch.setitem(
+        tools.SPIDERFOOT_PROFILES, "USERNAME", ("sfp_accounts", "sfp_c99", "sfp_tiktok_osint")
+    )
     s = _sf_settings(spiderfoot_modules=("sfp_accounts", "sfp_c99"))
     plan = tools.spiderfoot_plan("USERNAME", s)
     assert plan["modules"] == ["sfp_accounts"]
@@ -1440,12 +1454,13 @@ def test_spiderfoot_plan_gates_keyed_modules_on_declared_credentials():
     assert tiktok["modules"] == ["sfp_tiktok_osint"]
 
 
-def test_spiderfoot_plan_discloses_unknown_untested_and_not_enabled():
+def test_spiderfoot_plan_discloses_unknown_off_profile_and_not_enabled():
     plan = tools.spiderfoot_plan(
         "USERNAME", _sf_settings(spiderfoot_modules=("sfp_github", "sfp_nope"))
     )
     assert "unknown" in plan["excluded"]["sfp_nope"]
-    assert plan["tested"] == {"sfp_github": "untested"}
+    assert "USERNAME profile" in plan["excluded"]["sfp_github"]
+    assert plan["modules"] == [] and plan["tested"] == {}
     assert "sfp_keybase" in plan["not_enabled"]
     email = tools.spiderfoot_plan("EMAILADDR", _sf_settings(spiderfoot_modules=("sfp_accounts",)))
     assert email["tested"] == {"sfp_accounts": "events"}

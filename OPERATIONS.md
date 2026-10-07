@@ -51,7 +51,7 @@ and GitHub Actions major tags are not digest-pinned.
 | `HARVEST_PRIVATE_HOSTS` | Exact administrator-approved hosts allowed to resolve privately; default empty |
 | `HARVEST_TOOLS` | External OSINT CLIs permitted as acquisition tasks (`maigret`, `ghunt`, `spiderfoot`); default empty, meaning none |
 | `HARVEST_TOOL_PACKAGES` | Build-time only: pinned tool packages to install into the image; default empty |
-| `HARVEST_TOOL_TIMEOUT` | Wall-clock seconds one tool run may take before the task fails; default 300 |
+| `HARVEST_TOOL_TIMEOUT` | Wall-clock seconds one tool run may take (also bounded by the job's remaining wall clock); default 600 |
 | `HARVEST_MAIGRET_RETRIES` | Retry transient failures for individual Maigret sites, 0–3; default 1 |
 | `HARVEST_MAIGRET_CLOUDFLARE_BYPASS` | Pass Maigret `--cloudflare-bypass` when true; default false; requires a separately configured local bypass service |
 | `HARVEST_SPIDERFOOT_URL` | SpiderFoot NG REST base URL on a private network; empty disables the tool |
@@ -331,10 +331,17 @@ one capture. Those calls deliberately bypass the fetcher's budgets and robots ha
 the SpiderFoot service is infrastructure on a private network, not a scan target. What the
 scan itself costs in outbound requests is bounded by SpiderFoot and by the module set,
 which is chosen per input: `HARVEST_SPIDERFOOT_MODULES` is an allowlist (default a single
-passive resolver, because the full module set is active reconnaissance), and
-`tools.spiderfoot_plan` sends only the allowlisted modules that can fire for the target type,
-from the deployed fork's watched/produced event metadata (`spiderfoot_modules.json`). The
-executed set, and every excluded module with its reason, is recorded in the capture. A scan that ends in any state other
+passive resolver, because the full module set is active reconnaissance) and the ceiling;
+`tools.SPIDERFOOT_PROFILES` names what each target type is for (email: account sweep plus
+address lookups, never the `sfp_names` name guesser; username: account sweeps; domain: DNS
+and PGP only), and `tools.spiderfoot_plan` sends the allowlisted profile modules that can
+fire for the target type, from the deployed fork's watched/produced event metadata
+(`spiderfoot_modules.json`). The executed set, and every excluded module with its reason, is
+recorded in the capture. SpiderFoot still hands every event to every enabled module that
+watches it, so a finding whose chain passes through a name or another subject's identifier
+(sfp_accounts sweeping handles built from a TikTok display name) is kept as evidence but
+labelled `pivoted_via`, capped at confidence 0.5, never offered as a pivot, and left out of
+the job summary's account list. A scan that ends in any state other
 than `FINISHED` fails the task rather than storing a partial result set.
 
 ### ghunt
@@ -460,8 +467,8 @@ default. Usage is flat across a scan rather than accumulating, so it is bounded 
 tool's own concurrency and not by result volume. Measure again before lowering the limit or
 adding a tool that downloads media.
 
-A full run took 116 seconds against the default 300 second `HARVEST_TOOL_TIMEOUT`. That
-margin depends on the link: a slow or rate-limited network can overrun the timeout, and an
+A full run took 116 seconds direct and 293 seconds through the egress relay, against the
+default 600 second `HARVEST_TOOL_TIMEOUT` (300 until 2026-10). That margin depends on the link: a slow or rate-limited network can overrun the timeout, and an
 overrun now fails the task permanently rather than retrying, so raise
 `HARVEST_TOOL_TIMEOUT` rather than letting scans fail.
 

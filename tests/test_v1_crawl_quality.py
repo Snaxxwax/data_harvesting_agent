@@ -114,11 +114,65 @@ def test_auth_pages_and_generic_page_links_are_not_crawled(investigation):
     # The redirected-away homepage and the archived forum offer only site navigation.
     for nav in ("/privacy/", "/terms/", "/discover/", "/tags/", "/auth/login/"):
         assert nav not in paths
-    # A real profile's ordinary links are still followed.
-    assert "/about/advertising.aspx" in paths
+    # Even a real profile's site links (advertising, payments) are navigation, not the subject.
+    assert "/about/advertising.aspx" not in paths
     with engine.store.connection() as db:
         keys = [r[0] for r in db.execute("SELECT key FROM tasks WHERE job_id=?", (job["id"],))]
     assert not [k for k in keys if "signin" in k or "/auth/" in k]
+
+
+def test_a_verified_profile_page_is_crawled_only_through_links_carrying_the_identifier(
+    tmp_path, source, monkeypatch
+):
+    base = source["base"]
+    profile = (
+        "<html><head><title>exampleuser's closet</title></head><body>"
+        '<a href="/closet/exampleuser/about">about</a>'
+        '<a href="/category/Women">Women</a><a href="/brand/Nike">Nike</a>'
+        '<a href="https://elsewhere.example/exampleuser">bio link</a></body></html>'
+    )
+    source["routes"] = {
+        "/closet/exampleuser": (profile, "text/html"),
+        "/closet/exampleuser/about": ("<html><title>about exampleuser</title></html>", "text/html"),
+        "/category/Women": ("<html><title>Women</title></html>", "text/html"),
+        "/brand/Nike": ("<html><title>Nike</title></html>", "text/html"),
+    }
+    source["robots"] = "User-agent: *\nAllow: /\n"
+    found = {
+        "Closet": {
+            "url_user": f"{base}/closet/exampleuser",
+            "http_status": 200,
+            "status": {"status": "Claimed"},
+            "site": {"name": "Closet", "checkType": "message"},
+        }
+    }
+
+    def fake_exec(argv, timeout, cwd, cancelled=None, env=None):
+        workdir = argv[argv.index("--folderoutput") + 1]
+        Path(f"{workdir}/report_{argv[1]}_simple.json").write_text(json.dumps(found))
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    monkeypatch.setattr(tools, "_exec", fake_exec)
+    engine = Engine(
+        Settings(
+            database=str(tmp_path / "h.sqlite"),
+            private_hosts=frozenset({"127.0.0.1"}),
+            tools=frozenset({"maigret"}),
+            proxy=None,
+        )
+    )
+    spec = JobSpec.model_validate(
+        {
+            "objective": "Investigate exampleuser",
+            "allowed_domains": ["127.0.0.1"],
+            "tools": [{"name": "maigret", "target": "exampleuser"}],
+            "limits": {"depth": 3, "domain_delay": 0.1},
+        }
+    )
+    engine.run(engine.submit(spec))
+    paths = fetched(source)
+    assert "/closet/exampleuser" in paths and "/closet/exampleuser/about" in paths
+    assert "/category/Women" not in paths and "/brand/Nike" not in paths
 
 
 def test_page_checks_separate_real_profiles_from_generic_pages(investigation):

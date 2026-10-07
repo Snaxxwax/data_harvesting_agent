@@ -403,7 +403,9 @@ function fieldLabel(field) {
 // Real configuration, not labels: each preset sets the page and time budgets, which offered
 // tools run, Maigret's breadth and whether tool findings are followed up. Deep raises
 // budgets and breadth only; concurrency is unchanged and the SpiderFoot module set stays
-// whatever the deployment allowlisted. Tool runs never exceed the default limits.tool_runs (3).
+// whatever the deployment allowlisted. Tool runs never exceed the default limits.tool_runs (3),
+// except Deep's pivots: up to 3 discovered identifiers (an address's handle, an email or name a
+// profile states) each get their own enrichment job, so Deep raises tool_runs to cover them.
 const PRESETS = {
   quick: {
     label: "Quick",
@@ -428,6 +430,7 @@ const PRESETS = {
     crawl: true,
     tools: ["ghunt", "maigret", "spiderfoot"],
     topSites: null,
+    pivots: 3,
   },
 };
 
@@ -439,6 +442,7 @@ function presetSettings(presetKey, offeredToolNames) {
     seconds: preset.seconds,
     crawl: preset.crawl,
     topSites: preset.topSites,
+    pivots: preset.pivots || 0,
     tools: (offeredToolNames || []).filter((name) => preset.tools.includes(name)),
   };
 }
@@ -503,7 +507,12 @@ function buildInvestigationSpec(opts) {
     fields: opts.fields,
     tools,
     use_model: !!opts.useModel,
-    limits: { requests: opts.requests, seconds: opts.seconds },
+    limits: {
+      requests: opts.requests,
+      seconds: opts.seconds,
+      // An email pivot runs up to two tools (GHunt and SpiderFoot), so budget for that.
+      ...(opts.pivots ? { pivots: opts.pivots, tool_runs: Math.min(50, tools.length + 2 * opts.pivots) } : {}),
+    },
   };
 }
 
@@ -799,6 +808,7 @@ function initInvestigationForm() {
       useModel: document.getElementById("inv-model").checked,
       requests,
       seconds: minutes() * 60,
+      pivots: PRESETS[preset()].pivots || 0,
     });
     submitButton.disabled = true;
     try {
@@ -1001,7 +1011,10 @@ function renderRecords(node, records, missingFields) {
 
 function renderOverview(node, overview, jobId, active) {
   clear(node);
-  const head = `${overview.accounts.length} reported account(s), ${overview.verified_pages} page(s) naming the identifier, requests ${overview.requests}`;
+  const head =
+    `${overview.accounts.length} reported account(s), ${overview.verified_pages} page(s) naming the identifier, ` +
+    `requests ${overview.requests}` +
+    (overview.tool_runs ? `, tool runs ${overview.tool_runs} (their own requests are not metered)` : "");
   node.appendChild(el("p", { text: head }));
   if (overview.accounts.length) {
     const rows = overview.accounts.map((a) => {
@@ -1042,6 +1055,17 @@ function renderOverview(node, overview, jobId, active) {
           el("tr", {}, ["Site", "URL", "Exists (tool)", "Page check", "Ownership", "Display name", ""].map((h) => el("th", { text: h }))),
         ]),
         el("tbody", {}, rows),
+      ])
+    );
+  }
+  // Pivots are separate jobs about a discovered identifier: never merged into the list above.
+  for (const p of overview.pivots || []) {
+    const where = p.source ? [p.source.tool, p.source.module || p.source.site].filter(Boolean).join(" ") : "";
+    node.appendChild(
+      el("p", {}, [
+        el("strong", { text: `Pivot: ${p.kind} ${p.value}` }),
+        el("span", { class: "hint", text: ` found by ${where || "a tool"}; ${p.status}, ${p.accounts.length} account(s) ` }),
+        el("a", { href: `#/jobs/${encodeURIComponent(p.job_id)}`, text: "open" }),
       ])
     );
   }
@@ -1134,7 +1158,7 @@ async function renderSources(node, jobId) {
 
 function eventSeverity(type) {
   if (["failed", "blocked"].includes(type)) return "severity-failed";
-  if (["deferred", "extraction_limit", "evidence_omitted", "frontier_limit", "lease_expired", "task_done"].includes(type)) return "severity-warn";
+  if (["deferred", "extraction_limit", "evidence_omitted", "frontier_limit", "lease_expired", "pivot_skipped", "task_done"].includes(type)) return "severity-warn";
   if (["budget_exhausted", "plateau", "cancelled"].includes(type)) return "severity-stopped";
   return null;
 }
@@ -1157,6 +1181,10 @@ function describeEvent(event) {
       return `Extraction limit on task ${d.task}: ${d.reason || ""}`;
     case "frontier_limit":
       return `Task frontier limit reached (${d.limit})`;
+    case "pivot":
+      return `Pivot: ${d.kind} ${d.value} -> job ${d.child} (${[...(d.tools || []), ...(d.queries || [])].join(", ")})`;
+    case "pivot_skipped":
+      return `Pivot skipped for ${d.kind} ${d.value}: ${d.reason || ""}`;
     case "tool_started":
       return `Running ${d.tool} (task ${d.task}) for up to ${d.max_seconds}s; the job waits for it`;
     case "budget_exhausted":

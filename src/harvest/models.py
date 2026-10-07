@@ -78,6 +78,11 @@ class Limits(StrictModel):
     # permanent task failure, see tools._exec), so this bounds actual invocations, not just
     # declarations. That matters because a tool's own requests bypass every budget above.
     tool_runs: int = Field(default=3, ge=0, le=50)
+    # Identifiers a root tool run discovers (an address's handle, an email or full name a
+    # profile states) that may each get one enrichment child job. 0 (the default) keeps
+    # discovery from authorizing anything; setting it is the operator authorizing that many
+    # one-hop pivots. Each pivot's tool runs still count against tool_runs above.
+    pivots: int = Field(default=0, ge=0, le=20)
 
 
 MAX_DISCOVERY_QUERIES = 5

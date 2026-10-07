@@ -108,7 +108,9 @@ def build_server():
         """Start a bounded investigation. The targets (seeds/tools) and scope (allowed_domains)
         you pass ARE the operator's persisted authorization for this job and its follow-ups.
         `limits` (requests, tool_runs, seconds, ...) is the budget for the WHOLE investigation:
-        every follow-up spends from it. Pass an idempotency_key so a retried call after an
+        every follow-up spends from it. `limits.pivots` (default 0) authorizes that many one-hop
+        enrichment jobs for identifiers the tools discover; each pivot's tool runs count
+        against tool_runs. Pass an idempotency_key so a retried call after an
         interruption returns the same job instead of starting a second one.
         Returns the created job including its id; a worker must be running to process it."""
         spec: dict = {
@@ -145,7 +147,10 @@ def build_server():
         identity in its title, heading or profile data -- is verified; every `unverified_*`,
         redirect, sign-in wall or duplicate is not) and `ownership` (never confirmed by tool
         evidence), plus explicit unknowns and which limit stopped the job. Accounts marked
-        `unchecked` were never fetched and are follow-up candidates."""
+        `unchecked` were never fetched and are follow-up candidates. `pivots` lists each
+        discovered identifier's own enrichment job and accounts, which belong to THAT
+        identifier, not to the subject. `requests` counts Harvest's fetches only; tool runs
+        make their own unmetered requests."""
         with _client() as c:
             return _result(c.get(f"/jobs/{job_id}/summary"))
 
