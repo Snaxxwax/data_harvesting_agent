@@ -69,6 +69,57 @@ _DATASET_FIELD_RULES = [
 ]
 DEFAULT_DATASET_FIELDS = ["title", "price", "url", "description"]
 
+# Server-owned investigation presets. The web UI and API expose these verbatim so a
+# "Thorough" launch has the same budgets/breadth no matter which client starts it. The
+# stored identifier remains "deep" for compatibility with existing jobs and tests.
+INVESTIGATION_PRESETS = {
+    "quick": {
+        "label": "Quick",
+        "requests": 30,
+        "seconds": 300,
+        "crawl": False,
+        "tools": ["ghunt", "maigret"],
+        "top_sites": 100,
+        "pivots": 0,
+        "tool_runs": 2,
+        "followup_top_sites": 100,
+    },
+    "standard": {
+        "label": "Standard",
+        "requests": 100,
+        "seconds": 900,
+        "crawl": True,
+        "tools": ["ghunt", "maigret", "spiderfoot"],
+        "top_sites": 500,
+        "pivots": 0,
+        "tool_runs": 3,
+        "followup_top_sites": 500,
+    },
+    "deep": {
+        "label": "Thorough",
+        "requests": 300,
+        "seconds": 3600,
+        "crawl": True,
+        "tools": ["ghunt", "maigret", "spiderfoot"],
+        "top_sites": None,
+        "pivots": 3,
+        "tool_runs": 8,
+        "followup_top_sites": None,
+    },
+}
+DEFAULT_INVESTIGATION_PRESET = "deep"
+
+
+def investigation_presets() -> dict[str, dict]:
+    """Return a detached copy suitable for API clients; callers may filter offered tools."""
+    return {name: {**values, "tools": list(values["tools"])} for name, values in INVESTIGATION_PRESETS.items()}
+
+
+def preset_settings(name: str) -> dict:
+    if name not in INVESTIGATION_PRESETS:
+        raise ValueError(f"unknown investigation preset {name!r}")
+    return {**INVESTIGATION_PRESETS[name], "tools": list(INVESTIGATION_PRESETS[name]["tools"])}
+
 
 @dataclass
 class Plan:
