@@ -12,7 +12,9 @@
 #   * its engine queries must LEAVE through the relay -- otherwise the searches are
 #     attributable to this VPS's address while every other request in the deployment goes
 #     through the upstream proxy. `outgoing.proxies` in settings.yml does that, and the
-#     `default` network below is how it reaches the relay to do it.
+#     relay is on harvest-egress too, so that network is all it needs. It used to also join
+#     `default`, a normal bridge, which let anything ignoring the proxy setting connect
+#     straight out (measured 2026-10-06). Internal-only, it has no other way out.
 #
 # Nothing is published. There is no reason for anything outside Docker to query it, and a
 # published SearXNG on a public address is an open relay for other people's searches.
@@ -26,9 +28,8 @@ services:
     container_name: harvest-searxng
     restart: unless-stopped
     init: true
-    # harvest-egress: where the Harvest worker reaches it, by container name.
-    # default: how it reaches egress-relay for its own outbound engine queries.
-    networks: [harvest-egress, default]
+    # harvest-egress: where the Harvest worker reaches it, and where it reaches egress-relay.
+    networks: [harvest-egress]
     volumes:
       - /opt/harvest/searxng/settings.yml:/etc/searxng/settings.yml:ro
     environment:
@@ -55,15 +56,15 @@ services:
       driver: json-file
       options: {max-size: 10m, max-file: "3"}
     healthcheck:
-      # Probes the JSON format specifically, because that is the only thing Harvest uses and
-      # the one most likely to be misconfigured -- `formats` omitting json answers 403 here
-      # while the HTML UI keeps working perfectly.
+      # Liveness only. This used to run a real search every 60s: an outbound query through
+      # every provider, around the clock, that passed whenever JSON came back -- even with the
+      # providers failing. Provider health and format=json are checked by verify-deployment.sh,
+      # and every job summary reports the engines that were down for its own searches.
       test:
         - CMD-SHELL
         - >-
-          python3 -c "import urllib.request,json;
-          d=json.load(urllib.request.urlopen('http://localhost:8080/search?q=ping&format=json',timeout=8));
-          raise SystemExit(0 if 'results' in d else 1)"
+          python3 -c "import urllib.request;
+          urllib.request.urlopen('http://localhost:8080/healthz',timeout=5)"
       interval: 60s
       timeout: 15s
       retries: 3

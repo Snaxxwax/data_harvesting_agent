@@ -58,6 +58,15 @@ services:
   # (exit 69 in both cases) -- so it still reports unhealthy for the real
   # failures, which is the point of keeping a probe at all.
   celery-worker:
+    # Confined: sf-backend (postgres/redis, internal) and sf-dns (internal) only, plus
+    # harvest-egress attached at enable time. core.yml also put it on sf-frontend, a normal
+    # bridge, which let any code path that ignores HTTP(S)_PROXY -- a raw socket, a library
+    # with trust_env off -- connect straight out from this VPS (measured 2026-10-06:
+    # socket.connect(('1.1.1.1', 443)) succeeded). Now HTTP leaves via the relay, DNS via
+    # sf-dns, and nothing else leaves at all; verify-deployment.sh lists each allowlisted
+    # module's transports and fails on one that needs anything else.
+    networks: !override [sf-backend, sf-dns]
+    dns: [172.31.253.2]
     # THIS is what actually proxies SpiderFoot's scans. Its modules use `requests`, which
     # honours HTTP(S)_PROXY, and measured from inside this container the exit IP becomes the
     # upstream proxy's instead of this VPS's.
@@ -97,6 +106,30 @@ services:
       retries: 3
       start_period: 40s
 
+  # The approved DNS resolver for the confined scanner; see sf-dns/Corefile.
+  sf-dns:
+    # Pinned by digest: this host runs Watchtower. Tag 1.12.4.
+    image: coredns/coredns@sha256:986f04c2e15e147d00bdd51e8c51bcef3644b13ff806be7d2ff1b261d6dfbae1
+    container_name: sf-dns
+    restart: unless-stopped
+    command: ["-conf", "/etc/coredns/Corefile"]
+    volumes:
+      - /opt/harvest/sf-dns/Corefile:/etc/coredns/Corefile:ro
+    networks:
+      # default: its own upstream. sf-dns: where the scanner reaches it, at a fixed address
+      # because `dns:` takes an IP, not a name.
+      default: {}
+      sf-dns:
+        ipv4_address: 172.31.253.2
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits: {cpus: "0.25", memory: 64M}
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
   # core.yml leaves these unbounded, so on a shared host they would inherit all
   # 11 GiB. Capped well above observed steady state (postgres ~65M, redis ~5M).
   postgres:
@@ -111,3 +144,9 @@ services:
 networks:
   osint-net:
     external: true
+  sf-dns:
+    name: sf-dns
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.253.0/29
