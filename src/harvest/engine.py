@@ -913,7 +913,11 @@ class Engine:
         self.store.expire_deadlines(job_id)
         if job_id is None or self.store.job(job_id)["execution"] != "offline_replay":
             self.store.schedule_tick()
-        task = self.store.claim(job_id)
+        task = self.store.claim(
+            job_id,
+            max_active_investigations=self.settings.max_active_investigations,
+            max_running_tools=self.settings.max_tool_tasks,
+        )
         if task is None:
             self.store.settle(job_id)
             return False
