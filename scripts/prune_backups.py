@@ -17,9 +17,7 @@ def main() -> None:
         if match:
             items.append(
                 (
-                    datetime.strptime(match.group(1), "%Y%m%dT%H%M%SZ").replace(
-                        tzinfo=UTC
-                    ),
+                    datetime.strptime(match.group(1), "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC),
                     path,
                 )
             )
