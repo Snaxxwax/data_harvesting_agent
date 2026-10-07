@@ -324,8 +324,7 @@ class Engine:
                 except httpx.HTTPError as exc:
                     entry["ready"] = False
                     entry["detail"] = (
-                        "authenticated SpiderFoot connectivity failed: "
-                        + type(exc).__name__
+                        "authenticated SpiderFoot connectivity failed: " + type(exc).__name__
                     )
         checks["capabilities"] = {
             "ok": all(
