@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Harvest production backup daily
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 UTC
+Persistent=true
+RandomizedDelaySec=900
+Unit=harvest-backup.service
+
+[Install]
+WantedBy=timers.target
