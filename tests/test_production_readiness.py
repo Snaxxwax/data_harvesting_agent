@@ -1,4 +1,5 @@
 import json
+import time
 
 from harvest.models import JobSpec
 from harvest.network import Capture
@@ -107,3 +108,75 @@ def test_tool_execution_worker_loss_is_interrupted_not_replayed(tmp_path):
     with store.connection() as db:
         row = db.execute("SELECT status FROM tasks WHERE id=?", (task["id"],)).fetchone()
     assert row["status"] == "failed"
+
+
+
+def _fetch_task(key):
+    return {
+        "kind": "fetch",
+        "key": key,
+        "payload": {"url": f"https://example.org/{key}"},
+        "depth": 0,
+        "priority": 0,
+        "reason": "test",
+    }
+
+
+def test_shared_admission_limits_two_investigations(tmp_path):
+    store = Store(tmp_path / "harvest.sqlite")
+    jobs = [
+        store.create(JobSpec(objective=f"job {i}"), [_fetch_task(f"p{i}")])
+        for i in range(3)
+    ]
+    assert store.claim(jobs[0], max_active_investigations=2, max_running_tools=2)
+    assert store.claim(jobs[1], max_active_investigations=2, max_running_tools=2)
+    assert store.claim(jobs[2], max_active_investigations=2, max_running_tools=2) is None
+
+
+def test_shared_admission_limits_two_tool_tasks(tmp_path):
+    store = Store(tmp_path / "harvest.sqlite")
+    jobs = [
+        store.create(JobSpec(objective=f"tool job {i}"), [_tool_task(target=f"user{i}")])
+        for i in range(3)
+    ]
+    assert store.claim(jobs[0], max_active_investigations=10, max_running_tools=2)
+    assert store.claim(jobs[1], max_active_investigations=10, max_running_tools=2)
+    assert store.claim(jobs[2], max_active_investigations=10, max_running_tools=2) is None
+
+
+def test_incidents_record_transitions_without_duplicate_alerts(tmp_path):
+    store = Store(tmp_path / "harvest.sqlite")
+    first, changed = store.set_incident(
+        "readiness:worker", active=True, details={"age_seconds": 120}
+    )
+    assert changed is True
+    again, changed = store.set_incident(
+        "readiness:worker", active=True, details={"age_seconds": 135}
+    )
+    assert again == first and changed is False
+    resolved, changed = store.set_incident(
+        "readiness:worker", active=False, details={"age_seconds": 0}
+    )
+    assert resolved == first and changed is True
+    rows = store.incidents()
+    assert len(rows) == 1 and rows[0]["resolved"] is not None
+
+
+def test_readiness_requires_worker_and_verified_offhost_backup(engine):
+    initial = engine.readiness()
+    assert initial["ready"] is False
+    assert initial["checks"]["worker"]["ok"] is False
+    assert initial["checks"]["backup"]["ok"] is False
+
+    engine.store.heartbeat_service("worker", {"tools": {}})
+    engine.store.record_backup(
+        kind="production",
+        manifest_hash="a" * 64,
+        verified=True,
+        offhost_at=time.time(),
+    )
+    ready = engine.readiness(record_incidents=True)
+    assert ready["ready"] is True
+    assert ready["checks"]["worker"]["ok"] is True
+    assert ready["checks"]["backup"]["ok"] is True
+    assert not [row for row in engine.store.incidents() if row["resolved"] is None]
