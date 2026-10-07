@@ -48,7 +48,8 @@ def stop_advice(status, reason):
         return "cancelled; evidence collected before the cancellation is kept"
     if status != "budget_exhausted":
         return None
-    reason = reason or ""
+    # Only the stop cause; Store.stop appends "; N unfinished task(s) cancelled".
+    reason = (reason or "").split(";")[0]
     for needle, advice in _STOP_ADVICE:
         if needle in reason:
             return advice
@@ -309,6 +310,23 @@ class Store:
                 ORDER BY c.id""",
                 (root, root),
             ).fetchall()
+            # Elapsed wall clock stops when the investigation does. It was always now-started,
+            # so a job finished yesterday reported 42,000 s "used" of a 900 s limit.
+            ended, live = db.execute(
+                """SELECT max(finished),coalesce(sum(status IN ('queued','running')),0)
+                FROM jobs WHERE id=? OR root_id=?""",
+                (root, root),
+            ).fetchone()
+            pivots = [
+                {k: d.get(k) for k in ("child", "kind", "value", "source", "tools", "queries")}
+                for d in (
+                    json.loads(r[0])
+                    for r in db.execute(
+                        "SELECT details FROM events WHERE job_id=? AND type='pivot' ORDER BY id",
+                        (root,),
+                    )
+                )
+            ]
         enforced = {
             attr: {
                 "used": used[c] / 1_000_000 if attr == "cost_usd" else used[c],
@@ -319,7 +337,9 @@ class Store:
         enforced["tool_runs"] = {"used": tools, "limit": limits.tool_runs}
         enforced["tasks"] = {"used": tasks, "limit": limits.tasks}
         enforced["seconds"] = {
-            "used": round(time.time() - started, 1) if started else 0,
+            "used": round(((ended if not live and ended else time.time()) - started), 1)
+            if started
+            else 0,
             "limit": limits.seconds,
         }
         return {
@@ -327,6 +347,7 @@ class Store:
             "jobs": len(job_ids),
             "job_ids": job_ids,
             "enforced": enforced,
+            "pivots": pivots,
             "external_tool_runs": [
                 {
                     "tool": url.split("/")[2],
@@ -925,23 +946,37 @@ class Store:
             return capture_id
 
     def stop(self, job_id, status="cancelled", reason="operator requested cancellation"):
+        """Stop a job; cancelling an investigation's root also cancels its live follow-ups and
+        pivots, which otherwise kept scanning after the operator pressed Cancel."""
         if status not in {"cancelled", "budget_exhausted", "plateau"}:
             raise ValueError("invalid stop status")
         with self.transaction() as db:
             old = db.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
             if not old:
                 raise KeyError(job_id)
-            if old[0] not in {"queued", "running"}:
-                return
-            db.execute(
-                "UPDATE jobs SET status=?,finished=?,reason=? WHERE id=?",
-                (status, time.time(), reason, job_id),
-            )
-            db.execute(
-                "UPDATE tasks SET status='cancelled',token=NULL WHERE job_id=? AND status IN ('pending','running')",
-                (job_id,),
-            )
-            self.event(db, job_id, status, {"reason": reason})
+            targets = [job_id] if old[0] in {"queued", "running"} else []
+            if status == "cancelled":
+                targets += [
+                    r[0]
+                    for r in db.execute(
+                        "SELECT id FROM jobs WHERE root_id=? AND status IN ('queued','running')",
+                        (job_id,),
+                    )
+                ]
+            for job in targets:
+                # Name what was left undone: "budget_exhausted" alone read as if the tool runs
+                # had been cut short when only queued crawl pages were dropped.
+                undone = db.execute(
+                    "UPDATE tasks SET status='cancelled',token=NULL WHERE job_id=? AND status IN ('pending','running')",
+                    (job,),
+                ).rowcount
+                why = reason if job == job_id else f"investigation {job_id} cancelled"
+                why += f"; {undone} unfinished task(s) cancelled" if undone else ""
+                db.execute(
+                    "UPDATE jobs SET status=?,finished=?,reason=? WHERE id=?",
+                    (status, time.time(), why, job),
+                )
+                self.event(db, job, status, {"reason": why})
 
     def settle(self, job_id: str | None = None):
         with self.transaction() as db:
@@ -969,7 +1004,8 @@ class Store:
                 ).fetchone()
                 if limited:
                     status = "partial"
-                reason = "frontier exhausted"
+                # Every queued task ran (there is no crawl "frontier" in a tool-only job).
+                reason = "all queued work finished"
                 # A tool run cut short by its time allowance kept partial results; the job
                 # must not read as complete because its remaining tasks then ran out.
                 if db.execute(
@@ -1379,7 +1415,18 @@ class Store:
             ):
                 if fetches.get(key, ("",))[0] != "done":
                     fetches[key] = (status, error)
-        records = [r for j in jobs for r in self.job_records(j)]
+            pivots = {
+                d["child"]: d
+                for d in (
+                    json.loads(r[0])
+                    for r in db.execute(
+                        "SELECT details FROM events WHERE job_id=? AND type='pivot' ORDER BY id",
+                        (job_id,),
+                    )
+                )
+            }
+        by_job = {j: self.job_records(j) for j in jobs}
+        records = [r for rows in by_job.values() for r in rows]
         checks = {
             r["entity_key"]: r["fields"]["page_check"]["value"]
             for r in records
@@ -1390,11 +1437,17 @@ class Store:
             field = fields.get(name) or {}
             return None if field.get("missing") or field.get("conflict") else field.get("value")
 
-        accounts = []
-        for record in records:
+        off_target: dict[str, int] = {}
+
+        def account(record, tally):
             fields = record["fields"]
             if value(fields, "existence") is None or not isinstance(value(fields, "url"), str):
-                continue
+                return None
+            if via := value(fields, "pivoted_via"):
+                # Reached through a name or another subject's identifier, not the target's.
+                if tally:
+                    off_target[via] = off_target.get(via, 0) + 1
+                return None
             url = value(fields, "url")
             try:
                 canon = canonical_url(url)
@@ -1404,24 +1457,43 @@ class Store:
             if check is None:
                 status, error = fetches.get(canon, ("not_fetched", None))
                 check = f"unchecked: {error or status}"
-            accounts.append(
-                {
-                    "site": value(fields, "sitename") or urlsplit(url).hostname,
-                    "url": url,
-                    "existence": value(fields, "existence"),
-                    "page_check": check,
-                    "ownership": value(fields, "ownership"),
-                    "display_name": value(fields, "display_name"),
-                    "entity_id": record["entity_id"],
-                }
+            return {
+                "site": value(fields, "sitename") or urlsplit(url).hostname,
+                "url": url,
+                "existence": value(fields, "existence"),
+                "page_check": check,
+                "ownership": value(fields, "ownership"),
+                "display_name": value(fields, "display_name"),
+                "entity_id": record["entity_id"],
+            }
+
+        def ranked(rows, tally=False):
+            found = [a for a in (account(r, tally) for r in rows) if a]
+            return sorted(
+                found,
+                key=lambda a: (
+                    a["page_check"] != "profile_evidence",
+                    a["existence"] != "observed",
+                    a["site"] or "",
+                ),
             )
-        accounts.sort(
-            key=lambda a: (
-                a["page_check"] != "profile_evidence",
-                a["existence"] != "observed",
-                a["site"] or "",
-            )
+
+        # A pivot child's accounts belong to the identifier it pivoted to, not to this job's
+        # subject: listed under that pivot, never merged into `accounts`.
+        accounts = ranked(
+            [r for j, rows in by_job.items() if j not in pivots for r in rows], tally=True
         )
+        pivot_rows = [
+            {
+                "job_id": child,
+                "kind": d["kind"],
+                "value": d["value"],
+                "source": d.get("source"),
+                "status": self.job(child)["status"],
+                "accounts": ranked(by_job.get(child, [])),
+            }
+            for child, d in pivots.items()
+        ]
         unknowns = [f"requested field never observed: {f}" for f in job["missing_fields"]]
         if accounts:
             unknowns.append(
@@ -1431,14 +1503,30 @@ class Store:
         unchecked = sum(a["page_check"].startswith("unchecked") for a in accounts)
         if unchecked:
             unknowns.append(f"{unchecked} reported account(s) were never fetched or verified")
+        for via, count in sorted(off_target.items()):
+            unknowns.append(
+                f"{count} account(s) SpiderFoot reached through a {via}, not through the "
+                "target's own identifiers, are kept as evidence but not listed"
+            )
+        if pivot_rows:
+            unknowns.append(
+                "pivots: each pivot's accounts belong to the identifier it pivoted to, which is "
+                "linked to the subject only by where it was found"
+            )
+        limits = job["spec"]["limits"]
+        tool_runs = job["investigation"]["enforced"]["tool_runs"]
         return {
             "job_id": job_id,
             "status": job["status"],
             "reason": job["reason"],
             "stop_advice": job["stop_advice"],
-            "requests": f"{job['requests']}/{job['spec']['limits']['requests']}",
+            # Harvest's own fetches only. Tools make their own requests outside this budget.
+            "requests": f"{job['requests']}/{limits['requests']}",
+            "tool_runs": f"{tool_runs['used']}/{tool_runs['limit']}",
+            "tool_requests": "not metered: each tool run makes its own requests outside the request budget",
             "accounts": accounts,
             "verified_pages": sum(a["page_check"] == "profile_evidence" for a in accounts),
+            "pivots": pivot_rows,
             "unknowns": unknowns,
         }
 

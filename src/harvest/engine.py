@@ -36,6 +36,11 @@ ACTIVE = {"queued", "running"}
 TOOL_FINISH_MARGIN = 15  # seconds a tool run leaves before the deadline to save its results
 TOOL_LEASE = 30  # seconds; with SWEEP_SECONDS, bounds a dead worker's orphaned scan to ~45 s
 SWEEP_SECONDS = 15
+# Which tools enrich a pivoted identifier. A name is never a tool target (see Engine.pivot).
+PIVOT_TOOLS = {"username": ("maigret",), "email": ("ghunt", "spiderfoot")}
+# ponytail: fixed Maigret breadth for pivots, ~1/10 of --all-sites traffic. Make it a limit if
+# an investigation needs full sweeps of what it discovers.
+PIVOT_TOP_SITES = 500
 
 # ponytail: name heuristics, not a site-specific map. Misses an unconventional sign-in path;
 # add a pattern when a capture shows one.
@@ -295,6 +300,99 @@ class Engine:
         )
         return self.submit(child, key=key, parent=parent_id, root=root)
 
+    def pivot(self, task, output):
+        """Enrich identifiers a ROOT job's tool run discovered, each in its own child job.
+
+        The child is what keeps the root clean: its findings are about the discovered
+        identifier, so they live in its own job (own records, dossier and summary rows), never
+        in the root's. Bounded three ways: limits.pivots per investigation (0 = off), one hop
+        (only a root job pivots, so a pivot never pivots), and the investigation's shared
+        budget, which every child spends from (Store._admit_child). Each child records where its
+        identifier came from in a `pivot` event on the root; a refused one says why.
+        """
+        spec = JobSpec.model_validate_json(task["spec"])
+        job = self.store.job(task["job_id"])
+        if spec.limits.pivots < 1 or job["root_id"]:
+            return
+        root = job["id"]
+        with self.store.connection() as db:
+            used = db.execute(
+                "SELECT count(*) FROM events WHERE job_id=? AND type='pivot'", (root,)
+            ).fetchone()[0]
+            ran = {
+                r[0].casefold()
+                for r in db.execute(
+                    """SELECT t.key FROM tasks t JOIN jobs j ON j.id=t.job_id
+                    WHERE (j.id=? OR j.root_id=?) AND t.kind IN ('tool','search')""",
+                    (root, root),
+                )
+            }
+        inputs = {t.target.casefold() for t in spec.tools}
+        found = tools.pivot_candidates(
+            output["tool"], output.get("results") or [], output["target"]
+        )
+        for kind, value, source in found:
+            if used >= spec.limits.pivots:
+                break
+            if value.casefold() in inputs:
+                continue
+            queries, runs = [], []
+            if kind == "person":
+                # A name is not unique, so it is never a tool target; one quoted search pairing
+                # it with the handle it was found under, whose results must mention the handle.
+                queries = [f'"{value}" "{output["target"]}"']
+                if not self.settings.search_url or queries[0].casefold() in ran:
+                    continue
+            else:
+                runs = [
+                    {
+                        "name": name,
+                        "target": value,
+                        "crawl": False,
+                        **({"top_sites": PIVOT_TOP_SITES} if name == "maigret" else {}),
+                    }
+                    for name in PIVOT_TOOLS[kind]
+                    if name in self.settings.tools and f"{name}:{value}".casefold() not in ran
+                ]
+                if not runs:
+                    continue
+            details = {"kind": kind, "value": value, "source": source}
+            child = JobSpec.model_validate(
+                {
+                    **spec.model_dump(),
+                    "objective": f"pivot: {kind} {value} found by {output['tool']} in job {root}",
+                    "mode": "targeted",
+                    "seeds": [],
+                    "discovery_queries": queries,
+                    "tools": runs,
+                    "refresh_seconds": None,
+                }
+            )
+            try:
+                child_id = self.submit(
+                    child,
+                    key=f"followup:{root}:pivot:{kind}:{value.casefold()}",
+                    parent=root,
+                    root=root,
+                )
+            except (BudgetExceeded, ValueError) as exc:
+                with self.store.transaction() as db:
+                    self.store.event(db, root, "pivot_skipped", {**details, "reason": str(exc)})
+                continue
+            with self.store.transaction() as db:
+                self.store.event(
+                    db,
+                    root,
+                    "pivot",
+                    {
+                        **details,
+                        "child": child_id,
+                        "tools": [r["name"] for r in runs],
+                        "queries": queries,
+                    },
+                )
+            used += 1
+
     def rerun(self, job_id):
         """Resubmit a prior job's exact spec as a new durable job; never mutates old history.
 
@@ -407,7 +505,20 @@ class Engine:
         verdict = self.check_page(task, cap, extraction) if batch is None else None
         if verdict not in (None, "profile_evidence"):
             crawl = False  # a generic page's links are the site's, not the subject's
-        accepted = [] if offline or not crawl else self.select_leads(task, extraction.leads)
+        candidates = extraction.leads
+        if verdict == "profile_evidence":
+            # Even a verified profile page is mostly the site's own navigation: one Poshmark
+            # closet queued 50 category/brand pages and spent the job's whole byte budget on
+            # them. Follow only links that carry the identifier (the subject's own subpages,
+            # a bio link to the same handle elsewhere). ponytail: URL substring test; misses a
+            # bio link to an unrelated-looking URL.
+            ids = [i.casefold() for i in self.identifiers(task)]
+            candidates = [
+                lead
+                for lead in candidates
+                if lead.reason == "pagination" or any(i in lead.url.casefold() for i in ids)
+            ]
+        accepted = [] if offline or not crawl else self.select_leads(task, candidates)
         # Every lead the extraction produced that did not become a task: already seen, out of
         # scope, over the depth limit, deduplicated, past the per-task cap, or not crawled at
         # all. Previously this was reported as 0 for every online task, so a job that threw
@@ -689,6 +800,7 @@ class Engine:
                     **({"partial": partial} if partial else {}),
                 },
             )
+            self.pivot(task, json.loads(cap.body))
             return
         fetcher = self.fetcher_factory(self.store, self.settings, task)
         try:
@@ -704,12 +816,45 @@ class Engine:
                 if response.status != 200:
                     raise ValueError(f"search returned HTTP {response.status}")
                 data = json.loads(response.body)
+                results = [
+                    r
+                    for r in data.get("results", [])[: spec.limits.search_results]
+                    if isinstance(r, dict) and isinstance(r.get("url"), str)
+                ]
+                # SearXNG answers 200 with zero results when its engines are down (proxy
+                # quota, CAPTCHA, suspension) and names them here. Recorded as a finished
+                # search, that read as "nothing about this subject exists".
+                down = sorted(
+                    {str(e[0]) for e in data.get("unresponsive_engines") or [] if e and e[0]}
+                )
+                if not results and down:
+                    raise ActionableError(
+                        "search returned nothing because its engines were unresponsive ("
+                        + ", ".join(down)
+                        + "); this is not evidence of absence"
+                    )
+                # In an identifier investigation a result that never mentions the identifier
+                # is engine noise (unquoted tokens match strangers' pages), and fetching it
+                # spends the budget on someone else. ponytail: substring test on url, title
+                # and snippet; misses a page whose snippet omits the handle.
+                identifiers = [i.casefold() for i in self.identifiers(task)]
+                relevant = [
+                    r
+                    for r in results
+                    if not identifiers
+                    or any(
+                        i
+                        in " ".join(
+                            str(r.get(k, "")) for k in ("url", "title", "content")
+                        ).casefold()
+                        for i in identifiers
+                    )
+                ]
                 found = [
                     Lead(
                         url=r["url"], reason="search: " + str(r.get("title", ""))[:200], priority=25
                     )
-                    for r in data.get("results", [])[: spec.limits.search_results]
-                    if isinstance(r, dict) and isinstance(r.get("url"), str)
+                    for r in relevant
                 ]
                 leads = self.select_leads(task, found, search=True)
                 self.store.finish(
@@ -718,8 +863,14 @@ class Engine:
                     leads=leads,
                     details={
                         "query": task["payload"]["query"],
-                        "search_results": len(found),
+                        "search_results": len(results),
                         "accepted_leads": len(leads),
+                        **(
+                            {"not_mentioning_identifier": len(results) - len(relevant)}
+                            if identifiers
+                            else {}
+                        ),
+                        **({"unresponsive_engines": down} if down else {}),
                     },
                 )
                 return
