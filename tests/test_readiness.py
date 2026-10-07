@@ -180,6 +180,39 @@ def test_spiderfoot_keeps_completed_pages_when_a_later_page_is_malformed(engine)
     assert recorder.results("spiderfoot", "audit.person@example.test")[0]["data"] == "audit_handle"
 
 
+def test_spiderfoot_site_checks_keep_final_outcome_from_newest_first_logs(engine):
+    import httpx
+
+    job = tool_job(engine, "spiderfoot", "audit.person@example.test")
+    task = engine.store.claim(job)
+    recorder = executions.begin(engine.store, task, {}, {})
+
+    def check(rowid, generated, outcome, reason):
+        name = "sfp_accounts:audit.person:Example"
+        message = "HARVEST_CHECK " + json.dumps(
+            {"name": name, "outcome": outcome, "reason": reason}
+        )
+        return {"rowid": rowid, "generated": generated, "type": "STATUS",
+                "component": "sfp_accounts", "message": message}  # fmt: skip
+
+    # The deployed scanner's logs endpoint returns the newest row first.
+    logs = [check(2, 2000, "found", ""), check(1, 1000, "unfinished", "scheduled site check")]
+
+    def handler(request):
+        if request.url.path.endswith("/logs"):
+            return httpx.Response(200, json={"logs": logs, "total": 2})
+        return httpx.Response(200, json={"events": [], "total": 0})
+
+    with httpx.Client(base_url="http://sf.test", transport=httpx.MockTransport(handler)) as client:
+        tools._spiderfoot_snapshot(client, "scan", "audit.person@example.test", recorder)
+    with engine.store.connection() as db:
+        rows = db.execute(
+            "SELECT outcome FROM tool_checks WHERE execution_id=? AND name LIKE 'sfp_accounts:%'",
+            (recorder.id,),
+        ).fetchall()
+    assert [r[0] for r in rows] == ["found"]
+
+
 def test_two_investigations_and_two_tools_admitted_across_workers(engine):
     jobs = [tool_job(engine, target=f"audit_{i}") for i in range(3)]
     tasks = [engine.store.claim(jobs[i]) for i in range(2)]
