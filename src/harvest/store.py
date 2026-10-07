@@ -115,6 +115,22 @@ CREATE TABLE IF NOT EXISTS schedules (
  id TEXT PRIMARY KEY, spec TEXT NOT NULL, interval INTEGER NOT NULL, next_run REAL NOT NULL,
  last_job TEXT REFERENCES jobs(id), enabled INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS tool_executions (
+ id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL UNIQUE REFERENCES tasks(id),
+ job_id TEXT NOT NULL REFERENCES jobs(id), tool TEXT NOT NULL, target TEXT NOT NULL,
+ started REAL NOT NULL, finished REAL, outcome TEXT NOT NULL DEFAULT 'running',
+ settings TEXT NOT NULL, version TEXT, run_id TEXT,
+ diagnostics TEXT NOT NULL DEFAULT '{}', checks TEXT NOT NULL DEFAULT '{}',
+ capture_id INTEGER REFERENCES captures(id)
+);
+CREATE INDEX IF NOT EXISTS tool_execution_job ON tool_executions(job_id,id);
+CREATE TABLE IF NOT EXISTS tool_artifacts (
+ id INTEGER PRIMARY KEY, execution_id INTEGER NOT NULL REFERENCES tool_executions(id),
+ kind TEXT NOT NULL, body_hash TEXT NOT NULL REFERENCES blobs(hash),
+ content_type TEXT NOT NULL, created REAL NOT NULL,
+ UNIQUE(execution_id,kind)
+);
+CREATE INDEX IF NOT EXISTS tool_artifact_execution ON tool_artifacts(execution_id,id);
 """
 
 
@@ -448,6 +464,97 @@ class Store:
             (job, time.time(), kind, packed(details)),
         )
 
+    def start_tool_execution(self, task, *, tool: str, target: str, settings: dict, version=None):
+        """Persist the execution envelope before any external tool is started."""
+        with self.transaction() as db:
+            self.owned(db, task)
+            db.execute(
+                """INSERT INTO tool_executions(
+                    task_id,job_id,tool,target,started,outcome,settings,version
+                ) VALUES(?,?,?,?,?,'running',?,?)
+                ON CONFLICT(task_id) DO NOTHING""",
+                (task["id"], task["job_id"], tool, target, time.time(), packed(settings), version),
+            )
+
+    @staticmethod
+    def _finish_tool_execution(
+        db,
+        task_id: int,
+        *,
+        outcome: str,
+        capture_id=None,
+        run_id=None,
+        version=None,
+        diagnostics=None,
+        checks=None,
+        native_body: bytes | None = None,
+    ):
+        row = db.execute("SELECT id FROM tool_executions WHERE task_id=?", (task_id,)).fetchone()
+        if row is None:
+            return
+        execution_id = row["id"]
+        if native_body is not None:
+            body_hash = digest(native_body)
+            db.execute("INSERT OR IGNORE INTO blobs(hash,body) VALUES(?,?)", (body_hash, native_body))
+            db.execute(
+                """INSERT INTO tool_artifacts(execution_id,kind,body_hash,content_type,created)
+                VALUES(?,?,?,?,?)
+                ON CONFLICT(execution_id,kind) DO UPDATE SET
+                  body_hash=excluded.body_hash,content_type=excluded.content_type,created=excluded.created""",
+                (
+                    execution_id,
+                    "native-structured",
+                    body_hash,
+                    "application/json",
+                    time.time(),
+                ),
+            )
+        db.execute(
+            """UPDATE tool_executions SET finished=?,outcome=?,capture_id=coalesce(?,capture_id),
+            run_id=coalesce(?,run_id),version=coalesce(?,version),diagnostics=?,checks=?
+            WHERE id=?""",
+            (
+                time.time(),
+                outcome,
+                capture_id,
+                run_id,
+                version,
+                packed(diagnostics or {}),
+                packed(checks or {}),
+                execution_id,
+            ),
+        )
+
+    def tool_executions(self, job_id: str):
+        self.job(job_id)
+        with self.connection() as db:
+            rows = db.execute(
+                """SELECT e.*,
+                (SELECT count(*) FROM tool_artifacts a WHERE a.execution_id=e.id) artifacts
+                FROM tool_executions e WHERE e.job_id=? ORDER BY e.id""",
+                (job_id,),
+            ).fetchall()
+            return [
+                {
+                    **dict(r),
+                    "settings": json.loads(r["settings"]),
+                    "diagnostics": json.loads(r["diagnostics"]),
+                    "checks": json.loads(r["checks"]),
+                }
+                for r in rows
+            ]
+
+    def tool_artifact(self, execution_id: int, kind: str):
+        with self.connection() as db:
+            row = db.execute(
+                """SELECT a.*,b.body FROM tool_artifacts a JOIN blobs b ON b.hash=a.body_hash
+                WHERE a.execution_id=? AND a.kind=?""",
+                (execution_id, kind),
+            ).fetchone()
+            if row is None:
+                raise KeyError((execution_id, kind))
+            return dict(row)
+
     def create(
         self,
         spec: JobSpec,
@@ -580,6 +687,13 @@ class Store:
                         task["id"],
                     ),
                 )
+                if task["kind"] == "tool":
+                    self._finish_tool_execution(
+                        db,
+                        task["id"],
+                        outcome="interrupted",
+                        diagnostics={"reason": "worker lease expired"},
+                    )
                 self.event(
                     db, task["job_id"], "lease_expired", {"task": task["id"], "status": status}
                 )
@@ -695,6 +809,13 @@ class Store:
                 "failed" if failed else "deferred",
                 {"task": task["id"], "reason": str(error)[:1000], "delay": delay},
             )
+            if task["kind"] == "tool":
+                self._finish_tool_execution(
+                    db,
+                    task["id"],
+                    outcome="failed" if failed else "interrupted",
+                    diagnostics={"reason": str(error)[:1000]},
+                )
 
     def fail(self, task, error, status="failed"):
         with self.transaction() as db:
@@ -706,6 +827,13 @@ class Store:
             self.event(
                 db, task["job_id"], status, {"task": task["id"], "reason": str(error)[:1000]}
             )
+            if task["kind"] == "tool":
+                self._finish_tool_execution(
+                    db,
+                    task["id"],
+                    outcome="cancelled" if status == "cancelled" else "failed",
+                    diagnostics={"reason": str(error)[:1000]},
+                )
 
     def finish(
         self,
@@ -924,6 +1052,19 @@ class Store:
             if batch is not None and not batch.done:
                 # Keep the same lease and parser iterator. A crash reclaims this task at its cursor.
                 return capture_id
+            if task["kind"] == "tool" and response is not None:
+                meta = getattr(response, "tool_meta", None) or {}
+                self._finish_tool_execution(
+                    db,
+                    task["id"],
+                    outcome="partial" if meta.get("partial") else "complete",
+                    capture_id=capture_id,
+                    run_id=meta.get("run_id"),
+                    version=meta.get("version"),
+                    diagnostics=meta.get("diagnostics"),
+                    checks=meta.get("checks"),
+                    native_body=getattr(response, "native_body", None),
+                )
             db.execute(
                 "UPDATE tasks SET status='done',token=NULL,lease_until=NULL,error=NULL WHERE id=?",
                 (task["id"],),
@@ -975,6 +1116,12 @@ class Store:
                 db.execute(
                     "UPDATE jobs SET status=?,finished=?,reason=? WHERE id=?",
                     (status, time.time(), why, job),
+                )
+                db.execute(
+                    """UPDATE tool_executions SET finished=coalesce(finished,?),outcome=
+                    CASE WHEN outcome='running' THEN ? ELSE outcome END
+                    WHERE job_id=?""",
+                    (time.time(), "cancelled" if status == "cancelled" else "interrupted", job),
                 )
                 self.event(db, job, status, {"reason": why})
 
