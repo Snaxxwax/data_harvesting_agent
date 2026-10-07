@@ -292,8 +292,18 @@ backend silently changes what discovery returns.
 
 **`search.formats` must include `json`.** It is not in SearXNG's defaults, and without it
 every discovery search gets `HTTP 403` while the HTML UI keeps working perfectly — a failure
-that reads as a broken deployment rather than one missing config line. The container
-healthcheck probes `format=json` specifically for this reason.
+that reads as a broken deployment rather than one missing config line. `verify-deployment.sh`
+probes `format=json` for this reason. The container healthcheck is local `/healthz` only: it
+used to run a real search every 60 s, an outbound query through every provider that passed
+whenever JSON came back, even with the providers failing.
+
+**The engine list is the whole list** (2026-10-06 audit). `use_default_settings: true` merged
+the overlay into the image's defaults, so Google CSE, wikipedia, wikidata and the
+translate/currency engines kept answering, while Startpage and Mojeek never ran at all (the
+image marks both `inactive: true` for proof-of-work CAPTCHAs; `disabled: false` does not
+override that). `use_default_settings.engines.keep_only` now pins it to duckduckgo, bing and
+brave, and verify asserts the **effective** `/config` registry, not the overlay. Provider
+outages are reported per job in the summary's `search` block and `unknowns`.
 
 **Its engine queries go out through the relay** (`outgoing.proxies` in `settings.yml`).
 Without that, the searches would be attributable to this VPS's own address while every other
@@ -302,6 +312,11 @@ watching relay throughput during a search.
 
 **It publishes no port.** Nothing outside Docker needs to query it, and a reachable SearXNG
 on a public address is an open search relay for other people's traffic.
+
+**It is on `harvest-egress` only.** It also used to join `harvest-platform_default`, a normal
+bridge, and `socket.connect(('1.1.1.1', 443))` succeeded from inside it: the proxy setting
+routes SearXNG's own engine requests, but does not stop anything else connecting out. The relay
+is on `harvest-egress` too, so that network is all it needs.
 
 ### Two fixes that proxy-only mode required
 
@@ -405,6 +420,35 @@ Requires `docker network connect harvest-egress sf-celery-worker`, as `sf-api` n
 it `egress-relay` does not resolve and every module request fails — fail-closed and
 deliberate: for an attribution-control tool, no scan beats a scan that silently leaves from
 this host. The attachment survives a restart, not a recreate.
+
+### The scanner is confined; DNS has one approved path (2026-10-06 audit)
+
+`HTTP(S)_PROXY` is routing, not isolation. core.yml also put `sf-celery-worker` on
+`sf-frontend`, a normal bridge, and a direct `socket.connect(('1.1.1.1', 443))` from inside
+it succeeded: any code path that ignores the proxy variables could leave from this VPS, and
+the relay's connection cap could not bound it. `spiderfoot-core.yml` now gives it
+`sf-backend` (Postgres/Redis) and `sf-dns` only, both `internal: true`, plus `harvest-egress`
+attached at enable time.
+
+Internal-only containers get **no external DNS** from Docker, which would have broken
+`sfp_dnsresolve` and every `resolve_host()`. So DNS goes through **`sf-dns`**: CoreDNS at the
+fixed address `172.31.253.2` on the `sf-dns` network (`dns:` takes an IP, not a name),
+forwarding over DNS-over-TLS to Cloudflare (`deploy/ovh-vps/sf-dns/Corefile`, bind-mounted
+from `/opt/harvest/sf-dns/Corefile`). Container names still resolve through Docker's embedded
+DNS. Every query is in `docker logs sf-dns`; every HTTP request is in the relay's log.
+Verified on this Docker 29.8 host before rollout: internal-only plus `dns:` resolves through the
+resolver, and a direct connect stays blocked.
+
+`verify-deployment.sh` now checks, for the worker, the scanner and SearXNG, that a direct
+connect is **blocked**. It checks that the scanner resolves through `sf-dns`, and lists each
+allowlisted module's transports (`sfp_accounts: http`, `sfp_dnsresolve: dns`, ...). A module
+needing anything else (a raw socket, whois, SMTP, a subprocess) **fails verify**: it cannot
+work from the confined scanner, so it has to be allowlisted knowingly. Rollout:
+
+    install -D -m 0644 deploy/ovh-vps/sf-dns/Corefile /opt/harvest/sf-dns/Corefile
+    cp deploy/ovh-vps/spiderfoot-core.yml /opt/harvest/spiderfoot-ng/compose.core.yml
+    cd /opt/harvest/spiderfoot-ng && docker compose -f compose.core.yml --env-file .env up -d sf-dns celery-worker
+    docker network connect harvest-egress sf-celery-worker
 
 ### Bare usernames are refused, with a reason
 

@@ -10,7 +10,15 @@
 # cannot route to a tailnet address at all, and giving it a route is the one thing that would
 # dismantle proxy-only egress. A private service reachable ON that network is the only shape
 # that works, which is the same reason sf-api is attached to it.
-use_default_settings: true
+# keep_only is what makes the engine list below the WHOLE list. Plain `true` merges it into
+# the image's ~200 defaults: Google CSE, wikipedia, wikidata and translate/currency engines all
+# kept answering "general" queries (Google CSE suspended on all three searches of 2026-10-06).
+use_default_settings:
+  engines:
+    keep_only:
+      - duckduckgo
+      - bing
+      - brave
 
 general:
   debug: false
@@ -67,12 +75,6 @@ engines:
     disabled: false
   - name: brave
     disabled: false
-  - name: startpage
-    disabled: false
-  - name: mojeek
-    disabled: false
-  # Image/video/map engines add cost and return nothing a text-lead crawler can use.
-  - name: google images
-    disabled: true
-  - name: youtube
-    disabled: true
+  # Not startpage/mojeek: the image ships both `inactive: true` (proof-of-work CAPTCHAs), so
+  # `disabled: false` here never made them run. Re-adding one needs `inactive: false` AND a
+  # search through the relay showing it answers.
