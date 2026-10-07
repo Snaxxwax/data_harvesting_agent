@@ -38,10 +38,6 @@ TOOL_LEASE = 30  # seconds; with SWEEP_SECONDS, bounds a dead worker's orphaned 
 SWEEP_SECONDS = 15
 # Which tools enrich a pivoted identifier. A name is never a tool target (see Engine.pivot).
 PIVOT_TOOLS = {"username": ("maigret",), "email": ("ghunt", "spiderfoot")}
-# ponytail: fixed Maigret breadth for pivots, ~1/10 of --all-sites traffic. Make it a limit if
-# an investigation needs full sweeps of what it discovers.
-PIVOT_TOP_SITES = 500
-
 # ponytail: name heuristics, not a site-specific map. Misses an unconventional sign-in path;
 # add a pattern when a capture shows one.
 _AUTH_SEGMENT = re.compile(
@@ -349,7 +345,11 @@ class Engine:
                         "name": name,
                         "target": value,
                         "crawl": False,
-                        **({"top_sites": PIVOT_TOP_SITES} if name == "maigret" else {}),
+                        **(
+                            {"top_sites": spec.limits.followup_top_sites}
+                            if name == "maigret" and spec.limits.followup_top_sites is not None
+                            else {}
+                        ),
                     }
                     for name in PIVOT_TOOLS[kind]
                     if name in self.settings.tools and f"{name}:{value}".casefold() not in ran
