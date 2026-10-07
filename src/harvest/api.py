@@ -163,6 +163,15 @@ def create_app(settings: Settings | None = None):
             # these, so a plan can suggest a tool without the operator being able to
             # submit a job that submit() would reject.
             "tools_enabled": sorted(settings.tools & set(TOOLS)),
+            "investigation_presets": planning.investigation_presets(),
+            "default_investigation_preset": planning.DEFAULT_INVESTIGATION_PRESET,
+        }
+
+    @protected.get("/presets/investigation")
+    def investigation_presets_route():
+        return {
+            "default": planning.DEFAULT_INVESTIGATION_PRESET,
+            "presets": planning.investigation_presets(),
         }
 
     @protected.post("/plan/investigation")
