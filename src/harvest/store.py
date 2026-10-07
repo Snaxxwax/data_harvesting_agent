@@ -495,7 +495,9 @@ class Store:
         execution_id = row["id"]
         if native_body is not None:
             body_hash = digest(native_body)
-            db.execute("INSERT OR IGNORE INTO blobs(hash,body) VALUES(?,?)", (body_hash, native_body))
+            db.execute(
+                "INSERT OR IGNORE INTO blobs(hash,body) VALUES(?,?)", (body_hash, native_body)
+            )
             db.execute(
                 """INSERT INTO tool_artifacts(execution_id,kind,body_hash,content_type,created)
                 VALUES(?,?,?,?,?)
@@ -1689,9 +1691,7 @@ class Store:
                 f"{search['accepted_leads']} lead(s) accepted from {search['results']} "
                 "result(s), so missing web leads are not evidence of absence"
             )
-        tool_execution_rows = [
-            execution for jid in jobs for execution in self.tool_executions(jid)
-        ]
+        tool_execution_rows = [execution for jid in jobs for execution in self.tool_executions(jid)]
         with self.connection() as db:
             tool_task_count = db.execute(
                 f"SELECT count(*) FROM tasks WHERE kind='tool' AND job_id IN ({marks})",
