@@ -161,6 +161,18 @@ class Settings:
     )
     model_output_tokens: int = 2000
     request_timeout: float = 20
+    worker_heartbeat_stale_seconds: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_WORKER_HEARTBEAT_STALE", "90"))
+    )
+    backup_stale_seconds: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_BACKUP_STALE_SECONDS", "86400"))
+    )
+    disk_warn_percent: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_DISK_WARN_PERCENT", "20"))
+    )
+    disk_stop_percent: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_DISK_STOP_PERCENT", "10"))
+    )
 
     def __post_init__(self) -> None:
         if self.egress_mode not in {"direct", "proxy"}:
@@ -170,6 +182,10 @@ class Settings:
         # 500 is Webshare's standard per-account cap; above it the relay cannot protect it.
         if not 1 <= self.egress_max_connections <= 500:
             raise ValueError("HARVEST_EGRESS_MAX_CONNECTIONS must be between 1 and 500")
+        if not 0 <= self.disk_stop_percent < self.disk_warn_percent <= 100:
+            raise ValueError(
+                "HARVEST_DISK_STOP_PERCENT must be below HARVEST_DISK_WARN_PERCENT (0..100)"
+            )
         if self.proxy_only:
             host, _, port = self.egress_probe.rpartition(":")
             if not host or not port.isdigit() or not 0 < int(port) < 65536:
