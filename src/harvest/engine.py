@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import random
 import re
+import shutil
 import threading
 import time
+from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
 import httpcore
@@ -204,7 +207,129 @@ class Engine:
             raise ValueError(
                 "provide a seed URL or configure HARVEST_SEARCH_URL for discovery from an objective"
             )
+        # Admission checks happen immediately before the durable job is created. Queueing
+        # later does not consume the investigation deadline, but a critically full evidence
+        # volume must not admit more work that could destroy the data already present.
+        self._require_admission_capacity()
         return self.store.create(spec, initial, key, parent=parent, root=root)
+
+    def _disk_state(self):
+        path = Path(self.settings.database).resolve().parent
+        usage = shutil.disk_usage(path)
+        free_percent = (usage.free / usage.total * 100) if usage.total else 0.0
+        return {
+            "path": str(path),
+            "free_bytes": usage.free,
+            "total_bytes": usage.total,
+            "free_percent": round(free_percent, 2),
+        }
+
+    def _require_admission_capacity(self):
+        disk = self._disk_state()
+        if disk["free_percent"] < self.settings.disk_stop_percent:
+            raise BudgetExceeded(
+                f"disk free space is {disk['free_percent']}%, below the "
+                f"{self.settings.disk_stop_percent}% admission floor"
+            )
+
+    def _worker_heartbeat_details(self):
+        home = Path(os.environ.get("HOME") or "/tmp")
+        tools_state = {}
+        for name in sorted(self.settings.tools):
+            if name == "spiderfoot":
+                tools_state[name] = {
+                    "configured": bool(
+                        self.settings.spiderfoot_url and self.settings.spiderfoot_api_key
+                    )
+                }
+                continue
+            tools_state[name] = {"binary": bool(shutil.which(name))}
+            if name == "ghunt":
+                tools_state[name]["credentials"] = (
+                    home / ".malfrats" / "ghunt" / "creds.m"
+                ).is_file()
+        return {"pid": os.getpid(), "tools": tools_state}
+
+    def readiness(self, *, record_incidents=False):
+        now = time.time()
+        checks = {}
+        try:
+            with self.store.connection() as db:
+                db.execute("SELECT 1").fetchone()
+            checks["database"] = {"ok": True}
+        except Exception as exc:  # pragma: no cover - requires a broken database
+            checks["database"] = {"ok": False, "detail": type(exc).__name__}
+
+        worker = self.store.service_heartbeat("worker")
+        worker_age = now - worker["at"] if worker else None
+        checks["worker"] = {
+            "ok": worker_age is not None
+            and worker_age <= self.settings.worker_heartbeat_stale_seconds,
+            "age_seconds": round(worker_age, 1) if worker_age is not None else None,
+            "details": worker["details"] if worker else {},
+        }
+
+        disk = self._disk_state()
+        checks["disk"] = {
+            "ok": disk["free_percent"] >= self.settings.disk_stop_percent,
+            "warning": disk["free_percent"] < self.settings.disk_warn_percent,
+            **disk,
+        }
+
+        backup = self.store.latest_backup()
+        backup_age = now - backup["created"] if backup else None
+        offhost_age = (
+            now - backup["offhost_at"]
+            if backup and backup.get("offhost_at") is not None
+            else None
+        )
+        checks["backup"] = {
+            "ok": bool(
+                backup
+                and backup["verified"]
+                and offhost_age is not None
+                and offhost_age <= self.settings.backup_stale_seconds
+            ),
+            "age_seconds": round(backup_age, 1) if backup_age is not None else None,
+            "offhost_age_seconds": round(offhost_age, 1) if offhost_age is not None else None,
+            "kind": backup.get("kind") if backup else None,
+        }
+
+        cap = __import__("harvest.capabilities", fromlist=["readiness"]).readiness(self.settings)
+        checks["capabilities"] = {
+            "ok": all(
+                entry["ready"]
+                for name, entry in cap.items()
+                if name in self.settings.tools or name in {"fetch", "crawl"}
+            ),
+            "items": cap,
+        }
+        checks["proxy"] = {
+            "ok": self.settings.egress_mode != "proxy" or bool(self.settings.proxy),
+            "mode": self.settings.egress_mode,
+        }
+        ready = all(
+            checks[name]["ok"]
+            for name in ("database", "worker", "disk", "backup", "capabilities", "proxy")
+        )
+        degraded = checks["disk"].get("warning", False) or not ready
+        if record_incidents:
+            incident_checks = {
+                "worker": checks["worker"],
+                "disk": checks["disk"],
+                "backup": checks["backup"],
+                "capabilities": checks["capabilities"],
+                "proxy": checks["proxy"],
+            }
+            for name, state in incident_checks.items():
+                active = (not state["ok"]) or bool(state.get("warning"))
+                self.store.set_incident(
+                    f"readiness:{name}",
+                    active=active,
+                    severity="critical" if name == "disk" and not state["ok"] else "warning",
+                    details=state,
+                )
+        return {"ready": ready, "degraded": degraded, "checks": checks, "at": now}
 
     def follow_up(self, parent_id, *, url=None, tool=None, target=None, key=None):
         """Start a child job that INHERITS the parent investigation's authorization.
@@ -1036,13 +1161,30 @@ class Engine:
 
     def worker(self, stop=None, once=False):
         stop = stop or threading.Event()
+        heartbeat_stop = threading.Event()
+
+        def service_heartbeat():
+            while not heartbeat_stop.is_set():
+                try:
+                    self.store.heartbeat_service("worker", self._worker_heartbeat_details())
+                except Exception:
+                    log.exception("worker_service_heartbeat_failed")
+                if heartbeat_stop.wait(15):
+                    break
+
+        service_thread = threading.Thread(target=service_heartbeat, daemon=True)
+        service_thread.start()
         next_sweep = 0.0
-        while not stop.is_set():
-            if time.monotonic() >= next_sweep:
-                next_sweep = time.monotonic() + SWEEP_SECONDS
-                self.recover_external_scans()
-            worked = self.step()
-            if once:
-                return
-            if not worked:
-                stop.wait(0.5)
+        try:
+            while not stop.is_set():
+                if time.monotonic() >= next_sweep:
+                    next_sweep = time.monotonic() + SWEEP_SECONDS
+                    self.recover_external_scans()
+                worked = self.step()
+                if once:
+                    return
+                if not worked:
+                    stop.wait(0.5)
+        finally:
+            heartbeat_stop.set()
+            service_thread.join(timeout=1)
