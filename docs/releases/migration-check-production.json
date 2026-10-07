@@ -1,0 +1,30 @@
+{
+  "source_schema": 3,
+  "destination_schema": 4,
+  "original_unchanged": true,
+  "preserved": {
+    "counts": {
+      "jobs": 223,
+      "tasks": 4490,
+      "events": 3567,
+      "blobs": 519,
+      "captures": 598,
+      "entities": 1209,
+      "observations": 19727,
+      "sightings": 23804,
+      "schedules": 0
+    },
+    "hashes": {
+      "captures": "2200da9b28760bbb9385f2ad3b99a9ade40caaae2342b67b39ee239a97c37d5f",
+      "observations": "7fff569cde64b30804f6e3fb9495267a779aa26218cb8792a4c7d139dcd23ac2",
+      "sightings": "40a139d881dcc77c9936d7e6dcaeb728b6fd749c2e7dd0067c52c4945dec55b1",
+      "schedules": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "blobs": "290f8c9a4fc41f8c625ad96deb0467e6e3515222009d70a39b7be8159ee233ed"
+    }
+  },
+  "extractions": 397,
+  "assertions": 29268,
+  "idempotency_keys_verified": 146,
+  "integrity_check": "ok",
+  "foreign_key_check": []
+}

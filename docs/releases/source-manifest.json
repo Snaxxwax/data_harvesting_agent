@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "base_revision": "e792bb461270dd20d4e65afcd5bde2ddf48491a6",
+  "base_revision": "f0b178ebd0c3727071c97b563f38769d44783e3f",
   "source_sha256": "db457461a085594a0634e0facb4ec39abf0cfffc2cd416fb1fa2b5b8bf3abb2b",
   "files": {
     "src/harvest/__init__.py": "463191caa8b3858dd8200a14e2b93e997b6246fa6a16da7b9bb1d518777fbf42",

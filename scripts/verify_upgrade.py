@@ -66,10 +66,13 @@ def main():
             from harvest.models import ReplaySpec
 
             ids = [x["capture_id"] for x in store.extractions(job["id"])]
+            original = JobSpec.model_validate_json(job["spec"])
             assert (
                 store.replay(
                     ReplaySpec(
-                        capture_ids=ids, limits=JobSpec.model_validate_json(job["spec"]).limits
+                        capture_ids=ids,
+                        limits=original.limits,
+                        investigation=original.investigation,
                     ),
                     job["idempotency_key"],
                 )
