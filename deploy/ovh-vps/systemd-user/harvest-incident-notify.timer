@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll Harvest incidents while workstation is online
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=15s
+Unit=harvest-incident-notify.service
+
+[Install]
+WantedBy=timers.target
