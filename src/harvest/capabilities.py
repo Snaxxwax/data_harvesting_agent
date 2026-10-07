@@ -65,7 +65,8 @@ _TOOL_NOTES: dict[str, dict[str, str]] = {
     "maigret": {
         "evidence": "per-site account presence for a username, with parsed profile fields "
         "where a site exposes them",
-        "cost": "a full --all-sites sweep is ~500 sites / ~50 MiB of proxy bandwidth; "
+        "cost": "a full --all-sites sweep uses every eligible site in the pinned Maigret "
+        "database (currently thousands; disabled definitions remain excluded); "
         "ToolRun.top_sites trades breadth for a smaller scan",
     },
     "ghunt": {
