@@ -173,6 +173,10 @@ def readiness(settings) -> dict[str, dict]:
             "cost": cap.cost,
             "requires": list(cap.requires),
         }
+        if cap.name == "discovery_search":
+            # Ready means configured. Provider health is only known per search, and each
+            # job summary reports it (`search`); verify-deployment.sh probes it on deploy.
+            entry["basis"] = "configured"
         if cap.name == "spiderfoot":
             from .tools import SPIDERFOOT_KIND_TYPES, spiderfoot_plan
 

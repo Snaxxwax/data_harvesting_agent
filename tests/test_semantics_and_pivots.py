@@ -112,6 +112,13 @@ def test_identifier_searches_drop_results_that_never_mention_the_identifier(
     assert done[0]["not_mentioning_identifier"] == 1
     # A partial outage with results is still a finding, with the outage on record.
     assert done[0]["unresponsive_engines"] == ["wikidata"]
+    # ...and it reaches the summary instead of staying buried in task events.
+    summary = engine.store.job_summary(job["id"])
+    assert summary["search"] == {
+        "runs": 1, "degraded": 1, "unresponsive_engines": ["wikidata"],
+        "results": 2, "accepted_leads": 1,
+    }
+    assert any(u.startswith("discovery search degraded: 1/1") for u in summary["unknowns"])
 
 
 def _sf_events():
