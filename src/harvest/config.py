@@ -52,6 +52,13 @@ class Settings:
     worker_threads: int = field(
         default_factory=lambda: max(1, int(os.getenv("HARVEST_WORKER_THREADS", "1")))
     )
+    # Admission limits are shared through SQLite, not per worker process/thread.
+    max_active_investigations: int = field(
+        default_factory=lambda: max(1, int(os.getenv("HARVEST_MAX_ACTIVE_INVESTIGATIONS", "2")))
+    )
+    max_tool_tasks: int = field(
+        default_factory=lambda: max(1, int(os.getenv("HARVEST_MAX_TOOL_TASKS", "2")))
+    )
     # Global ceiling plus per-tool ceilings. The investigation's remaining wall clock is
     # still the final bound in Engine.process. The global default is high enough for Thorough;
     # deployments may lower it deliberately without changing the individual defaults.
