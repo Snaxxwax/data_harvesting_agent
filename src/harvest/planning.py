@@ -112,7 +112,10 @@ DEFAULT_INVESTIGATION_PRESET = "deep"
 
 def investigation_presets() -> dict[str, dict]:
     """Return a detached copy suitable for API clients; callers may filter offered tools."""
-    return {name: {**values, "tools": list(values["tools"])} for name, values in INVESTIGATION_PRESETS.items()}
+    return {
+        name: {**values, "tools": list(values["tools"])}
+        for name, values in INVESTIGATION_PRESETS.items()
+    }
 
 
 def preset_settings(name: str) -> dict:
