@@ -202,9 +202,21 @@ def create_app(settings: Settings | None = None):
 
     @protected.get("/health")
     def health():
-        with engine.store.connection() as db:
-            db.execute("SELECT 1")
+        # Liveness only. Readiness has its own endpoint and may be degraded while this
+        # process is still healthy enough to answer requests.
         return {"status": "ok", "version": VERSION}
+
+    @protected.get("/ready")
+    def ready():
+        return engine.readiness(record_incidents=True)
+
+    @protected.get("/incidents")
+    def incidents(limit: int = Query(100, ge=1, le=1000)):
+        return engine.store.incidents(limit)
+
+    @protected.get("/backups/latest")
+    def latest_backup():
+        return engine.store.latest_backup() or {}
 
     @protected.post("/jobs", status_code=202)
     def submit(spec: JobSpec, idempotency_key: str | None = Header(default=None, max_length=200)):
