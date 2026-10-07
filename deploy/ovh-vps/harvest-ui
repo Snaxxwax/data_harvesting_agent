@@ -2,6 +2,7 @@
 # Open the Harvest web UI already signed in. Mints a 60-second login ticket inside the api
 # container (the operator token never leaves the VPS) and opens it in the browser.
 # Install: ln -s "$PWD/deploy/ovh-vps/harvest-ui" ~/bin/harvest-ui
+# Browser: defaults to Brave (flatpak); override with e.g. HARVEST_BROWSER=xdg-open.
 set -eu
 url=$(ssh "${HARVEST_SSH:-ovh}" 'cd /opt/harvest/app && docker compose exec -T api harvest login-link --base-url http://100.118.181.47:8000')
-xdg-open "$url" >/dev/null 2>&1
+${HARVEST_BROWSER:-flatpak run com.brave.Browser} "$url" >/dev/null 2>&1 &
