@@ -83,6 +83,13 @@ def main():
     command.add_argument("--format", choices=["json", "markdown"], default="json")
     command.add_argument("--output")
     commands.add_parser("backup").add_argument("path")
+    command = commands.add_parser("record-backup")
+    command.add_argument("--kind", default="production")
+    command.add_argument("--manifest-hash")
+    command.add_argument("--verified", action="store_true")
+    command = commands.add_parser("mark-backup-offhost")
+    command.add_argument("backup_id", type=int)
+    commands.add_parser("readiness")
     commands.add_parser("disable-schedule").add_argument("schedule_id")
     command = commands.add_parser(
         "login-link", help="print a 60-second browser sign-in link for the web UI"
@@ -201,6 +208,19 @@ def main():
             print(text)
     elif args.command == "backup":
         engine.store.backup(args.path)
+    elif args.command == "record-backup":
+        backup_id = engine.store.record_backup(
+            kind=args.kind,
+            manifest_hash=args.manifest_hash,
+            verified=args.verified,
+        )
+        print(backup_id)
+    elif args.command == "mark-backup-offhost":
+        engine.store.mark_backup_offhost(args.backup_id)
+    elif args.command == "readiness":
+        result = engine.readiness(record_incidents=True)
+        print(json.dumps(result, indent=2))
+        raise SystemExit(0 if result["ready"] else 2)
     elif args.command == "disable-schedule":
         engine.store.disable_schedule(args.schedule_id)
 
