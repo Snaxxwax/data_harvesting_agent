@@ -1425,6 +1425,16 @@ class Store:
                     )
                 )
             }
+            searches = [
+                d
+                for d in (
+                    json.loads(r[0])
+                    for r in db.execute(
+                        "SELECT details FROM events WHERE job_id=? AND type='task_done'", (job_id,)
+                    )
+                )
+                if isinstance(d, dict) and "query" in d
+            ]
         by_job = {j: self.job_records(j) for j in jobs}
         records = [r for rows in by_job.values() for r in rows]
         checks = {
@@ -1513,6 +1523,25 @@ class Store:
                 "pivots: each pivot's accounts belong to the identifier it pivoted to, which is "
                 "linked to the subject only by where it was found"
             )
+        # A finished search task means the query ran, not that discovery worked: engines can
+        # be down while the rest answer with noise. Outages were kept per task and never
+        # reached the summary, so three degraded searches read as "nothing on the web".
+        search = {
+            "runs": len(searches),
+            "degraded": sum(bool(d.get("unresponsive_engines")) for d in searches),
+            "unresponsive_engines": sorted(
+                {e for d in searches for e in d.get("unresponsive_engines") or []}
+            ),
+            "results": sum(d.get("search_results") or 0 for d in searches),
+            "accepted_leads": sum(d.get("accepted_leads") or 0 for d in searches),
+        }
+        if search["degraded"]:
+            unknowns.append(
+                f"discovery search degraded: {search['degraded']}/{search['runs']} search(es) "
+                f"ran with engines down ({', '.join(search['unresponsive_engines'])}); "
+                f"{search['accepted_leads']} lead(s) accepted from {search['results']} "
+                "result(s), so missing web leads are not evidence of absence"
+            )
         limits = job["spec"]["limits"]
         tool_runs = job["investigation"]["enforced"]["tool_runs"]
         return {
@@ -1527,6 +1556,7 @@ class Store:
             "accounts": accounts,
             "verified_pages": sum(a["page_check"] == "profile_evidence" for a in accounts),
             "pivots": pivot_rows,
+            "search": search,
             "unknowns": unknowns,
         }
 
