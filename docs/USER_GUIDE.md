@@ -10,8 +10,9 @@ Private deployment: `http://100.118.181.47:8000` (Tailscale only). Sign in with 
 2. **Preview plan** shows the detected type, discovery queries and the external tools this
    deployment can run for it. A suggested tool that cannot run is listed as *Unavailable*
    with the reason (for example, not in `HARVEST_TOOLS`). Tick the tools you want.
-   *Follow up on tool findings* fetches every profile a tool reports; leave it off for a
-   cheap scan and follow up selectively later.
+   *Follow up on tool findings* fetches the profiles a tool reports (and, from a profile
+   page Harvest verified, only links that carry the identifier); leave it off for a cheap
+   scan and follow up selectively later. **Deep** also allows up to 3 **pivots** (below).
 3. Set the **request budget** (pages Harvest fetches) and the **time budget** (seconds for the
    whole investigation, tool scans included). Defaults: 100 requests, 900 s. A maigret
    all-sites scan plus SpiderFoot on a username can take most of 900 s on its own.
@@ -36,8 +37,25 @@ Private deployment: `http://100.118.181.47:8000` (Tailscale only). Sign in with 
   - *Ownership*: always `candidate`/`unverified`. A matching handle, or a page naming it,
     shows that an account exists, never who runs it. Identity is your call, from the evidence.
   - *Unknown:* lines list requested fields never observed and unverified accounts.
+  - The header counts Harvest's own requests against the request budget, and tool runs
+    against `tool_runs`. Tools' own requests are never metered: `0/100` requests after a
+    maigret run means Harvest fetched nothing, not that nothing was contacted.
+  - **Pivots** (only when `limits.pivots` > 0; Deep sets 3): identifiers a tool found one hop
+    from your input -- the handle SpiderFoot derived from an address, another handle or an
+    email a profile lists, a full name a profile states -- each enriched in its OWN child job
+    (handle: maigret top 500 sites; email: GHunt + SpiderFoot; name: one search pairing it
+    with the handle, results must mention the handle). Their accounts are listed under the
+    pivot, never in the table above: they belong to the discovered identifier, linked to
+    your subject only by where it was found. Pivots share the investigation's budget; one
+    the budget cannot afford is skipped with the reason (`pivot_skipped`). Pivots never pivot.
+  - SpiderFoot findings reached through a name or someone else's identifier (e.g. accounts
+    for handles it built from a TikTok display name) are kept as evidence, labelled
+    `pivoted_via`, and counted in *Unknown* instead of listed.
 - **Stopped early** names the limit that actually stopped the job (time, requests, tool runs,
-  ...) and what to raise. A tool scan that ran out of time keeps its results, labelled
+  ...), how many unfinished tasks were dropped, and what to raise. A job that ran everything
+  it queued ends with the reason `all queued work finished`. A search whose engines were all
+  unresponsive FAILS (it is not recorded as "0 results"), and search results that never
+  mention the identifier are not fetched. A tool scan that ran out of time keeps its results, labelled
   *partial*, and the job is `partial`.
 - **Records**: every field per entity; click *evidence: N sources* to see each value's source
   URL, capture, locator and confidence. `display_name`/`profile_url` are filled from the
@@ -54,7 +72,8 @@ Private deployment: `http://100.118.181.47:8000` (Tailscale only). Sign in with 
   When the budget is spent, follow-ups are refused with `budget_exhausted`; start a new
   investigation instead. A URL the investigation never discovered is refused
   (`authorization_required`).
-- **Cancel** stops the job and its running external scan; evidence already collected is kept.
+- **Cancel** stops the job and its running external scan, and cancelling the original job
+  also cancels its live follow-ups and pivots; evidence already collected is kept.
 - **Rerun** repeats the job as a new job. **Download JSONL / CSV** exports every observation
   with its provenance (including `page_check` rows).
 

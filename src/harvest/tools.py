@@ -768,13 +768,36 @@ def _spiderfoot_records(events: list, target: str) -> list[dict]:
     evidence that another module saw it too -- the same shape as `_merge_maigret_hosts`.
     """
     normalized = (target or "").strip().lower()
-    # hash -> type, so an event can name what it was derived from. Built first because
-    # SpiderFoot does not order events parent-before-child.
+    # hash -> (type, data, parent hash), so an event can name what it was derived from. Built
+    # first because SpiderFoot does not order events parent-before-child.
     lineage = {
-        e.get("hash"): (str(e.get("type") or ""), e.get("data"))
+        e.get("hash"): (str(e.get("type") or ""), e.get("data"), e.get("source_event_hash"))
         for e in events
         if isinstance(e, dict) and e.get("hash")
     }
+    kind = next(
+        (k for k in _SF_SUBJECT_KINDS if _spiderfoot_target_type(normalized) in k), frozenset()
+    )
+    other = frozenset().union(*(k for k in _SF_SUBJECT_KINDS if k is not kind))
+
+    def pivoted_via(event) -> str | None:
+        """The first hop on this event's chain that left the target's own identifiers.
+
+        A profile can only exclude modules, and SpiderFoot still hands every event to every
+        module that watches it: sfp_accounts turns a HUMAN_NAME (a TikTok display name, say)
+        into handles and sweeps its site list for them. What comes back exists, but it hangs
+        off a name, not off anything the operator gave -- so it is labelled, never attributed.
+        """
+        seen, parent = set(), event.get("source_event_hash")
+        while parent in lineage and parent not in seen:
+            seen.add(parent)
+            hop, _, parent = lineage[parent]
+            if hop in _SF_NOISE_TYPES:
+                return None
+            if hop == "HUMAN_NAME" or hop in other or hop.startswith(_SF_CANDIDATE_PREFIXES):
+                return hop
+        return None
+
     groups: dict[tuple, dict] = {}
     for event in events:
         if not isinstance(event, dict):
@@ -792,7 +815,7 @@ def _spiderfoot_records(events: list, target: str) -> list[dict]:
         existence = _spiderfoot_existence(event_type, module)
         data, link = _spiderfoot_split_data(data)
         # derived_via is computed just below; ownership needs it, so look up the parent now.
-        parent_type, parent_data = lineage.get(event.get("source_event_hash"), ("", None))
+        parent_type, parent_data, _ = lineage.get(event.get("source_event_hash"), ("", None, None))
         derived_via = (
             parent_type
             if parent_type and parent_type not in _SF_NOISE_TYPES and parent_type != event_type
@@ -832,6 +855,10 @@ def _spiderfoot_records(events: list, target: str) -> list[dict]:
             # attached to nobody -- while only the derived USERNAME itself binds.
             if isinstance(parent_data, str) and parent_data.strip():
                 record["derived_from"] = parent_data.strip()
+        if via := pivoted_via(event):
+            record["pivoted_via"] = via
+            record["ownership"] = "candidate"
+            record["_confidence"] = min(record["_confidence"], 0.5)
         # Keyed on the URL when there is one: the same profile reported with two different
         # labels is one account, and two accounts could share a label.
         key = (event_type, link or data)
@@ -905,6 +932,29 @@ _SF_SUBJECT_KINDS = (
     frozenset({"INTERNET_NAME", "DOMAIN_NAME", "IP_ADDRESS", "IPV6_ADDRESS"}),
 )
 
+# What a scan of each target type is FOR. HARVEST_SPIDERFOOT_MODULES stays the operator's
+# ceiling -- a module must be in both -- but the allowlist alone was one global policy: every
+# allowlisted module that could fire on an input did, including ones that only add noise there.
+# Profiles list only modules seen producing events or running cleanly on that type (_SF_TESTED).
+SPIDERFOOT_PROFILES: dict[str, tuple[str, ...]] = {
+    # No sfp_names: it GUESSES a human name from the address's local part, and sfp_accounts
+    # turns any HUMAN_NAME into handles and sweeps its whole site list for them -- other
+    # people's accounts, arriving as if they hung off the target.
+    "EMAILADDR": (
+        "sfp_accounts",
+        "sfp_debounce",
+        "sfp_gravatar",
+        "sfp_hudsonrock",
+        "sfp_pgp",
+        "sfp_tiktok_osint",
+        "sfp_wikileaks",
+    ),
+    "USERNAME": ("sfp_accounts", "sfp_hudsonrock", "sfp_tiktok_osint"),
+    # Infrastructure only. Person modules on a domain consume the addresses sfp_pgp finds there,
+    # which belong to other people (spiderfoot_plan's leak rule would drop them anyway).
+    "INTERNET_NAME": ("sfp_dnsresolve", "sfp_pgp"),
+}
+
 # Harvest investigation kind -> the SpiderFoot target type _spiderfoot_target_type gives it.
 SPIDERFOOT_KIND_TYPES = {
     "email": "EMAILADDR",
@@ -936,12 +986,15 @@ def spiderfoot_plan(target_type: str, settings) -> dict:
     meta = _sf_meta()
     keyed = getattr(settings, "spiderfoot_keyed_modules", frozenset())
     keyless_ok = {m for (m, _), outcome in _SF_TESTED.items() if outcome == "events"}
+    profile = SPIDERFOOT_PROFILES.get(target_type, ())
     excluded: dict[str, str] = {}
     usable: dict[str, dict] = {}
     for module in getattr(settings, "spiderfoot_modules", ()) or ():
         info = meta.get(module)
         if info is None:
             excluded[module] = "unknown to this build's SpiderFoot module metadata; not sent"
+        elif module not in profile:
+            excluded[module] = f"not in the {target_type} profile (tools.SPIDERFOOT_PROFILES)"
         elif "apikey" in info["flags"] and module not in keyed and module not in keyless_ok:
             excluded[module] = (
                 "needs an API key not declared configured (HARVEST_SPIDERFOOT_KEYED_MODULES)"
@@ -1010,6 +1063,7 @@ def spiderfoot_plan(target_type: str, settings) -> dict:
     )
     return {
         "target_type": target_type,
+        "profile": list(profile),
         "modules": sorted(selected),
         "cascades": [{"from": p, "event": e, "to": c} for p, e, c in cascades],
         "consumes": selected,
@@ -1195,6 +1249,51 @@ def _stop_spiderfoot_scan(client, scan_id) -> None:
         client.post(f"/api/v1/scans/{scan_id}/stop")
     except httpx.HTTPError:
         log.warning("could not stop an unfinished spiderfoot scan")
+
+
+_PIVOT_EMAIL = re.compile(r"[A-Za-z0-9_.+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+_PIVOT_PERSON = re.compile(r"[^\W\d_]+(?:[ '-][^\W\d_]+){1,3}")
+
+
+def pivot_candidates(tool: str, records: list, target: str) -> list[tuple[str, str, dict]]:
+    """Identifiers one tool run found that deserve their own enrichment: (kind, value, source).
+
+    Deliberately narrow, because each one becomes another run against another identifier:
+    only OBSERVED findings, only ONE hop from the input (SpiderFoot's derived_from must be the
+    target itself), never the input again, and never anything reached through a name
+    (pivoted_via). Kinds: "email", "username", "person" (a full name a profile states).
+    """
+    found: dict[tuple[str, str], tuple[str, str, dict]] = {}
+
+    def add(kind, value, source):
+        if not isinstance(value, str):
+            return
+        value = value.strip()
+        valid = {
+            "email": _PIVOT_EMAIL.fullmatch(value),
+            "username": "@" not in value and 3 <= len(value) <= 64 and _TARGET_RE.fullmatch(value),
+            "person": len(value) <= 80 and _PIVOT_PERSON.fullmatch(value),
+        }[kind]
+        if valid and value.casefold() != target.casefold():
+            found.setdefault((kind, value.casefold()), (kind, value, source))
+
+    for r in records:
+        if not isinstance(r, dict) or r.get("existence") != "observed" or r.get("pivoted_via"):
+            continue
+        if tool == "spiderfoot":
+            kind = {"USERNAME": "username", "EMAILADDR": "email"}.get(r.get("event_type"))
+            if kind and str(r.get("derived_from") or "").casefold() == target.casefold():
+                add(kind, r.get("data"), {"tool": tool, "module": r.get("module")})
+        elif tool == "maigret":
+            source = {"tool": tool, "site": r.get("sitename"), "url": r.get("url")}
+            for handle in r.get("ids_usernames") or {}:
+                add("username", handle, {**source, "field": "ids_usernames"})
+            for key, value in r.items():
+                if key not in {"url", "url_probe"} and isinstance(value, str) and "@" in value:
+                    add("email", value, {**source, "field": key})
+            add("person", r.get("fullname"), {**source, "field": "fullname"})
+    order = {"email": 0, "username": 1, "person": 2}
+    return sorted(found.values(), key=lambda c: order[c[0]])
 
 
 # kinds: the planning investigation types whose normalized value is a valid target.

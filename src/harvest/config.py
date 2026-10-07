@@ -52,8 +52,11 @@ class Settings:
     worker_threads: int = field(
         default_factory=lambda: max(1, int(os.getenv("HARVEST_WORKER_THREADS", "1")))
     )
+    # 600, as deployed: Maigret --all-sites through the egress relay measured 293 s, and a
+    # SpiderFoot email sweep ~254 s, so 300 left either one a few seconds from a timeout.
+    # A job's remaining wall clock still bounds every run (Engine.process).
     tool_timeout: float = field(
-        default_factory=lambda: float(os.getenv("HARVEST_TOOL_TIMEOUT", "300"))
+        default_factory=lambda: float(os.getenv("HARVEST_TOOL_TIMEOUT", "600"))
     )
     # Outbound connections this deployment may hold open at once, across every tool and
     # every worker thread. The egress relay enforces it for everything that leaves
