@@ -1,5 +1,34 @@
 # Harvest OSINT stack — ovh-vps
 
+**2026-10-06 — b18ca4f deployed** (PRs #40, #41; no SpiderFoot fork change; verify 45/45;
+DB backup `/data/harvest-20261006-pre281022d.sqlite`):
+
+- **Job semantics:** `investigation.enforced.seconds.used` stops at the investigation's last
+  finish (job 998a22f2 had reported 42,263 s of 900). A SearXNG answer with zero results and
+  unresponsive engines FAILS the search task ("not evidence of absence"); partial outages are
+  recorded as `unresponsive_engines`. Stop reasons append `N unfinished task(s) cancelled`;
+  cancelling a root cancels its live follow-ups/pivots; completion reason is `all queued work
+  finished`. Summary adds `tool_runs` and `tool_requests: not metered`.
+- **`HARVEST_TOOL_TIMEOUT` default 600** (was 300; this host already set 600).
+- **SpiderFoot per-input profiles** (`tools.SPIDERFOOT_PROFILES`, capped by
+  `HARVEST_SPIDERFOOT_MODULES`): email no longer runs `sfp_names`; findings whose event chain
+  passes through a HUMAN_NAME / another subject's identifier are labelled `pivoted_via`.
+- **Bounded pivots** (`limits.pivots`, default 0; UI Deep = 3): one-hop identifiers from a
+  root tool run get their own child job (handle → maigret top 500; email → GHunt+SpiderFoot;
+  name → one quoted search with the handle), provenance in a `pivot` event, shared budget.
+- **Crawl:** in tool-target investigations every capture (incl. batched JSON) expands only
+  through links carrying the identifier; identifier searches drop results not mentioning it.
+
+Measured live (all on the operator's own identifiers):
+
+| run | before | after |
+|---|---|---|
+| email (SF+GHunt, pivots 2) `72f860fe` | — | 372 s; SF 286 s (7 modules, sfp_names excluded, same 6 findings); pivot `errlybird49` → maigret top-500 81 s, 2 accounts listed under the pivot, root keeps its 3; 40/40 off-topic search results dropped |
+| username `Snaxxwax`, crawl, 40 req | `515068e0` (#40 only): 284 tasks, 224 cancelled, 1.72 MB, 30 other users' URLs queued | `6c1b2d8f` (#41): 113 tasks, 45 cancelled, 0.90 MB, 0 other users' URLs |
+| cancel cascade `96b28dbf` | — | root already completed; pivot child cancelled mid-maigret, lease lost +1 s, no maigret left |
+
+SearXNG at the time: brave, duckduckgo and google cse unresponsive on every query.
+
 **v1.0.1** (2026-10-05): tag `v1.0.1`, SpiderFoot fork at `1a05a8a1`. Fixes the v1.0.0
 acceptance failures: SpiderFoot honours a stop within ~5 s (scanner final-pass wait now
 checks ABORT-REQUESTED), the Postgres password no longer reaches logs, exceptions or the
