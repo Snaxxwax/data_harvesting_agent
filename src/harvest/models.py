@@ -83,6 +83,10 @@ class Limits(StrictModel):
     # discovery from authorizing anything; setting it is the operator authorizing that many
     # one-hop pivots. Each pivot's tool runs still count against tool_runs above.
     pivots: int = Field(default=0, ge=0, le=20)
+    # Maigret breadth for one-hop username follow-ups. None means all eligible sites.
+    # Kept in the immutable investigation limits so follow-up breadth is explicit and
+    # reproducible instead of a hidden engine constant.
+    followup_top_sites: int | None = Field(default=500, ge=1, le=10_000)
 
 
 MAX_DISCOVERY_QUERIES = 5
@@ -236,6 +240,9 @@ class JobSpec(StrictModel):
     objective: str = Field(min_length=3, max_length=4000)
     dataset: str = Field(default="default", pattern=r"^[a-zA-Z0-9_-]{1,80}$")
     mode: Literal["targeted", "enumerative", "continuous", "deep_research"] = "targeted"
+    # UI/planner preset identifier used to produce this spec. Optional for backwards
+    # compatibility: callers that submit explicit limits keep their historical behaviour.
+    preset: Literal["quick", "standard", "deep"] | None = None
     seeds: list[str] = Field(default_factory=list, max_length=100)
     fields: list[str] = Field(default_factory=list, max_length=50)
     discovery_queries: list[str] = Field(default_factory=list, max_length=50)
