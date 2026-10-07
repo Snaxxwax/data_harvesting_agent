@@ -313,6 +313,37 @@ def create_app(settings: Settings | None = None):
     def summary(job_id: str):
         return engine.store.job_summary(job_id)
 
+    @protected.get("/jobs/{job_id}/executions")
+    def executions(job_id: str):
+        return engine.store.tool_executions(job_id)
+
+    @protected.get("/jobs/{job_id}/coverage")
+    def coverage(job_id: str):
+        summary = engine.store.job_summary(job_id)
+        return {
+            "job_id": job_id,
+            "status": summary["status"],
+            "search": summary["search"],
+            "tools": summary["tool_coverage"],
+            "unknowns": summary["unknowns"],
+        }
+
+    @protected.get("/executions/{execution_id}/artifacts/{kind}")
+    def execution_artifact(execution_id: int, kind: str):
+        if kind not in {"native-structured"}:
+            raise HTTPException(status_code=404, detail="not found")
+        artifact = engine.store.tool_artifact(execution_id, kind)
+        return Response(
+            artifact["body"],
+            media_type=artifact["content_type"],
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="execution-{execution_id}-{kind}.json"'
+                ),
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
     @protected.get("/jobs/{job_id}/records")
     def records(job_id: str):
         return engine.store.job_records(job_id)
