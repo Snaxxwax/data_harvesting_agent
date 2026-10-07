@@ -844,15 +844,26 @@ def test_spiderfoot_drops_empty_profile_shells_and_unknown_confidence_is_not_max
     """Audit 2026-10-06, capture 565: a TikTok CAPTCHA/not-found page arrived as an observed
     profile at confidence 1.0 with every field null except the requested username."""
     shell = json.dumps(
-        {"username": "someone", "display_name": None, "bio": None, "follower_count": None,
-         "following_count": None, "video_count": None, "verified": False,
-         "profile_picture": None, "videos": []}
+        {
+            "username": "someone",
+            "display_name": None,
+            "bio": None,
+            "follower_count": None,
+            "following_count": None,
+            "video_count": None,
+            "verified": False,
+            "profile_picture": None,
+            "videos": [],
+        }
     )
     events = [
         {"type": "SOCIAL_MEDIA_PROFILE", "data": shell, "module": "sfp_tiktok_osint"},
         {"type": "RAW_RIR_DATA", "data": "TikTok Profile: " + shell, "module": "sfp_tiktok_osint"},
-        {"type": "SOCIAL_MEDIA_PROFILE", "module": "sfp_tiktok_osint",
-         "data": json.dumps({"username": "someone", "display_name": "Some One"})},
+        {
+            "type": "SOCIAL_MEDIA_PROFILE",
+            "module": "sfp_tiktok_osint",
+            "data": json.dumps({"username": "someone", "display_name": "Some One"}),
+        },
     ]
     records = tools._spiderfoot_records(events, "me@x.test")
     assert len(records) == 1 and "Some One" in records[0]["data"]
