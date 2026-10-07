@@ -1,0 +1,867 @@
+{
+  "active_job_restore": {
+    "evidence_sha256": "6d0ee13c06a29e397efc7f7f6944782816bc38e8dd9e1636e21d2de1dc975773",
+    "started": 1791404872.9496748,
+    "scenario": "online backup while a Maigret execution is active; restore rule; start release worker",
+    "backup_taken_at": 1791404883.6058223,
+    "image": "sha256:7b0508061d0673668188d3c4904978271e11bd94fe159fac2614b4a6edbda8fb",
+    "tool_processes_in_restored_worker": 0,
+    "finished": 1791404910.4151309,
+    "job": {
+      "id": "4ca9353abf43474b89b6e3e32952a78c",
+      "status": "cancelled",
+      "reason": "operator requested cancellation; 1 unfinished task(s) cancelled",
+      "created": 1791404873.5068438,
+      "finished": 1791404884.5759506
+    },
+    "tasks": [
+      {
+        "kind": "tool",
+        "status": "cancelled",
+        "error": null
+      }
+    ],
+    "events": {
+      "cancelled": 1,
+      "checkpoint_preserved": 1,
+      "created": 1,
+      "tool_started": 1
+    },
+    "captures": [
+      "checkpoint/1"
+    ],
+    "executions": [
+      {
+        "tool": "maigret",
+        "outcome": "interrupted",
+        "reason": "worker stopped; completed checkpoints retained; scan not repeated",
+        "external_id": null,
+        "coverage": "measured",
+        "execution_completed": false,
+        "counts": {
+          "absent": 146,
+          "blocked": 20,
+          "errored": 3,
+          "found": 1,
+          "unfinished": 5008
+        },
+        "check_reasons": {
+          "errored: native check failed": 3,
+          "blocked: site challenge, authentication or rate limit": 20,
+          "unfinished: no conclusive native verdict": 1
+        }
+      }
+    ],
+    "coverage_status": "partial",
+    "before_restore_rule": {
+      "job": {
+        "status": "running",
+        "reason": null
+      },
+      "tasks": [
+        {
+          "id": 41,
+          "status": "running",
+          "error": null
+        }
+      ],
+      "executions": [
+        {
+          "id": 19,
+          "outcome": "running",
+          "reason": null,
+          "checks": 105
+        }
+      ],
+      "captures": [],
+      "active": 1,
+      "integrity": "ok"
+    },
+    "after_restore_rule": {
+      "job": {
+        "status": "partial",
+        "reason": "restored backup: interrupted; acquisition not repeated"
+      },
+      "tasks": [
+        {
+          "id": 41,
+          "status": "cancelled",
+          "error": "restored backup: interrupted; acquisition not repeated"
+        }
+      ],
+      "executions": [
+        {
+          "id": 19,
+          "outcome": "running",
+          "reason": null,
+          "checks": 105
+        }
+      ],
+      "captures": [],
+      "active": 0,
+      "integrity": "ok"
+    },
+    "after_worker_started": {
+      "job": {
+        "status": "partial",
+        "reason": "restored backup: interrupted; acquisition not repeated"
+      },
+      "tasks": [
+        {
+          "id": 41,
+          "status": "cancelled",
+          "error": "restored backup: interrupted; acquisition not repeated"
+        }
+      ],
+      "executions": [
+        {
+          "id": 19,
+          "outcome": "interrupted",
+          "reason": "worker stopped; completed checkpoints retained; scan not repeated",
+          "checks": 121
+        }
+      ],
+      "captures": [
+        {
+          "id": 22,
+          "extractor": "checkpoint/1"
+        }
+      ],
+      "active": 0,
+      "integrity": "ok"
+    }
+  },
+  "cancellation": {
+    "evidence_sha256": "84fb0d8296883781d29f728f100fa8b2bbdda018bdaf997578f69f9fd47e60d3",
+    "started": 1791403618.934525,
+    "scenario": "cancel a running Maigret all-site execution",
+    "checks_before_cancel": 74,
+    "job_terminal_seconds": 10.2,
+    "tool_process_gone": true,
+    "tool_processes_after": 0,
+    "finished": 1791403639.8439078,
+    "job": {
+      "id": "603a64ccea78477b87c6f60495db6443",
+      "status": "cancelled",
+      "reason": "operator requested cancellation; 1 unfinished task(s) cancelled",
+      "created": 1791403619.7134197,
+      "finished": 1791403630.2104456
+    },
+    "tasks": [
+      {
+        "kind": "tool",
+        "status": "cancelled",
+        "error": null
+      }
+    ],
+    "events": {
+      "cancelled": 1,
+      "checkpoint_preserved": 1,
+      "created": 1,
+      "tool_started": 1
+    },
+    "captures": [
+      "checkpoint/1"
+    ],
+    "executions": [
+      {
+        "tool": "maigret",
+        "outcome": "interrupted",
+        "reason": "worker stopped; completed checkpoints retained; scan not repeated",
+        "external_id": null,
+        "coverage": "measured",
+        "execution_completed": false,
+        "counts": {
+          "absent": 128,
+          "blocked": 16,
+          "errored": 2,
+          "found": 1,
+          "unfinished": 5031
+        },
+        "check_reasons": {
+          "blocked: site challenge, authentication or rate limit": 16,
+          "errored: native check failed": 2,
+          "unfinished: no conclusive native verdict": 5
+        }
+      }
+    ],
+    "coverage_status": "partial"
+  },
+  "database_restart": {
+    "evidence_sha256": "9a94406e71954492aa56aa8df8b51f320b1cfd45bc324756629a45f7adac63a5",
+    "started": 1791403848.738316,
+    "scenario": "restart SpiderFoot PostgreSQL and Harvest API during an active scan",
+    "scan_id": "90FFF156",
+    "harvest_api_recovered": true,
+    "spiderfoot_authenticated_after_seconds": 9.5,
+    "scan_final_state": "ABORTED",
+    "job_terminal": true,
+    "finished": 1791404764.3920338,
+    "job": {
+      "id": "e7a090c7e1cd4229bb6c847d665db91c",
+      "status": "partial",
+      "reason": "all queued work finished; scan stopped after its 900s time allowance (the lower of the job's remaining wall clock and HARVEST_TOOL_TIMEOUT); events found before the stop are kept; completed evidence retained",
+      "created": 1791403849.2987022,
+      "finished": 1791404755.634885
+    },
+    "tasks": [
+      {
+        "kind": "tool",
+        "status": "done",
+        "error": null
+      },
+      {
+        "kind": "extract",
+        "status": "done",
+        "error": null
+      }
+    ],
+    "events": {
+      "capture": 1,
+      "created": 1,
+      "extracted": 1,
+      "finished": 1,
+      "task_done": 2,
+      "tool_started": 1
+    },
+    "captures": [
+      "discovery/1"
+    ],
+    "executions": [
+      {
+        "tool": "spiderfoot",
+        "outcome": "partial",
+        "reason": "",
+        "external_id": "90FFF156",
+        "coverage": "measured",
+        "execution_completed": false,
+        "counts": {
+          "unsupported": 7
+        },
+        "check_reasons": {
+          "unsupported: per-check coverage unavailable in scanner contract": 7
+        }
+      }
+    ],
+    "coverage_status": "partial"
+  },
+  "deadline": {
+    "evidence_sha256": "3e9fd6a76817351ec1d72c6b893b10faec09a0eec77e5f6e485c5481233ababf",
+    "started": 1791403685.335447,
+    "scenario": "investigation deadline (120 s) shorter than a Maigret all-site execution",
+    "job_terminal": true,
+    "tool_processes_after": 0,
+    "finished": 1791403794.0481853,
+    "job": {
+      "id": "372c6ba997b54c5f9b396274c3ee603c",
+      "status": "partial",
+      "reason": "all queued work finished; tool stopped; completed checkpoints retained; completed evidence retained",
+      "created": 1791403685.9312158,
+      "finished": 1791403791.408536
+    },
+    "tasks": [
+      {
+        "kind": "tool",
+        "status": "done",
+        "error": null
+      },
+      {
+        "kind": "extract",
+        "status": "done",
+        "error": null
+      }
+    ],
+    "events": {
+      "capture": 1,
+      "created": 1,
+      "extracted": 1,
+      "finished": 1,
+      "task_done": 2,
+      "tool_started": 1
+    },
+    "captures": [
+      "discovery/1"
+    ],
+    "executions": [
+      {
+        "tool": "maigret",
+        "outcome": "partial",
+        "reason": "",
+        "external_id": null,
+        "coverage": "measured",
+        "execution_completed": false,
+        "counts": {
+          "absent": 1619,
+          "blocked": 210,
+          "errored": 43,
+          "found": 10,
+          "skipped": 5,
+          "unfinished": 3292
+        },
+        "check_reasons": {
+          "blocked: site challenge, authentication or rate limit": 210,
+          "unfinished: no conclusive native verdict": 231,
+          "errored: native check failed": 43,
+          "skipped: identifier not eligible for site": 5,
+          "unfinished: tool stopped before completion": 1
+        }
+      }
+    ],
+    "coverage_status": "partial"
+  },
+  "ghunt_invalid_credential": {
+    "evidence_sha256": "069993cfc680c9c6c9eee0a7c45979e937d3bdadbee168d86717a08c995318d4",
+    "started": 1791404791.277154,
+    "scenario": "GHunt with every stored cookie/token invalidated (expired-credential stand-in)",
+    "job_terminal": true,
+    "credential_restored_byte_identical": true,
+    "finished": 1791404798.511551,
+    "job": {
+      "id": "d1c26588397247be9c4c6d4c4aec2937",
+      "status": "partial",
+      "reason": "all queued work finished; 1 task(s) failed or blocked, e.g. ghunt exited with status 1",
+      "created": 1791404792.1650193,
+      "finished": 1791404795.9541974
+    },
+    "tasks": [
+      {
+        "kind": "tool",
+        "status": "failed",
+        "error": "ghunt exited with status 1"
+      }
+    ],
+    "events": {
+      "created": 1,
+      "failed": 1,
+      "finished": 1,
+      "tool_started": 1
+    },
+    "captures": [],
+    "executions": [
+      {
+        "tool": "ghunt",
+        "outcome": "errored",
+        "reason": "ActionableError",
+        "external_id": null,
+        "coverage": "measured",
+        "execution_completed": false,
+        "counts": {
+          "blocked": 1,
+          "unfinished": 5
+        },
+        "check_reasons": {
+          "blocked: credential authentication failed": 1,
+          "unfinished: scheduled sub-check": 5
+        }
+      }
+    ],
+    "coverage_status": "partial"
+  },
+  "proxy_failure": {
+    "evidence_sha256": "7c266f1de3aafc1ebf76c75b58d901ec515fb99a8997243be79bf98532c8b5f7",
+    "started": 1791404764.4772344,
+    "scenario": "worker/monitor proxy points at a closed relay port, then restored",
+    "readiness_proxy_false_seconds": 25.1,
+    "proxy_incident_opened": true,
+    "job_terminal": true,
+    "readiness_proxy_recovered": true,
+    "proxy_incident_resolved_after_restore_seconds": 6.6,
+    "finished": 1791404791.1971881,
+    "job": {
+      "id": "a7a4ed52fc59438e8735d2d919f07c6b",
+      "status": "partial",
+      "reason": "all queued work finished; some scheduled checks unavailable or incomplete; completed evidence retained",
+      "created": 1791404773.2603254,
+      "finished": 1791404779.7475312
+    },
+    "tasks": [
+      {
+        "kind": "tool",
+        "status": "done",
+        "error": null
+      },
+      {
+        "kind": "extract",
+        "status": "done",
+        "error": null
+      }
+    ],
+    "events": {
+      "capture": 1,
+      "created": 1,
+      "extracted": 1,
+      "finished": 1,
+      "task_done": 2,
+      "tool_started": 1
+    },
+    "captures": [
+      "discovery/1"
+    ],
+    "executions": [
+      {
+        "tool": "maigret",
+        "outcome": "partial",
+        "reason": "",
+        "external_id": null,
+        "coverage": "measured",
+        "execution_completed": true,
+        "counts": {
+          "unfinished": 38
+        },
+        "check_reasons": {
+          "unfinished: no conclusive native verdict": 38
+        }
+      }
+    ],
+    "coverage_status": "partial"
+  },
+  "recreate": {
+    "evidence_sha256": "ffb12e69c6df45edde83cf06f7750624fb2fa7efad269ad67a830c3190b9efd6",
+    "started": 1791404798.6027122,
+    "scenario": "force-recreate staging Harvest api/worker/monitor and SpiderFoot api/scanner",
+    "credential_survived_byte_identical": true,
+    "scanner_proxy_env": true,
+    "services_healthy": true,
+    "finished": 1791404872.8656702,
+    "networks": {
+      "hv-stg-worker-1": [
+        "harvest-egress",
+        "stg-hv-sf"
+      ],
+      "hv-stg-monitor-1": [
+        "harvest-egress",
+        "stg-hv-sf"
+      ],
+      "hv-stg-api-1": [
+        "hv-stg_default"
+      ],
+      "stg-sf-api": [
+        "sf-stg_default",
+        "stg-hv-sf",
+        "stg-sf-backend"
+      ],
+      "stg-sf-celery-worker": [
+        "harvest-egress",
+        "stg-sf-backend",
+        "stg-sf-dns"
+      ]
+    },
+    "direct_egress": {
+      "hv-stg-worker-1": "denied",
+      "hv-stg-monitor-1": "denied",
+      "stg-sf-celery-worker": "denied"
+    },
+    "images": {
+      "hv-stg-api-1": "sha256:7b0508061d0673668188d3c4904978271e11bd94fe159fac2614b4a6edbda8fb",
+      "hv-stg-worker-1": "sha256:7b0508061d0673668188d3c4904978271e11bd94fe159fac2614b4a6edbda8fb",
+      "hv-stg-monitor-1": "sha256:7b0508061d0673668188d3c4904978271e11bd94fe159fac2614b4a6edbda8fb",
+      "stg-sf-api": "sha256:defe0cfda9a227e46a9eba836b193cbbd6b35e3ead331d1d345996b8a8be0cbf",
+      "stg-sf-celery-worker": "sha256:709c056f03c82ca7282fb04d7fdb29b5a42271fb1fc761035b6b68591c74f531"
+    },
+    "readiness_except_backup": {
+      "backup": false,
+      "database": true,
+      "disk": true,
+      "ghunt": true,
+      "ghunt_credentials": true,
+      "maigret": true,
+      "proxy": true,
+      "search": true,
+      "spiderfoot": true,
+      "worker": true
+    }
+  },
+  "thorough_workflow": {
+    "evidence_sha256": "821100c4fc52ee1e8e0eccae73e2e7703f10c352f9f89eea150aa403ea5a6d78",
+    "started": 1791404910.4955285,
+    "scenario": "Thorough email investigation: root tools, discovered-identifier follow-ups, shared budget",
+    "plan_coverage": {
+      "root_tools": [
+        "ghunt",
+        "spiderfoot"
+      ],
+      "conditional_followups": [
+        "discovered username \u2192 Maigret",
+        "discovered email \u2192 GHunt and SpiderFoot",
+        "discovered name \u2192 contextual search"
+      ],
+      "max_identifiers": 3,
+      "max_hops": 1,
+      "maigret_breadth": "all eligible sites",
+      "maigret_eligible_sites": 5178,
+      "tool_timeouts": {
+        "ghunt": 120,
+        "spiderfoot": 900,
+        "maigret": 1800
+      },
+      "spiderfoot": {
+        "target_type": "EMAILADDR",
+        "profile": [
+          "sfp_accounts",
+          "sfp_debounce",
+          "sfp_gravatar",
+          "sfp_hudsonrock",
+          "sfp_pgp",
+          "sfp_tiktok_osint",
+          "sfp_wikileaks"
+        ],
+        "modules": [
+          "sfp_accounts",
+          "sfp_debounce",
+          "sfp_gravatar",
+          "sfp_hudsonrock",
+          "sfp_pgp",
+          "sfp_tiktok_osint",
+          "sfp_wikileaks"
+        ],
+        "cascades": [
+          {
+            "from": "sfp_tiktok_osint",
+            "event": "HUMAN_NAME",
+            "to": "sfp_accounts"
+          },
+          {
+            "from": "sfp_tiktok_osint",
+            "event": "HUMAN_NAME",
+            "to": "sfp_wikileaks"
+          }
+        ],
+        "consumes": {
+          "sfp_accounts": [
+            "EMAILADDR"
+          ],
+          "sfp_tiktok_osint": [
+            "EMAILADDR",
+            "USERNAME"
+          ],
+          "sfp_gravatar": [
+            "EMAILADDR"
+          ],
+          "sfp_hudsonrock": [
+            "EMAILADDR",
+            "PHONE_NUMBER",
+            "USERNAME"
+          ],
+          "sfp_pgp": [
+            "EMAILADDR"
+          ],
+          "sfp_debounce": [
+            "EMAILADDR"
+          ],
+          "sfp_wikileaks": [
+            "EMAILADDR"
+          ]
+        },
+        "excluded": {
+          "sfp_dnsresolve": "not in the EMAILADDR profile (deployment configuration)",
+          "sfp_names": "not in the EMAILADDR profile (deployment configuration)"
+        },
+        "tested": {
+          "sfp_accounts": "events",
+          "sfp_debounce": "ran-empty",
+          "sfp_gravatar": "ran-empty",
+          "sfp_hudsonrock": "ran-empty",
+          "sfp_pgp": "ran-empty",
+          "sfp_tiktok_osint": "events",
+          "sfp_wikileaks": "ran-empty"
+        },
+        "not_enabled": [
+          "sfp_ahmia",
+          "sfp_apileak",
+          "sfp_binaryedge",
+          "sfp_botscout",
+          "sfp_c99",
+          "sfp_citadel",
+          "sfp_dehashed",
+          "sfp_emailrep",
+          "sfp_fullcontact",
+          "sfp_haveibeenpwned",
+          "sfp_intelx",
+          "sfp_ipqualityscore",
+          "sfp_leakcheck",
+          "sfp_myspace",
+          "sfp_nameapi",
+          "sfp_onionsearchengine",
+          "sfp_pastebin",
+          "sfp_rocketreach",
+          "sfp_securitytrails",
+          "sfp_seon",
+          "sfp_sociallinks",
+          "sfp_threatcrowd",
+          "sfp_torch",
+          "sfp_trumail",
+          "sfp_viewdns",
+          "sfp_whoisfreaks",
+          "sfp_whoisology",
+          "sfp_whoxy",
+          "sfp_zetalytics"
+        ]
+      },
+      "explanation": "Deadline starts on admission and is shared with follow-ups. Tool requests and proxy spending are outside Harvest request and dollar counters."
+    },
+    "plan_limits": {
+      "requests": 300,
+      "seconds": 3600,
+      "pivots": 3,
+      "tool_runs": 8,
+      "followup_top_sites": null
+    },
+    "family_terminal": true,
+    "elapsed_seconds": 644.2,
+    "jobs": [
+      {
+        "id": "45fbcf692fc44d1389e759d55885e3e1",
+        "parent_id": null,
+        "status": "partial",
+        "reason": "all queued work finished; some scheduled checks unavailable or incomplete; search provider degradation; completed evidence retained; 2 task(s) failed or blocked, e.g. robots.txt disallows acquisition",
+        "created": 1791404911.6023376,
+        "finished": 1791405241.1109102,
+        "limits": {
+          "attempts": 3,
+          "bytes": 25000000,
+          "claims": 100000,
+          "cost_usd": 2.0,
+          "depth": 3,
+          "domain_delay": 1.0,
+          "followup_top_sites": null,
+          "model_calls": 10,
+          "model_tokens": 150000,
+          "no_gain_pages": 8,
+          "pivots": 3,
+          "reading_passes": 3,
+          "records": 10000,
+          "requests": 300,
+          "response_bytes": 2000000,
+          "search_results": 50,
+          "seconds": 3600,
+          "tasks": 300,
+          "tool_runs": 8
+        },
+        "tools": [
+          [
+            "ghunt",
+            null
+          ],
+          [
+            "spiderfoot",
+            null
+          ]
+        ]
+      },
+      {
+        "id": "5f622ae50fe04971aaf17cac7a5bf60d",
+        "parent_id": "45fbcf692fc44d1389e759d55885e3e1",
+        "status": "partial",
+        "reason": "all queued work finished; some scheduled checks unavailable or incomplete; completed evidence retained",
+        "created": 1791405234.5054884,
+        "finished": 1791405550.261181,
+        "limits": {
+          "attempts": 3,
+          "bytes": 25000000,
+          "claims": 100000,
+          "cost_usd": 2.0,
+          "depth": 3,
+          "domain_delay": 1.0,
+          "followup_top_sites": null,
+          "model_calls": 10,
+          "model_tokens": 150000,
+          "no_gain_pages": 8,
+          "pivots": 3,
+          "reading_passes": 3,
+          "records": 10000,
+          "requests": 300,
+          "response_bytes": 2000000,
+          "search_results": 50,
+          "seconds": 3600,
+          "tasks": 300,
+          "tool_runs": 8
+        },
+        "tools": [
+          [
+            "maigret",
+            null
+          ]
+        ]
+      }
+    ],
+    "tool_tasks": [
+      {
+        "job_id": "45fbcf692fc44d1389e759d55885e3e1",
+        "status": "done",
+        "error": null,
+        "tool": "ghunt",
+        "top_sites": null
+      },
+      {
+        "job_id": "45fbcf692fc44d1389e759d55885e3e1",
+        "status": "done",
+        "error": null,
+        "tool": "spiderfoot",
+        "top_sites": null
+      },
+      {
+        "job_id": "5f622ae50fe04971aaf17cac7a5bf60d",
+        "status": "done",
+        "error": null,
+        "tool": "maigret",
+        "top_sites": null
+      }
+    ],
+    "coverage_status": "partial",
+    "coverage_executions": [
+      {
+        "job_id": "45fbcf692fc44d1389e759d55885e3e1",
+        "tool": "ghunt",
+        "outcome": "partial",
+        "counts": {
+          "absent": 2,
+          "errored": 1,
+          "found": 2,
+          "skipped": 1,
+          "unsupported": 2
+        },
+        "top_sites": null
+      },
+      {
+        "job_id": "45fbcf692fc44d1389e759d55885e3e1",
+        "tool": "spiderfoot",
+        "outcome": "partial",
+        "counts": {
+          "absent": 1061,
+          "blocked": 270,
+          "errored": 96,
+          "found": 3,
+          "skipped": 2,
+          "unsupported": 7
+        },
+        "top_sites": null
+      },
+      {
+        "job_id": "5f622ae50fe04971aaf17cac7a5bf60d",
+        "tool": "maigret",
+        "outcome": "partial",
+        "counts": {
+          "absent": 4386,
+          "blocked": 280,
+          "errored": 83,
+          "found": 17,
+          "skipped": 11,
+          "unfinished": 401
+        },
+        "top_sites": null
+      }
+    ],
+    "finished": 1791405555.7907808
+  },
+  "worker_death_maigret": {
+    "evidence_sha256": "314113c211c712c9620b1edf0a004c3fa8c9303b26e9d5ffdc7c678efb0c7820",
+    "started": 1791403639.9190593,
+    "scenario": "SIGKILL the worker container during a Maigret execution, then restart it",
+    "checks_before_kill": 102,
+    "restart_after_kill_seconds": 5.2,
+    "job_terminal_after_restart_seconds": 29.2,
+    "executions_for_job": 1,
+    "tool_processes_after": 0,
+    "finished": 1791403685.251032,
+    "job": {
+      "id": "13e6b82820ac443cae42faf502350ae2",
+      "status": "partial",
+      "reason": "all queued work finished; 1 task(s) failed or blocked, e.g. worker lease expired: the worker stopped mid-task (restart or crash); a tool run is never repeated automatically, rerun the job",
+      "created": 1791403640.5280783,
+      "finished": 1791403681.3124878
+    },
+    "tasks": [
+      {
+        "kind": "tool",
+        "status": "failed",
+        "error": "worker lease expired: the worker stopped mid-task (restart or crash); a tool run is never repeated automatically, rerun the job"
+      }
+    ],
+    "events": {
+      "checkpoint_preserved": 1,
+      "created": 1,
+      "finished": 1,
+      "lease_expired": 1,
+      "tool_started": 1
+    },
+    "captures": [
+      "checkpoint/1"
+    ],
+    "executions": [
+      {
+        "tool": "maigret",
+        "outcome": "interrupted",
+        "reason": "worker stopped; completed checkpoints retained; scan not repeated",
+        "external_id": null,
+        "coverage": "measured",
+        "execution_completed": false,
+        "counts": {
+          "absent": 104,
+          "blocked": 16,
+          "errored": 2,
+          "found": 1,
+          "unfinished": 5055
+        },
+        "check_reasons": {
+          "blocked: site challenge, authentication or rate limit": 16,
+          "unfinished: no conclusive native verdict": 3,
+          "errored: native check failed": 2
+        }
+      }
+    ],
+    "coverage_status": "partial"
+  },
+  "worker_death_spiderfoot": {
+    "evidence_sha256": "e32c3fbcde9b4a9fdde17dbce8c9f3e3a0246ccb4a91b47d98f6d7532b0d568c",
+    "started": 1791403794.1440456,
+    "scenario": "SIGKILL worker during SpiderFoot scan with SpiderFoot API down; both recover",
+    "scan_id": "18F56884",
+    "worker_restart_after_kill_seconds": 1.9,
+    "spiderfoot_api_ready": true,
+    "scan_state_while_api_down": null,
+    "scan_final_state": "ABORTED",
+    "orphan_stopped_seconds_after_dependencies_recovered": 5.1,
+    "within_60_seconds": true,
+    "scan_ended_seconds_after_dependencies_recovered": 6.8,
+    "job_terminal": true,
+    "finished": 1791403848.6591077,
+    "job": {
+      "id": "fc6798ad306c470087a84790d05b1b3a",
+      "status": "partial",
+      "reason": "all queued work finished; 1 task(s) failed or blocked, e.g. worker lease expired: the worker stopped mid-task (restart or crash); a tool run is never repeated automatically, rerun the job",
+      "created": 1791403794.6598287,
+      "finished": 1791403829.026164
+    },
+    "tasks": [
+      {
+        "kind": "tool",
+        "status": "failed",
+        "error": "worker lease expired: the worker stopped mid-task (restart or crash); a tool run is never repeated automatically, rerun the job"
+      }
+    ],
+    "events": {
+      "created": 1,
+      "finished": 1,
+      "lease_expired": 1,
+      "tool_started": 1
+    },
+    "captures": [],
+    "executions": [
+      {
+        "tool": "spiderfoot",
+        "outcome": "interrupted",
+        "reason": "worker stopped; completed checkpoints retained; scan not repeated",
+        "external_id": "18F56884",
+        "coverage": "measured",
+        "execution_completed": false,
+        "counts": {
+          "unsupported": 7
+        },
+        "check_reasons": {
+          "unsupported: per-check coverage unavailable in scanner contract": 7
+        }
+      }
+    ],
+    "coverage_status": "partial"
+  }
+}
