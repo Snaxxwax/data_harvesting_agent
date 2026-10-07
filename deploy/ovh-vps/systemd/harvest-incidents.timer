@@ -1,0 +1,7 @@
+[Unit]
+Description=Poll Harvest incident transitions once a minute
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=1m
+[Install]
+WantedBy=timers.target

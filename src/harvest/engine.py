@@ -40,7 +40,7 @@ SWEEP_SECONDS = 15
 PIVOT_TOOLS = {"username": ("maigret",), "email": ("ghunt", "spiderfoot")}
 # ponytail: fixed Maigret breadth for pivots, ~1/10 of --all-sites traffic. Make it a limit if
 # an investigation needs full sweeps of what it discovers.
-PIVOT_TOP_SITES = 500
+PIVOT_TOP_SITES = 500  # legacy default; effective breadth is persisted in Limits
 
 # ponytail: name heuristics, not a site-specific map. Misses an unconventional sign-in path;
 # add a pattern when a capture shows one.
@@ -349,7 +349,11 @@ class Engine:
                         "name": name,
                         "target": value,
                         "crawl": False,
-                        **({"top_sites": PIVOT_TOP_SITES} if name == "maigret" else {}),
+                        **(
+                            {"top_sites": spec.limits.followup_top_sites}
+                            if name == "maigret"
+                            else {}
+                        ),
                     }
                     for name in PIVOT_TOOLS[kind]
                     if name in self.settings.tools and f"{name}:{value}".casefold() not in ran
@@ -750,7 +754,11 @@ class Engine:
             left = self.store.seconds_left(task) - TOOL_FINISH_MARGIN
             if left < 5:
                 raise BudgetExceeded("wall-clock deadline reached before the tool could run")
-            allowance = min(self.settings.tool_timeout, left)
+            allowance = min(
+                self.settings.tool_timeout,
+                self.settings.tool_timeouts[task["payload"]["tool"]],
+                left,
+            )
             with self.store.transaction() as db:
                 # One task per job runs at a time, so a long scan is otherwise a silent gap.
                 self.store.event(
@@ -763,16 +771,76 @@ class Engine:
                         "max_seconds": round(allowance),
                     },
                 )
-            cap = run_tool(
-                task["payload"]["tool"],
-                task["payload"]["target"],
-                self.settings,
-                cancelled,
-                top_sites=task["payload"].get("top_sites"),
-                timeout=allowance,
-                task_id=task["id"],
+            from . import executions
+
+            recorder = executions.begin(
+                self.store,
+                task,
+                {
+                    **task["payload"],
+                    "timeout": allowance,
+                    "maigret_retries": self.settings.maigret_retries,
+                    "connections": max(
+                        1,
+                        self.settings.egress_max_connections // (2 * self.settings.worker_threads),
+                    ),
+                    "proxy_mode": self.settings.egress_mode,
+                    "modules": tools.spiderfoot_plan(
+                        tools._spiderfoot_target_type(task["payload"]["target"]), self.settings
+                    )
+                    if task["payload"]["tool"] == "spiderfoot"
+                    else None,
+                },
+                executions.build_info(),
             )
-            partial = json.loads(cap.body).get("partial")
+            marker = tools._RECORDER.set(recorder)
+            try:
+                cap = run_tool(
+                    task["payload"]["tool"],
+                    task["payload"]["target"],
+                    self.settings,
+                    cancelled,
+                    top_sites=task["payload"].get("top_sites"),
+                    timeout=allowance,
+                    task_id=task["id"],
+                )
+                recorder.drain()
+                output = json.loads(cap.body)
+                recorder.artifact("normalized", "results", output)
+                if task["payload"]["tool"] == "ghunt":
+                    recorder.check(
+                        "names", "unsupported", "GHunt 2.3.4 does not implement name extraction"
+                    )
+                    recorder.check(
+                        "maps_details",
+                        "unsupported",
+                        "pinned GHunt reports no Maps photos/reviews detail",
+                    )
+                counts = executions.check_summary(self.store, recorder.id)
+                if not counts:
+                    recorder.check(
+                        "diagnostics", "unsupported", "native per-check diagnostics unavailable"
+                    )
+                recorder.finish("partial" if output.get("partial") else "completed")
+                counts = executions.check_summary(self.store, recorder.id)
+                partial = output.get("partial") or (
+                    "some scheduled checks unavailable or incomplete"
+                    if set(counts) - {"found", "absent", "skipped"}
+                    else None
+                )
+            except Exception as exc:
+                recorder.finish(
+                    "interrupted"
+                    if isinstance(exc, LostLease)
+                    else "blocked"
+                    if isinstance(exc, PolicyDenied)
+                    else "errored",
+                    type(exc).__name__,
+                )
+                recorder.preserve_capture()
+                raise
+            finally:
+                tools._RECORDER.reset(marker)
             # `crawl` rides on the extract task because that is where leads are selected.
             # A tool run is useful without it: the capture and its claims are the evidence,
             # while crawling every profile it reports is a separate and much larger request
@@ -825,12 +893,6 @@ class Engine:
                 down = sorted(
                     {str(e[0]) for e in data.get("unresponsive_engines") or [] if e and e[0]}
                 )
-                if not results and down:
-                    raise ActionableError(
-                        "search returned nothing because its engines were unresponsive ("
-                        + ", ".join(down)
-                        + "); this is not evidence of absence"
-                    )
                 # In an identifier investigation a result that never mentions the identifier
                 # is engine noise (unquoted tokens match strangers' pages), and fetching it
                 # spends the budget on someone else. ponytail: substring test on url, title
@@ -855,6 +917,9 @@ class Engine:
                     for r in relevant
                 ]
                 leads = self.select_leads(task, found, search=True)
+                from .search import provider_outcomes
+
+                providers = provider_outcomes(data, results, {lead["key"] for lead in leads})
                 self.store.finish(
                     task,
                     response=response,
@@ -863,6 +928,10 @@ class Engine:
                         "query": task["payload"]["query"],
                         "search_results": len(results),
                         "accepted_leads": len(leads),
+                        "rejected_leads": len(results) - len(leads),
+                        "providers": data.get("unresponsive_engines") or [],
+                        "provider_outcomes": providers,
+                        **({"partial": "search provider degradation"} if down else {}),
                         **(
                             {"not_mentioning_identifier": len(results) - len(relevant)}
                             if identifiers
@@ -893,10 +962,17 @@ class Engine:
             fetcher.close()
 
     def step(self, job_id=None):
+        from .executions import recover
+
+        recover(self.store)
         self.store.expire_deadlines(job_id)
         if job_id is None or self.store.job(job_id)["execution"] != "offline_replay":
             self.store.schedule_tick()
-        task = self.store.claim(job_id)
+        task = self.store.claim(
+            job_id,
+            max_investigations=self.settings.active_investigations,
+            max_tools=self.settings.active_tools,
+        )
         if task is None:
             self.store.settle(job_id)
             return False
@@ -936,8 +1012,14 @@ class Engine:
         except (httpx.HTTPError, httpcore.NetworkError, httpcore.TimeoutException, OSError) as exc:
             # Never persist provider URLs/headers or secrets from exception reprs.
             self._if_owned(
-                lambda exc=exc: self.store.defer(
-                    task, type(exc).__name__, min(60, 2 ** task["attempts"]) + random.uniform(0, 1)
+                lambda exc=exc: (
+                    self.store.fail(task, type(exc).__name__)
+                    if task["kind"] == "tool"
+                    else self.store.defer(
+                        task,
+                        type(exc).__name__,
+                        min(60, 2 ** task["attempts"]) + random.uniform(0, 1),
+                    )
                 )
             )
         except ActionableError as exc:
@@ -987,7 +1069,7 @@ class Engine:
 
     def run(self, job_id, poll=0.2):
         while self.store.job(job_id)["status"] in ACTIVE:
-            if not self.step(job_id):
+            if not self.step(job_id) and not self.step():
                 time.sleep(poll)
         return self.store.job(job_id)
 

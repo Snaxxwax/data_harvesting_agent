@@ -1,0 +1,28 @@
+# Load after the OVH, proxy and GHunt overlays. Use identical release tags for all three.
+services:
+  flaresolverr:
+    image: ${FLARESOLVERR_IMAGE:?Set FLARESOLVERR_IMAGE to the existing tested image identity}
+  api:
+    image: ${HARVEST_IMAGE:?Set HARVEST_IMAGE to the tested release image identity}
+    environment:
+      HARVEST_SPIDERFOOT_PROFILES: /app/profiles.json
+      HARVEST_TOOL_TIMEOUT: "1800"
+    volumes:
+      - ./spiderfoot-profiles.json:/app/profiles.json:ro
+  worker:
+    image: ${HARVEST_IMAGE:?Set HARVEST_IMAGE to the tested release image identity}
+    environment:
+      HARVEST_SPIDERFOOT_PROFILES: /app/profiles.json
+      HARVEST_TOOL_TIMEOUT: "1800"
+      HARVEST_WORKER_THREADS: "2"
+    volumes:
+      - ./spiderfoot-profiles.json:/app/profiles.json:ro
+  monitor:
+    image: ${HARVEST_IMAGE:?Set HARVEST_IMAGE to the tested release image identity}
+    environment:
+      HOME: /home/harvest
+      HARVEST_EGRESS_MODE: proxy
+      HARVEST_EGRESS_PROXY: http://egress-relay:8888
+    networks: !override [harvest-egress]
+    volumes:
+      - harvest-ghunt-home:/home/harvest:ro

@@ -18,7 +18,7 @@
 # running config has an Upstream line.
 services:
   egress-relay:
-    image: vimagick/tinyproxy
+    image: vimagick/tinyproxy@sha256:72b441b95ee1e641af948f68f09492f9f795ead72b73954414e339168c98ad8c
     container_name: harvest-egress-relay
     restart: unless-stopped
     init: true
@@ -82,9 +82,7 @@ services:
 networks:
   # Owned by this file, so it exists exactly when proxy-only mode is in use.
   # `internal: true` IS the enforcement: no gateway, hence no route off-host.
-  # Nothing else declares it as a dependency -- SpiderFoot deliberately does not,
-  # so a missing network can never stop that core service from starting. sf-api is
-  # attached at enable time with `docker network connect harvest-egress sf-api`.
+  # SpiderFoot declares this external network. Create the Harvest network first.
   harvest-egress:
     name: harvest-egress
     internal: true

@@ -532,7 +532,10 @@ def test_ui_only_offers_tools_that_meta_reports():
 def test_plan_endpoint_exposes_tool_suggestions(tmp_path):
     engine = _ui_engine(tmp_path, tools=frozenset({"maigret"}))
     body = _ui_client(engine).post("/plan/investigation", json={"value": "@janedoe"}).json()
-    assert body["tools"] == [{"name": "maigret", "target": "janedoe"}]
+    assert body["tools"] == [
+        {"name": "maigret", "target": "janedoe", "crawl": True, "top_sites": None}
+    ]
+    assert body["limits"]["seconds"] == 3600
     # A suggestion is independent of the allowlist; /meta is what gates the offer.
     assert body["kind"] == "username"
 
@@ -844,15 +847,26 @@ def test_spiderfoot_drops_empty_profile_shells_and_unknown_confidence_is_not_max
     """Audit 2026-10-06, capture 565: a TikTok CAPTCHA/not-found page arrived as an observed
     profile at confidence 1.0 with every field null except the requested username."""
     shell = json.dumps(
-        {"username": "someone", "display_name": None, "bio": None, "follower_count": None,
-         "following_count": None, "video_count": None, "verified": False,
-         "profile_picture": None, "videos": []}
+        {
+            "username": "someone",
+            "display_name": None,
+            "bio": None,
+            "follower_count": None,
+            "following_count": None,
+            "video_count": None,
+            "verified": False,
+            "profile_picture": None,
+            "videos": [],
+        }
     )
     events = [
         {"type": "SOCIAL_MEDIA_PROFILE", "data": shell, "module": "sfp_tiktok_osint"},
         {"type": "RAW_RIR_DATA", "data": "TikTok Profile: " + shell, "module": "sfp_tiktok_osint"},
-        {"type": "SOCIAL_MEDIA_PROFILE", "module": "sfp_tiktok_osint",
-         "data": json.dumps({"username": "someone", "display_name": "Some One"})},
+        {
+            "type": "SOCIAL_MEDIA_PROFILE",
+            "module": "sfp_tiktok_osint",
+            "data": json.dumps({"username": "someone", "display_name": "Some One"}),
+        },
     ]
     records = tools._spiderfoot_records(events, "me@x.test")
     assert len(records) == 1 and "Some One" in records[0]["data"]
@@ -957,11 +971,11 @@ def test_spiderfoot_requires_configuration_before_any_request(fake_sf, missing, 
     assert not fake.created
 
 
-def test_spiderfoot_failed_scan_is_an_error_not_a_partial_capture(fake_sf, monkeypatch):
+def test_spiderfoot_failed_scan_keeps_a_labelled_partial_capture(fake_sf, monkeypatch):
     monkeypatch.setattr(tools.time, "sleep", lambda _s: None)
     fake_sf(_FakeSF(statuses=["RUNNING", "ERROR-FAILED"], pages=[([], False)]))
-    with pytest.raises(ValueError, match="ERROR-FAILED"):
-        tools.run("spiderfoot", "example.com", _sf_settings())
+    capture = tools.run("spiderfoot", "example.com", _sf_settings())
+    assert "ERROR-FAILED" in json.loads(capture.body)["partial"]
 
 
 def test_spiderfoot_cancellation_stops_the_scan(fake_sf, monkeypatch):

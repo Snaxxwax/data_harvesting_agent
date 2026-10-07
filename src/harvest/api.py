@@ -40,6 +40,7 @@ class LoginRequest(BaseModel):
 class InvestigationPlanRequest(BaseModel):
     value: str
     kind: str | None = None
+    preset: str = "deep"
 
 
 class DatasetPlanRequest(BaseModel):
@@ -109,6 +110,11 @@ def create_app(settings: Settings | None = None):
 
     @app.get("/assets/{name}", include_in_schema=False)
     def assets(name: str):
+        if name == "presets.js":
+            return Response(
+                "window.HARVEST_PRESETS=" + json.dumps(planning.presets()) + ";",
+                media_type="text/javascript",
+            )
         media = _ASSETS.get(name)
         if media is None:
             raise HTTPException(status_code=404, detail="not found")
@@ -168,20 +174,9 @@ def create_app(settings: Settings | None = None):
     @protected.post("/plan/investigation")
     def plan_investigation_route(body: InvestigationPlanRequest):
         try:
-            plan = planning.plan_investigation(body.value, body.kind)
+            return planning.effective_plan(body.value, body.kind, body.preset, settings)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        # Propose only what THIS deployment can run for this input; disclose the rest with
-        # the single reason, instead of a suggestion that submit() would then reject.
-        result = asdict(plan)
-        status = {c["name"]: c for c in capabilities.for_kind(plan.kind, settings)}
-        result["tools"] = [t for t in plan.tools if status.get(t["name"], {}).get("ready")]
-        result["unavailable_tools"] = [
-            {"name": t["name"], "detail": status.get(t["name"], {}).get("detail", "")}
-            for t in plan.tools
-            if t not in result["tools"]
-        ]
-        return result
 
     @protected.post("/plan/dataset")
     def plan_dataset_route(body: DatasetPlanRequest):
@@ -196,6 +191,27 @@ def create_app(settings: Settings | None = None):
         with engine.store.connection() as db:
             db.execute("SELECT 1")
         return {"status": "ok", "version": VERSION}
+
+    @protected.get("/ready")
+    def ready(response: Response):
+        import time
+
+        from .operations import read_state
+
+        sampled, at = read_state(engine.store, "readiness")
+        if not sampled or time.time() - at > 90:
+            response.status_code = 503
+            return {"ready": False, "detail": "readiness monitor sample missing or stale"}
+        if not sampled["ready"]:
+            response.status_code = 503
+        return sampled
+
+    @protected.get("/incidents")
+    def incidents():
+        with engine.store.connection() as db:
+            return [
+                dict(r) for r in db.execute("SELECT * FROM incidents ORDER BY id DESC LIMIT 200")
+            ]
 
     @protected.post("/jobs", status_code=202)
     def submit(spec: JobSpec, idempotency_key: str | None = Header(default=None, max_length=200)):
@@ -299,6 +315,37 @@ def create_app(settings: Settings | None = None):
             return engine.store.dossier(job_id)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @protected.get("/jobs/{job_id}/coverage")
+    def job_coverage(job_id: str):
+        from .executions import coverage
+
+        return coverage(engine.store, job_id)
+
+    @protected.get("/jobs/{job_id}/artifacts/{artifact_id}")
+    def artifact(job_id: str, artifact_id: int):
+        from .store import digest
+
+        engine.store.job(job_id)
+        with engine.store.connection() as db:
+            row = db.execute(
+                """SELECT a.*,b.body FROM artifacts a JOIN blobs b ON b.hash=a.body_hash
+                JOIN executions e ON e.id=a.execution_id JOIN tasks t ON t.id=e.task_id
+                JOIN jobs j ON j.id=t.job_id WHERE a.id=? AND (j.id=? OR j.root_id=?)""",
+                (artifact_id, job_id, job_id),
+            ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="artifact not found in this investigation")
+        if digest(row["body"]) != row["body_hash"]:
+            raise HTTPException(status_code=500, detail="artifact hash mismatch")
+        return Response(
+            row["body"],
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="artifact-{artifact_id}.json"',
+                "X-Content-SHA256": row["body_hash"],
+            },
+        )
 
     @protected.get("/jobs/{job_id}/summary")
     def summary(job_id: str):

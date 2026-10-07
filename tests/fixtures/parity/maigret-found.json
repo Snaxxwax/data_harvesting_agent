@@ -1,0 +1,255 @@
+{
+  "Amperka": {
+    "cookies": null,
+    "http_status": 403,
+    "is_similar": false,
+    "keywords": [],
+    "parsing_enabled": true,
+    "rank": 9223372036854775807,
+    "site": {
+      "checkType": "message",
+      "engine": "XenForo",
+      "ignore403": true,
+      "tags": [
+        "forum",
+        "ru"
+      ],
+      "url": "{urlMain}{urlSubpath}/members/?username={username}",
+      "urlMain": "http://forum.amperka.ru",
+      "usernameClaimed": "adam",
+      "usernameUnclaimed": "noonewouldeverusethis7"
+    },
+    "status": {
+      "ids": {},
+      "keyword_match_status": "No Keywords",
+      "keywords": [],
+      "site_name": "Amperka",
+      "status": "Claimed",
+      "tags": [
+        "forum",
+        "ru"
+      ],
+      "url": "http://forum.amperka.ru/members/?username=audit_handle",
+      "username": "audit_handle"
+    },
+    "url_main": "http://forum.amperka.ru",
+    "url_probe": "http://forum.amperka.ru/members/?username=audit_handle",
+    "url_user": "http://forum.amperka.ru/members/?username=audit_handle",
+    "username": "audit_handle"
+  },
+  "GitHub": {
+    "cookies": null,
+    "http_status": 200,
+    "ids_links": [],
+    "ids_usernames": {},
+    "is_similar": false,
+    "keywords": [],
+    "parsing_enabled": true,
+    "rank": 10,
+    "site": {
+      "alexaRank": 10,
+      "checkType": "status_code",
+      "regexCheck": "^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$",
+      "tags": [
+        "business",
+        "coding",
+        "networking"
+      ],
+      "url": "https://github.com/{username}",
+      "urlMain": "https://www.github.com/",
+      "urlProbe": "https://api.github.com/users/{username}",
+      "usernameClaimed": "blue",
+      "usernameUnclaimed": "noonewouldeverusethis7"
+    },
+    "status": {
+      "ids": {
+        "_extractor": "Audit _extractor",
+        "created_at": "Audit created_at",
+        "follower_count": "Audit follower_count",
+        "following_count": "Audit following_count",
+        "image": "https://example.test/profile",
+        "public_gists_count": "Audit public_gists_count",
+        "public_repos_count": "Audit public_repos_count",
+        "uid": "Audit uid"
+      },
+      "keyword_match_status": "No Keywords",
+      "keywords": [],
+      "site_name": "GitHub",
+      "status": "Claimed",
+      "tags": [
+        "business",
+        "coding",
+        "networking"
+      ],
+      "url": "https://github.com/audit_handle",
+      "username": "audit_handle"
+    },
+    "url_main": "https://www.github.com/",
+    "url_probe": "https://api.github.com/users/audit_handle",
+    "url_user": "https://github.com/audit_handle",
+    "username": "audit_handle"
+  },
+  "Threads": {
+    "cookies": null,
+    "http_status": 200,
+    "ids_links": [],
+    "ids_usernames": {
+      "audit_handle": "username"
+    },
+    "is_similar": false,
+    "keywords": [],
+    "parsing_enabled": true,
+    "rank": 409,
+    "site": {
+      "alexaRank": 409,
+      "checkType": "message",
+      "tags": [
+        "social"
+      ],
+      "url": "https://www.threads.com/@{username}",
+      "urlMain": "https://www.threads.com/",
+      "usernameClaimed": "zuck",
+      "usernameUnclaimed": "noonewouldeverusethis7"
+    },
+    "status": {
+      "ids": {
+        "_extractor": "Audit _extractor",
+        "follower_count": "Audit follower_count",
+        "fullname": "Audit fullname",
+        "posts_count": "Audit posts_count",
+        "username": "Audit username"
+      },
+      "keyword_match_status": "No Keywords",
+      "keywords": [],
+      "site_name": "Threads",
+      "status": "Claimed",
+      "tags": [
+        "social"
+      ],
+      "url": "https://www.threads.com/@audit_handle",
+      "username": "audit_handle"
+    },
+    "url_main": "https://www.threads.com/",
+    "url_probe": "https://www.threads.com/@audit_handle",
+    "url_user": "https://www.threads.com/@audit_handle",
+    "username": "audit_handle"
+  },
+  "antichat.io": {
+    "cookies": null,
+    "http_status": 200,
+    "is_similar": false,
+    "keywords": [],
+    "parsing_enabled": true,
+    "rank": 9223372036854775807,
+    "site": {
+      "checkType": "message",
+      "engine": "vBulletin",
+      "tags": [
+        "discussion",
+        "forum",
+        "hacking",
+        "ru"
+      ],
+      "url": "{urlMain}{urlSubpath}/member.php?username={username}",
+      "urlMain": "https://antichat.io",
+      "usernameClaimed": "___Roman___",
+      "usernameUnclaimed": "noonewouldeverusethis7"
+    },
+    "status": {
+      "ids": {},
+      "keyword_match_status": "No Keywords",
+      "keywords": [],
+      "site_name": "antichat.io",
+      "status": "Claimed",
+      "tags": [
+        "discussion",
+        "forum",
+        "hacking",
+        "ru"
+      ],
+      "url": "https://antichat.io/member.php?username=audit_handle",
+      "username": "audit_handle"
+    },
+    "url_main": "https://antichat.io",
+    "url_probe": "https://antichat.io/member.php?username=audit_handle",
+    "url_user": "https://antichat.io/member.php?username=audit_handle",
+    "username": "audit_handle"
+  },
+  "forum.antichat.io": {
+    "cookies": null,
+    "http_status": 200,
+    "is_similar": false,
+    "keywords": [],
+    "parsing_enabled": true,
+    "rank": 9223372036854775807,
+    "site": {
+      "checkType": "message",
+      "engine": "vBulletin",
+      "tags": [
+        "discussion",
+        "forum",
+        "hacking",
+        "ru"
+      ],
+      "url": "{urlMain}{urlSubpath}/member.php?username={username}",
+      "urlMain": "https://forum.antichat.io",
+      "usernameClaimed": "___Roman___",
+      "usernameUnclaimed": "noonewouldeverusethis7"
+    },
+    "status": {
+      "ids": {},
+      "keyword_match_status": "No Keywords",
+      "keywords": [],
+      "site_name": "forum.antichat.io",
+      "status": "Claimed",
+      "tags": [
+        "discussion",
+        "forum",
+        "hacking",
+        "ru"
+      ],
+      "url": "https://forum.antichat.io/member.php?username=audit_handle",
+      "username": "audit_handle"
+    },
+    "url_main": "https://forum.antichat.io",
+    "url_probe": "https://forum.antichat.io/member.php?username=audit_handle",
+    "url_user": "https://forum.antichat.io/member.php?username=audit_handle",
+    "username": "audit_handle"
+  },
+  "heroesworld.ru": {
+    "cookies": null,
+    "http_status": 200,
+    "is_similar": false,
+    "keywords": [],
+    "parsing_enabled": true,
+    "rank": 9223372036854775807,
+    "site": {
+      "checkType": "status_code",
+      "tags": [
+        "forum",
+        "ru"
+      ],
+      "url": "https://heroesworld.ru/user/{username}/",
+      "urlMain": "https://heroesworld.ru",
+      "usernameClaimed": "hwkeeper",
+      "usernameUnclaimed": "noonewouldeverusethis7"
+    },
+    "status": {
+      "ids": {},
+      "keyword_match_status": "No Keywords",
+      "keywords": [],
+      "site_name": "heroesworld.ru",
+      "status": "Claimed",
+      "tags": [
+        "forum",
+        "ru"
+      ],
+      "url": "https://heroesworld.ru/user/audit_handle/",
+      "username": "audit_handle"
+    },
+    "url_main": "https://heroesworld.ru",
+    "url_probe": "https://heroesworld.ru/user/audit_handle/",
+    "url_user": "https://heroesworld.ru/user/audit_handle/",
+    "username": "audit_handle"
+  }
+}

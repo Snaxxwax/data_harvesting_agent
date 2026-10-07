@@ -1,4 +1,4 @@
-"""Verify a schema-1/2 database upgrade on a new backup, never on the original."""
+"""Verify a schema-1/2/3 database upgrade on a new backup, never on the original."""
 
 import argparse
 import json
@@ -43,7 +43,7 @@ def main():
         parser.error("destination must not already exist")
     with sqlite3.connect(source.as_uri() + "?mode=ro", uri=True) as original:
         source_version = original.execute("PRAGMA user_version").fetchone()[0]
-        assert source_version in (1, 2)
+        assert source_version in (1, 2, 3)
         with sqlite3.connect(destination) as target:
             original.backup(target)
     with sqlite3.connect(destination) as db:
@@ -54,6 +54,8 @@ def main():
         assert before == after
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+        destination_version = db.execute("PRAGMA user_version").fetchone()[0]
+        assert destination_version == 4
         keys = db.execute(
             "SELECT id,spec,idempotency_key,execution FROM jobs WHERE idempotency_key IS NOT NULL"
         ).fetchall()
@@ -84,7 +86,7 @@ def main():
         json.dumps(
             {
                 "source_schema": source_version,
-                "destination_schema": 3,
+                "destination_schema": destination_version,
                 "original_unchanged": True,
                 "preserved": before,
                 "extractions": revisions,

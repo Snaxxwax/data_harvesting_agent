@@ -1,0 +1,18 @@
+{
+  "archive_sha256": "b7aedfba6b9c9c2a2e61793718a65a5c84f223bd1987ec35163e04b989c1b656",
+  "started": 1791370329.7952688,
+  "source_images": {
+    "harvest-platform-api-1": "sha256:8b1269c03f1d1efdbeb68f860db9ad26b7e39d6ead06a2af75056de917f5aadb",
+    "harvest-platform-worker-1": "sha256:8b1269c03f1d1efdbeb68f860db9ad26b7e39d6ead06a2af75056de917f5aadb",
+    "sf-api": "sha256:9c9b30cc9c991784cba178e2975768394f2a2c28e77908498a8b5fd66e0e524a",
+    "sf-celery-worker": "sha256:167ee0ada31950947f836f89f288238e955bf1f512459b2b59ec473ed1aed3b4",
+    "sf-postgres": "sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81"
+  },
+  "passed": true,
+  "interrupted_jobs": 0,
+  "evidence_blobs": 513,
+  "configuration_files": 14,
+  "spiderfoot_events": 359,
+  "restored_schema": 4,
+  "duration_seconds": 40.39
+}

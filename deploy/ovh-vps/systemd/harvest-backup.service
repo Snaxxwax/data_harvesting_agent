@@ -1,0 +1,10 @@
+[Unit]
+Description=Encrypted Harvest online database and protected configuration backup
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/harvest/operations/backup_server.py --recipient /opt/harvest/backups/recipient.asc
+# SSH operator must be able to pull ciphertext; plaintext remains root-only scratch.
+Environment=SUDO_UID=1000 SUDO_GID=1000

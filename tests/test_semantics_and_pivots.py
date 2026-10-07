@@ -13,7 +13,7 @@ from harvest.store import stop_advice
 
 def test_safe_tool_timeout_default_matches_production(monkeypatch):
     monkeypatch.delenv("HARVEST_TOOL_TIMEOUT", raising=False)
-    assert Settings().tool_timeout == 600
+    assert Settings().tool_timeout == 1800
 
 
 def test_investigation_seconds_stop_counting_when_it_finishes(engine):
@@ -55,9 +55,11 @@ def test_a_search_whose_engines_were_down_fails_instead_of_finding_nothing(engin
     _search(engine, source, {"results": [], "unresponsive_engines": down})
     spec = JobSpec(objective="find jane", discovery_queries=['"jane"'])
     job = engine.run(engine.submit(spec))
-    assert job["status"] == "failed"
-    assert "engines were unresponsive (bing, brave)" in job["reason"]
-    assert "not evidence of absence" in job["reason"]
+    assert job["status"] == "partial"
+    done = [e["details"] for e in engine.store.events(job["id"]) if e["type"] == "task_done"]
+    assert done[0]["providers"] == down
+    assert done[0]["accepted_leads"] == 0
+    assert engine.store.captures(job["id"])  # failed provider response remains replayable
 
 
 def _maigret_report(monkeypatch, report, argvs=None):
@@ -105,7 +107,7 @@ def test_identifier_searches_drop_results_that_never_mention_the_identifier(
         }
     )
     job = engine.run(engine.submit(spec))
-    assert job["status"] == "completed" and job["reason"] == "all queued work finished"
+    assert job["status"] == "partial"  # provider outage and missing native diagnostics
     requested = [r.split("?")[0] for r in source["requests"]]
     assert "/hit" in requested and "/noise" not in requested
     done = [e["details"] for e in engine.store.events(job["id"]) if "query" in e["details"]]
@@ -115,8 +117,28 @@ def test_identifier_searches_drop_results_that_never_mention_the_identifier(
     # ...and it reaches the summary instead of staying buried in task events.
     summary = engine.store.job_summary(job["id"])
     assert summary["search"] == {
-        "runs": 1, "degraded": 1, "unresponsive_engines": ["wikidata"],
-        "results": 2, "accepted_leads": 1,
+        "runs": 1,
+        "degraded": 1,
+        "unresponsive_engines": ["wikidata"],
+        "results": 2,
+        "accepted_leads": 1,
+        "rejected_leads": 1,
+        "providers": [
+            {
+                "engine": "unattributed",
+                "outcome": "completed",
+                "reason": None,
+                "accepted": 1,
+                "rejected": 1,
+            },
+            {
+                "engine": "wikidata",
+                "outcome": "errored",
+                "reason": "parsing error",
+                "accepted": 0,
+                "rejected": 0,
+            },
+        ],
     }
     assert any(u.startswith("discovery search degraded: 1/1") for u in summary["unknowns"])
 
@@ -237,7 +259,7 @@ def test_pivots_enrich_discovered_identifiers_in_their_own_jobs(engine, source, 
     summary = engine.store.job_summary(root["id"])
     assert [a["url"] for a in summary["accounts"]] == ["https://threads.example/@exampleuser"]
     rows = {p["value"]: p for p in summary["pivots"]}
-    assert rows["exalt"]["status"] == "completed" and len(rows["exalt"]["accounts"]) == 1
+    assert rows["exalt"]["status"] == "partial" and len(rows["exalt"]["accounts"]) == 1
     assert summary["tool_runs"] == "2/3" and "not metered" in summary["tool_requests"]
     assert [p["value"] for p in engine.store.investigation(root["id"])["pivots"]] == [
         "exalt",
@@ -260,7 +282,7 @@ def test_pivots_are_off_by_default_bounded_and_refused_past_the_budget(engine, s
     skipped = [e["details"] for e in events if e["type"] == "pivot_skipped"]
     assert skipped[0]["value"] == "exalt" and "tool_runs" in skipped[0]["reason"]
     assert [e["details"]["kind"] for e in events if e["type"] == "pivot"] == ["person"]
-    assert tight["status"] == "completed"
+    assert tight["status"] == "partial"  # fixture has no native diagnostics
 
 
 def test_json_api_captures_only_expand_through_links_carrying_the_identifier(

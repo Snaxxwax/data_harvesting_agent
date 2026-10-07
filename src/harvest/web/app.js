@@ -406,37 +406,13 @@ function fieldLabel(field) {
 // whatever the deployment allowlisted. Tool runs never exceed the default limits.tool_runs (3),
 // except Deep's pivots: up to 3 discovered identifiers (an address's handle, an email or name a
 // profile states) each get their own enrichment job, so Deep raises tool_runs to cover them.
-const PRESETS = {
-  quick: {
-    label: "Quick",
-    requests: 30,
-    seconds: 300,
-    crawl: false,
-    tools: ["ghunt", "maigret"],
-    topSites: 100,
-  },
-  standard: {
-    label: "Standard",
-    requests: 100,
-    seconds: 900,
-    crawl: true,
-    tools: ["ghunt", "maigret", "spiderfoot"],
-    topSites: 500,
-  },
-  deep: {
-    label: "Deep",
-    requests: 300,
-    seconds: 2700,
-    crawl: true,
-    tools: ["ghunt", "maigret", "spiderfoot"],
-    topSites: null,
-    pivots: 3,
-  },
-};
+const PRESETS = typeof module !== "undefined" && module.exports
+  ? require("../presets.json") : window.HARVEST_PRESETS;
+
 
 // The preset's settings for the tools this plan actually offers.
 function presetSettings(presetKey, offeredToolNames) {
-  const preset = PRESETS[presetKey] || PRESETS.standard;
+  const preset = PRESETS[presetKey] || PRESETS.deep;
   return {
     requests: preset.requests,
     seconds: preset.seconds,
@@ -508,10 +484,11 @@ function buildInvestigationSpec(opts) {
     tools,
     use_model: !!opts.useModel,
     limits: {
+      ...(opts.plan.limits || {}),
       requests: opts.requests,
       seconds: opts.seconds,
       // An email pivot runs up to two tools (GHunt and SpiderFoot), so budget for that.
-      ...(opts.pivots ? { pivots: opts.pivots, tool_runs: Math.min(50, tools.length + 2 * opts.pivots) } : {}),
+      ...(opts.pivots ? { pivots: opts.pivots, tool_runs: 8, followup_top_sites: opts.topSites } : {}),
     },
   };
 }
@@ -552,7 +529,7 @@ function initInvestigationForm() {
   const SEEDLESS_HINT =
     "Search is not configured on this deployment, so this investigation needs a starting web page or a source under Advanced options.";
 
-  const preset = () => (form.querySelector('input[name="inv-preset"]:checked') || {}).value || "standard";
+  const preset = () => (form.querySelector('input[name="inv-preset"]:checked') || {}).value || "deep";
   const offeredTools = () => (plan ? (plan.tools || []).filter((t) => toolsEnabled.includes(t.name)) : []);
   const selectedTools = () =>
     Array.from(sourcesNode.querySelectorAll("input.tool-box"))
@@ -643,6 +620,16 @@ function initInvestigationForm() {
     const seeds = parseList(seedsInput.value);
     const sources = plan ? sourceCategories({ ...plan, seeds }, tools, capabilities) : [];
     setText("sum-sources", sources.length ? sources.join(", ") : "—", !sources.length);
+    const coverageNode = document.getElementById("inv-coverage");
+    if (coverageNode) {
+      const c = plan && plan.coverage;
+      coverageNode.textContent = c ? [
+        c.max_identifiers ? `Up to ${c.max_identifiers} distinct discovered identifiers, one hop: ${c.conditional_followups.join("; ")}.` : "No automatic identifier follow-ups.",
+        `Maigret root and follow-up breadth: ${topSites() || "all eligible sites"}${c.maigret_eligible_sites ? ` (${c.maigret_eligible_sites} eligible in this build)` : ""}.`,
+        c.spiderfoot ? `SpiderFoot modules: ${c.spiderfoot.modules.join(", ")}. Exclusions: ${Object.entries(c.spiderfoot.excluded).map(([name, reason]) => `${name}: ${reason}`).join("; ") || "none from enabled profile"}.` : "",
+        c.explanation,
+      ].join(" ") : "";
+    }
     const seconds = (minutes() || 0) * 60;
     setText("sum-duration", seconds ? durationLabel(seconds) : "—");
     setText("sum-proxy", proxyUsage(parseInt(requestsInput.value, 10) || 0, tools, topSites()));
@@ -723,7 +710,7 @@ function initInvestigationForm() {
       return;
     }
     try {
-      const next = await api("/plan/investigation", { method: "POST", body: { value, kind: chosenKind } });
+      const next = await api("/plan/investigation", { method: "POST", body: { value, kind: chosenKind, preset: preset() } });
       if (seq !== planSeq) return; // a newer keystroke owns the form now
       showDetect(chosenKind ? `Treating this as: ${kindLabel(next.kind)}.` : `${kindLabel(next.kind)} detected.`, "ok", true);
       planFor = value;
@@ -754,8 +741,7 @@ function initInvestigationForm() {
   });
   for (const radio of form.querySelectorAll('input[name="inv-preset"]')) {
     radio.addEventListener("change", () => {
-      applyPreset();
-      refresh();
+      detect();
     });
   }
   for (const input of [requestsInput, minutesInput, breadth, followup]) {
@@ -1241,8 +1227,11 @@ async function renderJobDetail(jobId) {
   clear(actions);
   clear(eventsNode);
 
-  const job = await api(`/jobs/${encodeURIComponent(jobId)}`);
-  const active = ACTIVE_STATUSES.includes(job.status);
+  const [job, coverage] = await Promise.all([
+    api(`/jobs/${encodeURIComponent(jobId)}`),
+    api(`/jobs/${encodeURIComponent(jobId)}/coverage`),
+  ]);
+  const active = ACTIVE_STATUSES.includes(job.status) || ACTIVE_STATUSES.includes(coverage.status);
   title.textContent = job.spec.objective;
   summary.appendChild(
     el("div", {}, [
@@ -1252,6 +1241,23 @@ async function renderJobDetail(jobId) {
       active ? el("span", { class: "hint", text: " · auto-refreshing" }) : null,
     ])
   );
+  summary.appendChild(el("p", { class: "hint", text: `Investigation including follow-ups: ${coverage.status}. ${coverage.traffic}` }));
+  for (const run of coverage.executions) {
+    const details = el("details", {}, [el("summary", { text: `${run.tool || "Historical tool"}: ${run.outcome || run.task_status}; coverage ${run.coverage}` })]);
+    details.appendChild(el("p", { text: Object.entries(run.counts).map(([state, count]) => `${state}: ${count}`).join(", ") || "No native check diagnostics available." }));
+    const reasons = Array.from(new Set(run.checks.filter((c) => !["found", "absent"].includes(c.outcome)).map((c) => `${c.outcome}: ${c.reason}`)));
+    for (const reason of reasons) details.appendChild(el("p", { class: "hint", text: reason }));
+    if (run.artifacts.length) {
+      const select = el("select", { "aria-label": "Structured execution artifact" }, run.artifacts.map((a) =>
+        el("option", { value: a.id, text: `${a.kind}: ${a.name} (#${a.id})` })));
+      const download = el("a", { text: "Download selected artifact" });
+      const choose = () => download.setAttribute("href", `/jobs/${encodeURIComponent(coverage.root_id)}/artifacts/${select.value}`);
+      select.addEventListener("change", choose);
+      choose();
+      details.appendChild(el("p", {}, [select, " ", download]));
+    }
+    summary.appendChild(details);
+  }
   const requestLimit = job.spec && job.spec.limits ? job.spec.limits.requests : null;
   summary.appendChild(
     el("div", { class: "hint" }, [
@@ -1315,6 +1321,9 @@ async function renderJobDetail(jobId) {
   renderStages(document.getElementById("job-stages"), deriveStages(job, tasks));
   renderCounters(document.getElementById("job-counters"), job, overview, records);
   renderOverview(document.getElementById("job-overview"), overview, jobId, active);
+  for (const provider of (overview.search && overview.search.providers) || []) {
+    summary.appendChild(el("p", { class: "hint", text: `${provider.engine}: ${provider.outcome}; ${provider.accepted} accepted, ${provider.rejected} rejected leads${provider.reason ? ` — ${provider.reason}` : ""}.` }));
+  }
   renderRecords(recordsNode, records, job.missing_fields);
   renderWarnings(warningsNode, events);
   await renderSources(sourcesNode, jobId);
@@ -1570,6 +1579,9 @@ async function route() {
     setNavActive("#/status");
     showView("status-view");
     renderStatusView(lastMeta);
+    const incidents = await api("/incidents");
+    const list = document.getElementById("status-list");
+    for (const item of incidents) list.appendChild(el("li", { class: item.resolved ? "ok" : "bad", text: `${item.name}: ${item.resolved ? "Recovered" : "Open incident"} — ${item.detail}` }));
   } else if (hash === "#/schedules") {
     setNavActive("#/schedules");
     showView("schedules-view");

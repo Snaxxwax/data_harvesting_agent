@@ -27,6 +27,8 @@ def test_registers_the_expected_tools():
         "get_dossier",
         "get_summary",
         "get_evidence",
+        "get_coverage",
+        "get_artifact",
         "request_followup",
         "cancel_investigation",
     }

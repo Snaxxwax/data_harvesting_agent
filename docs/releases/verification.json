@@ -1,0 +1,66 @@
+{
+  "recorded_at": "2026-10-07T17:39:02.618674+00:00",
+  "source_sha256": "db457461a085594a0634e0facb4ec39abf0cfffc2cd416fb1fa2b5b8bf3abb2b",
+  "production_sign_off": false,
+  "deployed": false,
+  "checks": {
+    "focused_python": {
+      "passed": 29,
+      "deselected": 1
+    },
+    "tool_regressions": {
+      "passed": 57,
+      "deselected": 87
+    },
+    "javascript": {
+      "passed": 32
+    },
+    "ruff_check": "passed",
+    "ruff_format": "passed",
+    "git_diff_check": "passed",
+    "migration": "schema 1 to 4 preserved hashes, original database, and idempotency keys",
+    "pinned_hook_anchors": {
+      "maigret": "0.6.6 passed against cached distribution",
+      "ghunt": "2.3.4 passed against cached wheel"
+    },
+    "full_python_suite": "blocked: loopback socket creation denied; 2 passed before fixture error",
+    "artifact_api": "timed out in TestClient thread portal; not a pass"
+  },
+  "preliminary_soak": {
+    "valid_for_release": false,
+    "reason": "started before final edits; no frozen source identity",
+    "status": "running",
+    "started": 1791370742.2035975,
+    "required_seconds": 86400.0,
+    "concurrency": 2,
+    "rounds": 769,
+    "failures": [],
+    "api_max_seconds": 0.1971470380667597,
+    "max_rss_kib": 54988,
+    "elapsed_seconds": 23987.351890563965,
+    "database_bytes": 23662592
+  },
+  "remaining": [
+    "Final production image build with tools and full suite",
+    "Patched SpiderFoot image and deployment checks",
+    "Two matched live rounds per tool, at most 12 invocations, all discrepancies reviewed",
+    "Failure injection and measured orphan recovery within 60 seconds",
+    "Frozen-release 24-hour soak",
+    "Final-image restore and paired database/image rollback drill",
+    "Notification timer activation after API deployment",
+    "Drain, verified pre-release backup, controlled rollout and final readiness"
+  ],
+  "environment_blockers": [
+    "Docker API permission denied",
+    "new SSH sockets denied",
+    "loopback test server socket creation denied"
+  ],
+  "log_sha256": {
+    "logs/focused-python.log": "67b4601868b3f4fcd6b2edfebc953debc3fc6419c3e69f633f05af75c86e3b82",
+    "logs/tool-regressions.log": "2376db32e60e5c09ad3fd5a1de835242e5523c1be5be982fb5970299da953e83",
+    "logs/javascript-launch.log": "ee8290d326f321b556b28109380c8147f59d945dfb95126f4f25bc5daa5d87fc",
+    "logs/javascript-investigation.log": "e4ed5f60f03ebfd65d701b757ba7987b0296cfd1b736eafeb3871d8aa075cb8b",
+    "logs/full-suite-blocked.log": "54164e3471a8b74529dd14cdf9f419204aaa888eaeb699402ed68db406381a44",
+    "logs/artifact-api-blocked.log": "b118257722ca70995172e75c77f82fcc7d1fae1876ca103c1913547cf87cf07b"
+  }
+}

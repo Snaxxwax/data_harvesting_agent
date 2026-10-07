@@ -1,0 +1,124 @@
+TAP version 13
+# Subtest: detected kinds read as plain language
+ok 1 - detected kinds read as plain language
+  ---
+  duration_ms: 0.536675
+  type: 'test'
+  ...
+# Subtest: tools are presented as source categories, not tool names
+ok 2 - tools are presented as source categories, not tool names
+  ---
+  duration_ms: 0.107377
+  type: 'test'
+  ...
+# Subtest: field names read as plain language, unknown ones are humanised
+ok 3 - field names read as plain language, unknown ones are humanised
+  ---
+  duration_ms: 0.07609
+  type: 'test'
+  ...
+# Subtest: presets are real configuration: budgets, tools, breadth and follow-up all differ
+ok 4 - presets are real configuration: budgets, tools, breadth and follow-up all differ
+  ---
+  duration_ms: 86.553001
+  type: 'test'
+  ...
+# Subtest: presets never offer a tool the plan did not, and stay within limits.tool_runs
+ok 5 - presets never offer a tool the plan did not, and stay within limits.tool_runs
+  ---
+  duration_ms: 0.732302
+  type: 'test'
+  ...
+# Subtest: Deep widens breadth without unbounded budgets
+ok 6 - Deep widens breadth without unbounded budgets
+  ---
+  duration_ms: 0.402395
+  type: 'test'
+  ...
+# Subtest: unknown preset falls back to Thorough
+ok 7 - unknown preset falls back to Thorough
+  ---
+  duration_ms: 0.694549
+  type: 'test'
+  ...
+# Subtest: proxy usage follows budgets and tool breadth
+ok 8 - proxy usage follows budgets and tool breadth
+  ---
+  duration_ms: 0.529182
+  type: 'test'
+  ...
+# Subtest: duration is the hard time limit, stated as an upper bound
+ok 9 - duration is the hard time limit, stated as an upper bound
+  ---
+  duration_ms: 0.930201
+  type: 'test'
+  ...
+# Subtest: source categories include web discovery only when search is configured
+ok 10 - source categories include web discovery only when search is configured
+  ---
+  duration_ms: 0.273932
+  type: 'test'
+  ...
+# Subtest: auto-generated names satisfy the dataset pattern
+ok 11 - auto-generated names satisfy the dataset pattern
+  ---
+  duration_ms: 0.816819
+  type: 'test'
+  ...
+# Subtest: launch payload keeps the JobSpec shape the previous form sent
+ok 12 - launch payload keeps the JobSpec shape the previous form sent
+  ---
+  duration_ms: 0.172213
+  type: 'test'
+  ...
+# Subtest: launch payload: unselected sources are dropped, top_sites goes to maigret only
+ok 13 - launch payload: unselected sources are dropped, top_sites goes to maigret only
+  ---
+  duration_ms: 0.07854
+  type: 'test'
+  ...
+# Subtest: Deep opts into pivots and budgets tool runs for them; other presets never pivot
+ok 14 - Deep opts into pivots and budgets tool runs for them; other presets never pivot
+  ---
+  duration_ms: 0.086096
+  type: 'test'
+  ...
+# Subtest: stages come from real tasks: a running tool marks enrichment in progress
+ok 15 - stages come from real tasks: a running tool marks enrichment in progress
+  ---
+  duration_ms: 0.209194
+  type: 'test'
+  ...
+# Subtest: stages: fetches descended from a tool are profile discovery, others public checks
+ok 16 - stages: fetches descended from a tool are profile discovery, others public checks
+  ---
+  duration_ms: 0.116175
+  type: 'test'
+  ...
+# Subtest: stages never invent work: unexpected empty stages are omitted, terminal job closes out
+ok 17 - stages never invent work: unexpected empty stages are omitted, terminal job closes out
+  ---
+  duration_ms: 0.087019
+  type: 'test'
+  ...
+# Subtest: stages: a queued job is still preparing; a failed job's report did not complete
+ok 18 - stages: a queued job is still preparing; a failed job's report did not complete
+  ---
+  duration_ms: 0.069383
+  type: 'test'
+  ...
+# Subtest: system issues: ready deployment has none; missing search and blocked SpiderFoot are named
+ok 19 - system issues: ready deployment has none; missing search and blocked SpiderFoot are named
+  ---
+  duration_ms: 0.077592
+  type: 'test'
+  ...
+1..19
+# tests 19
+# suites 0
+# pass 19
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 100.749338

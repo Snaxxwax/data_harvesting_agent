@@ -286,3 +286,69 @@ def plan_dataset(
         discovery_queries=queries,
         fields=resolved_fields,
     )
+
+
+# One authority for UI, API and agent clients. Explicit JobSpecs retain their old defaults.
+def presets():
+    import json
+    from pathlib import Path
+
+    return json.loads(Path(__file__).with_name("presets.json").read_text())
+
+
+def effective_plan(value, kind=None, preset="deep", settings=None):
+    from dataclasses import asdict
+
+    from . import capabilities, tools
+    from .executions import build_info
+
+    if settings is None:
+        from .config import Settings
+
+        settings = Settings()
+
+    definitions = presets()
+    if preset not in definitions:
+        raise ValueError("preset must be quick, standard, or deep (Thorough)")
+    config = definitions[preset]
+    plan = plan_investigation(value, kind)
+    result = asdict(plan)
+    status = {c["name"]: c for c in capabilities.for_kind(plan.kind, settings)}
+    result["tools"] = [
+        {
+            **t,
+            "crawl": config["crawl"],
+            **({"top_sites": config["topSites"]} if t["name"] == "maigret" else {}),
+        }
+        for t in plan.tools
+        if t["name"] in config["tools"] and status.get(t["name"], {}).get("ready")
+    ]
+    result["unavailable_tools"] = [
+        {"name": t["name"], "detail": status.get(t["name"], {}).get("detail", "")}
+        for t in plan.tools
+        if not status.get(t["name"], {}).get("ready")
+    ]
+    result["preset"] = preset
+    result["preset_label"] = config["label"]
+    result["limits"] = {k: config[k] for k in ("requests", "seconds", "pivots", "tool_runs")}
+    result["limits"]["followup_top_sites"] = config["topSites"]
+    result["coverage"] = {
+        "root_tools": [t["name"] for t in result["tools"]],
+        "conditional_followups": [
+            "discovered username → Maigret",
+            "discovered email → GHunt and SpiderFoot",
+            "discovered name → contextual search",
+        ]
+        if config["pivots"]
+        else [],
+        "max_identifiers": config["pivots"],
+        "max_hops": 1,
+        "maigret_breadth": config["topSites"] or "all eligible sites",
+        "maigret_eligible_sites": build_info().get("maigret", {}).get("eligible_sites"),
+        "tool_timeouts": settings.tool_timeouts,
+        "spiderfoot": tools.spiderfoot_plan(tools.SPIDERFOOT_KIND_TYPES[plan.kind], settings)
+        if plan.kind in tools.SPIDERFOOT_KIND_TYPES
+        else None,
+        "explanation": "Deadline starts on admission and is shared with follow-ups. Tool requests and proxy spending are outside Harvest request and dollar counters.",
+    }
+    return result

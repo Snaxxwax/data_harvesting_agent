@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import sqlite3
 import time
 import uuid
@@ -126,7 +127,7 @@ class Store:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3):
+            if version not in (0, 1, 2, 3, 4):
                 raise RuntimeError(f"unsupported database version {version}")
             # Rollback journal deliberately avoids old SQLite WAL-reset affected releases.
             db.execute("PRAGMA journal_mode=DELETE")
@@ -134,6 +135,9 @@ class Store:
         self._migrate()
         self._migrate_batches()
         self._migrate_investigations()
+        from .executions import migrate
+
+        migrate(self)
 
     def _migrate(self):
         """Schema 1 -> 2, including existing evidence and in-flight reason tasks."""
@@ -168,7 +172,7 @@ class Store:
 
     def _migrate_batches(self):
         with self.transaction() as db:
-            if db.execute("PRAGMA user_version").fetchone()[0] == 3:
+            if db.execute("PRAGMA user_version").fetchone()[0] >= 3:
                 return
             db.execute("ALTER TABLE jobs ADD COLUMN records_processed INTEGER NOT NULL DEFAULT 0")
             db.execute("ALTER TABLE jobs ADD COLUMN claims_processed INTEGER NOT NULL DEFAULT 0")
@@ -550,7 +554,15 @@ class Store:
             raise LostLease("job cancelled or task lease lost")
         return row
 
-    def claim(self, job_id: str | None = None, lease_seconds: float = 120):
+    def claim(
+        self,
+        job_id: str | None = None,
+        lease_seconds: float = 120,
+        max_investigations=2,
+        max_tools=2,
+    ):
+        disk = shutil.disk_usage(Path(self.path).parent)
+        admit = disk.free / disk.total >= 0.10
         with self.transaction() as db:
             # BEGIN IMMEDIATE may wait for another writer. Start all claim timing only after
             # the transaction owns the write lock so lock contention cannot shorten the lease.
@@ -584,12 +596,19 @@ class Store:
                     db, task["job_id"], "lease_expired", {"task": task["id"], "status": status}
                 )
             row = db.execute(
-                """SELECT t.*,j.spec,j.execution FROM tasks t JOIN jobs j ON j.id=t.job_id
+                """WITH active AS (
+                    SELECT coalesce(root_id,id) AS root FROM jobs GROUP BY coalesce(root_id,id)
+                    HAVING max(started) IS NOT NULL AND max(status IN ('queued','running'))=1
+                )
+                SELECT t.*,j.spec,j.execution FROM tasks t JOIN jobs j ON j.id=t.job_id
                 WHERE t.status='pending' AND t.ready<=? AND j.status IN ('queued','running')
                 AND (? IS NULL OR j.id=?)
+                AND (coalesce(j.root_id,j.id) IN (SELECT root FROM active)
+                     OR (? AND (SELECT count(*) FROM active) < ?))
+                AND (t.kind!='tool' OR (SELECT count(*) FROM tasks WHERE kind='tool' AND status='running') < ?)
                 AND NOT EXISTS(SELECT 1 FROM tasks r WHERE r.job_id=j.id AND r.status='running')
                 ORDER BY t.priority DESC,t.id LIMIT 1""",
-                (now, job_id, job_id),
+                (now, job_id, job_id, admit, max_investigations, max_tools),
             ).fetchone()
             if row is None:
                 return None
@@ -597,7 +616,12 @@ class Store:
             claimed_at = time.time()
             db.execute(
                 "UPDATE tasks SET status='running',attempts=attempts+1,token=?,lease_until=? WHERE id=?",
-                (token, claimed_at + lease_seconds, row["id"]),
+                (
+                    token,
+                    claimed_at
+                    + (min(lease_seconds, 30) if row["kind"] == "tool" else lease_seconds),
+                    row["id"],
+                ),
             )
             db.execute(
                 "UPDATE jobs SET status='running',started=coalesce(started,?) WHERE id=?",
@@ -1006,17 +1030,29 @@ class Store:
                     status = "partial"
                 # Every queued task ran (there is no crawl "frontier" in a tool-only job).
                 reason = "all queued work finished"
-                # A tool run cut short by its time allowance kept partial results; the job
-                # must not read as complete because its remaining tasks then ran out.
-                if db.execute(
-                    """SELECT 1 FROM events WHERE job_id=? AND type='task_done'
-                    AND details LIKE '%"partial":%' LIMIT 1""",
+                # Preserve the actual coverage causes, including timeouts and provider
+                # failures, instead of turning every partial run into a timeout.
+                partials = db.execute(
+                    """SELECT details FROM events WHERE job_id=? AND type='task_done'
+                    AND details LIKE '%"partial":%' ORDER BY id""",
                     (row["id"],),
-                ).fetchone():
+                ).fetchall()
+                causes = list(
+                    dict.fromkeys(
+                        str(json.loads(item[0])["partial"])
+                        for item in partials
+                        if json.loads(item[0]).get("partial")
+                    )
+                )
+                if causes:
                     status = "partial"
-                    reason += "; a tool run hit its time allowance and kept partial results"
+                    reason += "; " + "; ".join(causes) + "; completed evidence retained"
                 if not counts.get("done", 0):
-                    status = "failed"
+                    measured = db.execute(
+                        "SELECT 1 FROM executions e JOIN tasks t ON t.id=e.task_id WHERE t.job_id=?",
+                        (row["id"],),
+                    ).fetchone()
+                    status = "partial" if measured else "failed"
                 if status != "completed":
                     # Say what actually went wrong, not just that the queue emptied.
                     first = db.execute(
@@ -1534,6 +1570,8 @@ class Store:
             ),
             "results": sum(d.get("search_results") or 0 for d in searches),
             "accepted_leads": sum(d.get("accepted_leads") or 0 for d in searches),
+            "rejected_leads": sum(d.get("rejected_leads") or 0 for d in searches),
+            "providers": [p for d in searches for p in d.get("provider_outcomes", [])],
         }
         if search["degraded"]:
             unknowns.append(
@@ -1544,7 +1582,12 @@ class Store:
             )
         limits = job["spec"]["limits"]
         tool_runs = job["investigation"]["enforced"]["tool_runs"]
+        from .executions import coverage
+
+        acquisition = coverage(self, job_id)
         return {
+            "coverage": acquisition,
+            "investigation_status": acquisition["status"],
             "job_id": job_id,
             "status": job["status"],
             "reason": job["reason"],

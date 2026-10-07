@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily Harvest encrypted backup
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+RandomizedDelaySec=5m
+Persistent=true
+[Install]
+WantedBy=timers.target

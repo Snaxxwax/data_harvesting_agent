@@ -64,6 +64,7 @@
           <label class="pill"><input type="radio" name="inv-kind" value="identifier"> Other identifier</label>
         </fieldset>
 
+        <p id="inv-coverage" class="hint" aria-live="polite"></p>
         <fieldset class="presets">
           <legend>Investigation depth</legend>
           <label class="preset">
@@ -73,14 +74,14 @@
             <span class="preset-meta" data-preset-meta="quick"></span>
           </label>
           <label class="preset">
-            <input type="radio" name="inv-preset" value="standard" checked>
-            <span class="preset-title">Standard <span class="badge">Recommended</span></span>
+            <input type="radio" name="inv-preset" value="standard">
+            <span class="preset-title">Standard</span>
             <span class="preset-desc">Search, account checks and linked-record lookups, then follows up on what they find.</span>
             <span class="preset-meta" data-preset-meta="standard"></span>
           </label>
           <label class="preset">
-            <input type="radio" name="inv-preset" value="deep">
-            <span class="preset-title">Deep</span>
+            <input type="radio" name="inv-preset" value="deep" checked>
+            <span class="preset-title">Thorough <span class="badge">Recommended</span></span>
             <span class="preset-desc">Every available source at full breadth, with a larger page and time allowance.</span>
             <span class="preset-meta" data-preset-meta="deep"></span>
           </label>
@@ -278,6 +279,7 @@
   </section>
 
 </main>
-<script src="/assets/app.js" defer></script>
+<script src="/assets/presets.js"></script>
+  <script src="/assets/app.js" defer></script>
 </body>
 </html>

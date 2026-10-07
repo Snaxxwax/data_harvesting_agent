@@ -1,0 +1,30 @@
+{
+  "source_schema": 1,
+  "destination_schema": 4,
+  "original_unchanged": true,
+  "preserved": {
+    "counts": {
+      "jobs": 1,
+      "tasks": 1,
+      "events": 0,
+      "blobs": 1,
+      "captures": 1,
+      "entities": 1,
+      "observations": 1,
+      "sightings": 1,
+      "schedules": 0
+    },
+    "hashes": {
+      "captures": "d919e2e618b547e95b84f9dd2cae02c4b27764727eb6d94945d36ed2ccb0d46c",
+      "observations": "cb749b11eecd30c7651f456a598ecb70841a3f4993c55653c52fdf5010068b81",
+      "sightings": "1a3cf59f7e22966b27dbcc0013548f64f56b65169613ecaac9fd515035f42192",
+      "schedules": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "blobs": "f09aeb196ca82c17d27cecc66c6a59ecb8c6c5e94eee74cf86f32346f000bf74"
+    }
+  },
+  "extractions": 1,
+  "assertions": 1,
+  "idempotency_keys_verified": 1,
+  "integrity_check": "ok",
+  "foreign_key_check": []
+}
