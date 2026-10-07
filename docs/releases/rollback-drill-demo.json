@@ -1,0 +1,62 @@
+{
+  "archive_sha256": "b7aedfba6b9c9c2a2e61793718a65a5c84f223bd1987ec35163e04b989c1b656",
+  "backup_created": 1791370269.61453,
+  "backup_images": {
+    "harvest-platform-api-1": "sha256:8b1269c03f1d1efdbeb68f860db9ad26b7e39d6ead06a2af75056de917f5aadb",
+    "harvest-platform-worker-1": "sha256:8b1269c03f1d1efdbeb68f860db9ad26b7e39d6ead06a2af75056de917f5aadb",
+    "sf-api": "sha256:9c9b30cc9c991784cba178e2975768394f2a2c28e77908498a8b5fd66e0e524a",
+    "sf-celery-worker": "sha256:167ee0ada31950947f836f89f288238e955bf1f512459b2b59ec473ed1aed3b4",
+    "sf-postgres": "sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81"
+  },
+  "rollback_images": {
+    "harvest": "sha256:8b1269c03f1d1efdbeb68f860db9ad26b7e39d6ead06a2af75056de917f5aadb",
+    "sf_api": "sha256:9c9b30cc9c991784cba178e2975768394f2a2c28e77908498a8b5fd66e0e524a",
+    "sf_scanner": "sha256:167ee0ada31950947f836f89f288238e955bf1f512459b2b59ec473ed1aed3b4"
+  },
+  "checks": {
+    "images_paired_with_backup": true,
+    "ghunt_credential_restored": true,
+    "sqlite_integrity": true,
+    "sqlite_foreign_keys": true,
+    "blob_hashes": true,
+    "rollback_compose_renders": true,
+    "previous_spiderfoot_api_healthy": true,
+    "restored_spiderfoot_key_authenticates": true,
+    "previous_harvest_api_live": true,
+    "schema_unchanged_by_previous_code": true,
+    "no_active_jobs_after_rule": true,
+    "previous_code_refuses_schema4": true
+  },
+  "passed": true,
+  "restored_schema_before_start": 3,
+  "active_jobs_in_backup": 0,
+  "evidence_blobs": 513,
+  "restored_counts": {
+    "jobs": 222,
+    "captures": 591,
+    "observations": 19712
+  },
+  "rollback_compose": {
+    "files": [
+      "compose.yaml",
+      "compose.override.yaml",
+      "compose.egress-proxy.yaml",
+      "compose.ghunt.yaml",
+      "compose.searxng.yaml"
+    ],
+    "worker_networks": [
+      "harvest-egress"
+    ],
+    "harvest_egress_internal": true,
+    "readiness_overlay_absent": true
+  },
+  "spiderfoot_events": 359,
+  "spiderfoot_scans": 57,
+  "schema_after_previous_api_start": 3,
+  "previous_code_on_schema4": {
+    "refused": true,
+    "error_tail": "RuntimeError: unsupported database version 4"
+  },
+  "duration_seconds": 30.29,
+  "drill_script_sha256": "27d8585abf6affc7ab7072122bff5dc4eb05870c7968f4ea085d0ee4094bc908"
+}

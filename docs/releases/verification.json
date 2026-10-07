@@ -1,66 +1,100 @@
 {
-  "recorded_at": "2026-10-07T17:39:02.618674+00:00",
-  "source_sha256": "db457461a085594a0634e0facb4ec39abf0cfffc2cd416fb1fa2b5b8bf3abb2b",
+  "recorded_at": "2026-10-07T20:40:44Z",
+  "release_candidate": {
+    "source_revision": "8f62ce6f6830-a8f85a3b04b0",
+    "git_commit": "8f62ce6f6830 (branch release/v1.0.1-readiness)",
+    "source_sha256": "a8f85a3b04b02624d374e1d4a6b11094fcca6dc939208e37453d51478a02561a",
+    "images": {
+      "harvest": "sha256:7b0508061d0673668188d3c4904978271e11bd94fe159fac2614b4a6edbda8fb (harvest-platform:rc-8f62ce6f6830; api, worker, monitor)",
+      "spiderfoot_api": "sha256:defe0cfda9a227e46a9eba836b193cbbd6b35e3ead331d1d345996b8a8be0cbf (spiderfoot-ng-api:rc-f3b4ec3c-c0218903)",
+      "spiderfoot_scanner": "sha256:709c056f03c82ca7282fb04d7fdb29b5a42271fb1fc761035b6b68591c74f531 (spiderfoot-ng-celery-worker:rc-f3b4ec3c-c0218903)",
+      "spiderfoot_base": "sha256:e47f6f863c0164324726d2b8b4e87cbde1f4ef25b5c614404cfe53460ff9edaa"
+    },
+    "spiderfoot_source": "fork f3b4ec3c + deploy/spiderfoot/production-readiness.patch sha256 c0218903cd73f71bc9ac8f3746feb9d586a4e729696dcf926b96feff6e9d57f1 (git apply --check passed); worktree /opt/harvest/releases/sf-f3b4ec3c-readiness",
+    "tools": {
+      "maigret": "0.6.6, eligible sites 5178, database sha256 ef6ca66efa174209c10205ff86f7e975b591128681710639fdc786ff05e662da",
+      "ghunt": "2.3.4",
+      "tool+patch manifest digest": "4c57c0c8ff0d9c4d04cb2bd6bc3423cfd17efa19ec27a50149ac7d6c14060bec"
+    }
+  },
+  "superseded_candidates": {
+    "f0b178ebd0c3-db457461a085": "verify_upgrade.py false idempotency failure on production schema-3 replays (verifier bug, fixed f15bc82)",
+    "f15bc8298117-04a518e59cc6 (sha256:49e155dd...)": "SpiderFoot per-site checks always 'unfinished' (newest-first log replay; fixed 8f62ce6); its soak stopped at 171 rounds, 0 failures, not counted"
+  },
   "production_sign_off": false,
   "deployed": false,
   "checks": {
-    "focused_python": {
-      "passed": 29,
-      "deselected": 1
-    },
-    "tool_regressions": {
-      "passed": 57,
-      "deselected": 87
-    },
-    "javascript": {
-      "passed": 32
-    },
+    "local_python": "536 passed (logs/final-local-python.log is the f15bc82 run: 535; 8f62ce6 rerun 536 passed)",
+    "image_python": "522 passed + test_spiderfoot_log_patch passed with ephemeral git; 10 skips (mcp extra, docker-only relay tests) pass locally",
+    "javascript": "32 passed",
     "ruff_check": "passed",
     "ruff_format": "passed",
     "git_diff_check": "passed",
-    "migration": "schema 1 to 4 preserved hashes, original database, and idempotency keys",
-    "pinned_hook_anchors": {
-      "maigret": "0.6.6 passed against cached distribution",
-      "ghunt": "2.3.4 passed against cached wheel"
-    },
-    "full_python_suite": "blocked: loopback socket creation denied; 2 passed before fixture error",
-    "artifact_api": "timed out in TestClient thread portal; not a pass"
+    "migration_production_copy": "schema 3 -> 4 on a copy of the production database in the candidate image: 223 jobs, 146 idempotency keys, immutable hashes preserved, integrity ok (migration-check-production.json)",
+    "native_hook_guards": "patch_tools/manifest build guards passed during image build",
+    "deployment_verifier_baseline": "verify-deployment.sh 52/52 on current production before rollout"
   },
-  "preliminary_soak": {
-    "valid_for_release": false,
-    "reason": "started before final edits; no frozen source identity",
-    "status": "running",
-    "started": 1791370742.2035975,
-    "required_seconds": 86400.0,
-    "concurrency": 2,
-    "rounds": 769,
-    "failures": [],
-    "api_max_seconds": 0.1971470380667597,
-    "max_rss_kib": 54988,
-    "elapsed_seconds": 23987.351890563965,
-    "database_bytes": 23662592
+  "failure_injection": {
+    "active_job_restore": {
+      "evidence_sha256": "6d0ee13c06a29e397efc7f7f6944782816bc38e8dd9e1636e21d2de1dc975773"
+    },
+    "cancellation": {
+      "evidence_sha256": "84fb0d8296883781d29f728f100fa8b2bbdda018bdaf997578f69f9fd47e60d3"
+    },
+    "database_restart": {
+      "evidence_sha256": "9a94406e71954492aa56aa8df8b51f320b1cfd45bc324756629a45f7adac63a5"
+    },
+    "deadline": {
+      "evidence_sha256": "3e9fd6a76817351ec1d72c6b893b10faec09a0eec77e5f6e485c5481233ababf"
+    },
+    "ghunt_invalid_credential": {
+      "evidence_sha256": "069993cfc680c9c6c9eee0a7c45979e937d3bdadbee168d86717a08c995318d4"
+    },
+    "proxy_failure": {
+      "evidence_sha256": "7c266f1de3aafc1ebf76c75b58d901ec515fb99a8997243be79bf98532c8b5f7"
+    },
+    "recreate": {
+      "evidence_sha256": "ffb12e69c6df45edde83cf06f7750624fb2fa7efad269ad67a830c3190b9efd6"
+    },
+    "thorough_workflow": {
+      "evidence_sha256": "821100c4fc52ee1e8e0eccae73e2e7703f10c352f9f89eea150aa403ea5a6d78"
+    },
+    "worker_death_maigret": {
+      "evidence_sha256": "314113c211c712c9620b1edf0a004c3fa8c9303b26e9d5ffdc7c678efb0c7820"
+    },
+    "worker_death_spiderfoot": {
+      "evidence_sha256": "e32c3fbcde9b4a9fdde17dbce8c9f3e3a0246ccb4a91b47d98f6d7532b0d568c"
+    }
+  },
+  "live_parity": {
+    "ledger": "/opt/harvest/releases/parity-20261007/run (private; copy in /home/pop/backups/harvest/release-evidence)",
+    "image": "sha256:49e155dd... (f15bc8298117); native capture and normalization code identical to final; only SpiderFoot log-to-check ordering changed",
+    "invocations": "12 of 12, all returned, none interrupted or repeated, retention passed 12/12, namespace audit_e208015dcbac438b, 33.3 min",
+    "runner_passed_flag": false,
+    "reviewed": {
+      "ghunt": "match both rounds",
+      "maigret": "round 1 match (20 findings); round 2: RussianFI, chaturbator.su, AllTheLyrics flipped found/absent between back-to-back runs (absent in both modes in round 1); SpotifyCommunity found standalone, 'unfinished: no conclusive native verdict' in Harvest -- remote variability, no adapter loss",
+      "spiderfoot": "4 identical usable findings both rounds; only '/generated' (per-scan event timestamp) differs -- benign"
+    }
+  },
+  "search_degradation": "staging canary through proxy: duckduckgo completed 8 relevant; bing errored (no relevant source); brave blocked (too many requests); provider incidents open while search remains ready",
+  "restore": {
+    "candidate_image": "restore-drill-candidate.json",
+    "paired_rollback": "rollback-drill-demo.json (previous images + backup taken under them, 12/12 checks)"
+  },
+  "soak": {
+    "directory": "/opt/harvest/releases/soak-8f62ce6f6830",
+    "container": "harvest-soak-8f62ce6f6830",
+    "started_utc": "2026-10-07T20:05Z",
+    "due_utc": "2026-10-08T20:05Z",
+    "status": "running"
   },
   "remaining": [
-    "Final production image build with tools and full suite",
-    "Patched SpiderFoot image and deployment checks",
-    "Two matched live rounds per tool, at most 12 invocations, all discrepancies reviewed",
-    "Failure injection and measured orphan recovery within 60 seconds",
-    "Frozen-release 24-hour soak",
-    "Final-image restore and paired database/image rollback drill",
-    "Notification timer activation after API deployment",
-    "Drain, verified pre-release backup, controlled rollout and final readiness"
-  ],
-  "environment_blockers": [
-    "Docker API permission denied",
-    "new SSH sockets denied",
-    "loopback test server socket creation denied"
-  ],
-  "log_sha256": {
-    "logs/focused-python.log": "67b4601868b3f4fcd6b2edfebc953debc3fc6419c3e69f633f05af75c86e3b82",
-    "logs/tool-regressions.log": "2376db32e60e5c09ad3fd5a1de835242e5523c1be5be982fb5970299da953e83",
-    "logs/javascript-launch.log": "ee8290d326f321b556b28109380c8147f59d945dfb95126f4f25bc5daa5d87fc",
-    "logs/javascript-investigation.log": "e4ed5f60f03ebfd65d701b757ba7987b0296cfd1b736eafeb3871d8aa075cb8b",
-    "logs/full-suite-blocked.log": "54164e3471a8b74529dd14cdf9f419204aaa888eaeb699402ed68db406381a44",
-    "logs/artifact-api-blocked.log": "b118257722ca70995172e75c77f82fcc7d1fae1876ca103c1913547cf87cf07b"
-  }
+    "24-hour soak completion",
+    "drain/stop admission, pre-release backup + off-host verification",
+    "rollout of exact images",
+    "post-deployment acceptance",
+    "incident notification timer",
+    "reopen admission"
+  ]
 }

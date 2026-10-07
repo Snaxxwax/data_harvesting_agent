@@ -1,0 +1,16 @@
+/app/.venv/lib/python3.12/site-packages/harvest/__init__.py
+
+../app/.venv/lib/python3.12/site-packages/starlette/testclient.py:53
+  /app/.venv/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_spiderfoot_log_patch.py::test_scan_listener_flushes_even_a_single_log
+SKIPPED [1] tests/test_mcp_server.py:15: could not import 'mcp': No module named 'mcp'
+SKIPPED [1] tests/test_egress_relay.py:189: needs docker
+SKIPPED [1] tests/test_egress_relay.py:201: needs docker
+SKIPPED [1] tests/test_egress_relay.py:212: needs docker
+SKIPPED [5] tests/test_egress_relay.py:241: needs docker
+SKIPPED [1] tests/test_egress_relay.py:249: needs docker
+1 failed, 521 passed, 10 skipped, 2 warnings in 220.66s (0:03:40)
