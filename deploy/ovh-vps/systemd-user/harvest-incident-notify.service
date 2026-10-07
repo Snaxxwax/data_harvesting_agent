@@ -1,0 +1,7 @@
+[Unit]
+Description=Show Harvest incident state changes on this workstation
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/harvest/notify.env
+ExecStart=/usr/bin/python3 %h/data_harvesting_agent/scripts/notify_harvest_incidents.py
