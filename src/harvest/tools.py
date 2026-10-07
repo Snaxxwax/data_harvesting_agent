@@ -746,9 +746,27 @@ def _spiderfoot_confidence(event: dict, existence: str) -> float:
     it ranks evidence, it does not estimate a probability.
     """
     raw = event.get("confidence")
-    value = raw / 100 if isinstance(raw, (int, float)) and not isinstance(raw, bool) else 1.0
+    # Absent is unknown, not certain: the midpoint, never the maximum.
+    value = raw / 100 if isinstance(raw, (int, float)) and not isinstance(raw, bool) else 0.5
     value = max(0.0, min(1.0, value))
     return round(min(value, 0.5), 2) if existence == "inferred" else round(value, 2)
+
+
+def _spiderfoot_empty_profile(data) -> bool:
+    """A profile payload carrying nothing but the handle that was asked for.
+
+    sfp_tiktok_osint turned CAPTCHA and "Could not find this account" pages into a
+    SOCIAL_MEDIA_PROFILE (and a "TikTok Profile: {...}" RAW_RIR_DATA) whose every field was
+    null except the requested username -- and that arrived here as an observed profile at
+    full confidence. An object with no other content is not evidence that anything exists.
+    """
+    if not isinstance(data, str) or "{" not in data:
+        return False
+    try:
+        obj = json.loads(data[data.index("{"):])
+    except ValueError:
+        return False
+    return isinstance(obj, dict) and not any(v for k, v in obj.items() if k != "username")
 
 
 def _spiderfoot_records(events: list, target: str) -> list[dict]:
@@ -806,7 +824,7 @@ def _spiderfoot_records(events: list, target: str) -> list[dict]:
         data = event.get("data")
         if event_type in _SF_NOISE_TYPES or not event_type:
             continue
-        if not isinstance(data, str) or not data.strip():
+        if not isinstance(data, str) or not data.strip() or _spiderfoot_empty_profile(data):
             continue
         data = data.strip()
         if data.lower() == normalized:
@@ -1087,7 +1105,7 @@ def _spiderfoot(
     cancelled: threading.Event | None = None,
     settings=None,
     task_id: int | None = None,
-) -> list[dict]:
+) -> dict:
     """Run one SpiderFoot scan to completion and return its events as records."""
     import httpx
 
@@ -1192,8 +1210,17 @@ def _spiderfoot(
                     break
                 page += 1
             finished = partial is None
-            results = _spiderfoot_records(records, target)
-            return {"results": results, "partial": partial} if partial else results
+            # The scan id joins this capture to SpiderFoot's own scan record, its raw events
+            # and its container logs; the counts say what normalisation discarded.
+            return {
+                "results": _spiderfoot_records(records, target),
+                "scan_id": scan_id,
+                "raw_events": len(records),
+                "dropped_empty_profiles": sum(
+                    _spiderfoot_empty_profile(e.get("data")) for e in records if isinstance(e, dict)
+                ),
+                **({"partial": partial} if partial else {}),
+            }
         except httpx.HTTPError as exc:
             # Never surface the response body: it can echo the request headers.
             raise ActionableError(f"spiderfoot request failed: {type(exc).__name__}") from None

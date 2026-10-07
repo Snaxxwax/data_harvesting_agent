@@ -90,6 +90,18 @@ for f in tinyproxy.conf.template entrypoint.sh; do
     fi
 done
 
+# The same for the files the other services bind-mount from outside this checkout.
+for pair in "/opt/harvest/spiderfoot-ng/compose.core.yml:spiderfoot-core.yml" \
+            "/opt/harvest/sf-dns/Corefile:sf-dns/Corefile" \
+            "/opt/harvest/searxng/settings.yml:searxng/settings.yml"; do
+    live=${pair%%:*} tracked=deploy/ovh-vps/${pair#*:}
+    if diff -q "$live" "$tracked" >/dev/null 2>&1; then
+        ok "$live matches $tracked"
+    else
+        bad "$live has DRIFTED from $tracked (or is missing)"
+    fi
+done
+
 section "Tailscale-only exposure"
 # An interface-bound publish, not a ufw rule, is what keeps this off the public internet:
 # docker writes its own DOCKER-USER iptables rules, which bypass ufw entirely.
@@ -123,11 +135,13 @@ case "$MODE" in
 esac
 [[ "$PROXY_SET" == yes ]] && ok "HARVEST_EGRESS_PROXY is set" || bad "HARVEST_EGRESS_PROXY is empty"
 
-# The structural guarantee: the worker is on an internal network with no gateway, so there
-# is no route off-host except the relay. A blocked probe is the PASS condition. This is
-# what the application's own pre-run probe checks too, so a failure here means tool runs
-# would be refused rather than leaking -- but it still means the posture is broken.
-DIRECT=$(dc exec -T worker python -c '
+# The structural guarantee: every container that COLLECTS sits on internal networks only,
+# so there is no route off-host except the relay (and, for the scanner, the sf-dns resolver).
+# A blocked probe is the PASS condition. Proxy env vars are routing, not isolation: the
+# scanner and SearXNG both had HTTP(S)_PROXY set and could still connect out directly.
+for c in "$(dc ps -q worker 2>/dev/null)" sf-celery-worker harvest-searxng; do
+    name=$(docker inspect -f '{{.Name}}' "$c" 2>/dev/null | tr -d /)
+    DIRECT=$(docker exec "$c" python3 -c '
 import socket
 try:
     socket.create_connection(("1.1.1.1", 443), timeout=5)
@@ -135,11 +149,12 @@ try:
 except OSError:
     print("blocked")
 ' 2>/dev/null | tr -d '\r')
-case "$DIRECT" in
-    blocked) ok "direct egress from the worker is blocked (no route off-host)" ;;
-    open)    bad "direct egress from the worker WORKS -- proxy-only mode is a fiction" ;;
-    *)       bad "could not test direct egress from the worker" ;;
-esac
+    case "$DIRECT" in
+        blocked) ok "direct egress from ${name:-$c} is blocked (no route off-host)" ;;
+        open)    bad "direct egress from ${name:-$c} WORKS -- it can bypass the relay" ;;
+        *)       bad "could not test direct egress from ${name:-$c}" ;;
+    esac
+done
 
 section "Upstream proxy credential (never prints the value)"
 SECRET=/opt/harvest/egress-relay/upstream.secret
@@ -308,14 +323,32 @@ urllib.request.urlopen('$SEARCH_URL', timeout=15)
     # default and then answers 403 to exactly the request Harvest makes, while its HTML UI
     # keeps working perfectly -- so this fails as "search returned HTTP 403", which reads
     # like a broken deployment rather than one missing config line.
-    if dc exec -T worker python -c "
+    # One real search, here rather than in the container healthcheck: it is outbound traffic
+    # through every provider, so it runs once per deploy, not every minute.
+    DOWN=$(dc exec -T worker python -c "
 import json,urllib.request
 d=json.load(urllib.request.urlopen('$SEARCH_URL/search?q=ping&format=json', timeout=25))
-raise SystemExit(0 if 'results' in d else 1)
-" >/dev/null 2>&1; then
+assert 'results' in d
+print(','.join(sorted(str(e[0]) for e in d.get('unresponsive_engines') or [])) or 'none')
+" 2>/dev/null | tr -d '\r')
+    if [[ -n "$DOWN" ]]; then
         ok "it serves format=json (the only format Harvest uses)"
+        [[ "$DOWN" == none ]] && ok "every engine answered a test search" \
+            || note "engines down for a test search right now: $DOWN (provider health, not config)"
     else
         bad "it does not serve format=json -- add 'json' to search.formats in settings.yml"
+    fi
+    # The EFFECTIVE engine set, not the overlay: use_default_settings merges the image's
+    # defaults, and an engine the image marks inactive never runs whatever the overlay says.
+    ENGINES=$(dc exec -T worker python -c "
+import json,urllib.request
+d=json.load(urllib.request.urlopen('$SEARCH_URL/config', timeout=15))
+print(','.join(sorted(e['name'] for e in d['engines'] if e.get('enabled'))))
+" 2>/dev/null | tr -d '\r')
+    if [[ "$ENGINES" == "bing,brave,duckduckgo" ]]; then
+        ok "its enabled engines are exactly bing, brave, duckduckgo"
+    else
+        bad "its enabled engines are '${ENGINES:-unreadable}', not bing,brave,duckduckgo -- check use_default_settings.engines.keep_only"
     fi
     # Its own engine queries must leave through the relay, or the searches are attributable
     # to this VPS while every other request in the deployment is not.
@@ -366,6 +399,29 @@ else
         else
             bad "sf-celery-worker is NOT on harvest-egress -- egress-relay will not resolve and every module request fails; run: docker network connect harvest-egress sf-celery-worker"
         fi
+        # DNS is the one non-HTTP path the scanner keeps: through sf-dns, nowhere else.
+        if docker exec sf-celery-worker python3 -c "import socket; socket.gethostbyname('example.com')" >/dev/null 2>&1 &&
+           docker logs --since 2m sf-dns 2>&1 | grep -q 'example.com'; then
+            ok "the scanner resolves names through sf-dns (and the query is in its log)"
+        else
+            bad "the scanner cannot resolve through sf-dns -- every DNS module and resolve_host() fails"
+        fi
+        # What each allowlisted module needs from the network. Confined, the scanner has HTTP
+        # (relay) and DNS (sf-dns) only, so a module needing anything else would fail on every
+        # scan without saying why: it has to be allowlisted knowingly, not discovered later.
+        SF_MODULES=$(grep -E '^HARVEST_SPIDERFOOT_MODULES=' .env 2>/dev/null | cut -d= -f2- | tr ',' ' ')
+        for m in $SF_MODULES; do
+            src=$(docker exec sf-celery-worker cat "/home/spiderfoot/modules/$m.py" 2>/dev/null)
+            [[ -z "$src" ]] && { bad "$m is allowlisted but not in the scanner image"; continue; }
+            t=()
+            grep -qE 'fetch_url|fetchUrl' <<< "$src" && t+=(http)
+            grep -qE 'resolve_host|reverse_resolve|resolveHost|resolveIP|dns\.resolver' <<< "$src" && t+=(dns)
+            if grep -qE 'socket\.socket|create_connection|smtplib|subprocess|whois\.whois|telnetlib' <<< "$src"; then
+                bad "$m uses a transport other than HTTP/DNS -- it cannot work from the confined scanner"
+            else
+                note "$m: ${t[*]:-no network}"
+            fi
+        done
         # The measurement, not the declaration: where the scanner's packets actually exit.
         # SpiderFoot's own _socks* config is deliberately not consulted -- it is never
         # reloaded at startup and its scanner ignores it (measured: 0 bytes via the relay).
