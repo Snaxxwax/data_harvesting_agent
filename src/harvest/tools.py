@@ -383,6 +383,10 @@ def _maigret(
         workdir,
         "--no-color",
         "--no-progressbar",
+        # Harvest owns recursion/pivots so every follow-up shares the investigation's
+        # provenance, deadline and tool-run budget. Maigret may still extract identifiers
+        # from profile pages; it simply must not launch hidden recursive scans itself.
+        "--no-recursion",
         "--timeout",
         str(max(1, int(min(timeout, 30)))),
     ]
