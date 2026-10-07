@@ -1689,6 +1689,45 @@ class Store:
                 f"{search['accepted_leads']} lead(s) accepted from {search['results']} "
                 "result(s), so missing web leads are not evidence of absence"
             )
+        tool_execution_rows = [
+            execution for jid in jobs for execution in self.tool_executions(jid)
+        ]
+        with self.connection() as db:
+            tool_task_count = db.execute(
+                f"SELECT count(*) FROM tasks WHERE kind='tool' AND job_id IN ({marks})",
+                jobs,
+            ).fetchone()[0]
+        legacy_tool_runs = max(0, tool_task_count - len(tool_execution_rows))
+        tool_coverage = {
+            "executions": len(tool_execution_rows),
+            "legacy_unknown": legacy_tool_runs,
+            "outcomes": {},
+            "checks": {
+                "found": 0,
+                "absent": 0,
+                "blocked": 0,
+                "errored": 0,
+                "unsupported": 0,
+                "skipped": 0,
+                "unfinished": 0,
+            },
+        }
+        for execution in tool_execution_rows:
+            outcome = execution["outcome"]
+            tool_coverage["outcomes"][outcome] = tool_coverage["outcomes"].get(outcome, 0) + 1
+            for name in tool_coverage["checks"]:
+                tool_coverage["checks"][name] += int(execution["checks"].get(name, 0) or 0)
+            coverage = execution["diagnostics"].get("coverage")
+            if coverage in {"unknown", "partial"}:
+                unknowns.append(
+                    f"{execution['tool']} execution {execution['id']} has {coverage} native "
+                    "check coverage; a finished process is not evidence every source was checked"
+                )
+        if legacy_tool_runs:
+            unknowns.append(
+                f"{legacy_tool_runs} legacy tool run(s) predate execution diagnostics; "
+                "their acquisition coverage is unknown"
+            )
         limits = job["spec"]["limits"]
         tool_runs = job["investigation"]["enforced"]["tool_runs"]
         return {
@@ -1704,6 +1743,7 @@ class Store:
             "verified_pages": sum(a["page_check"] == "profile_evidence" for a in accounts),
             "pivots": pivot_rows,
             "search": search,
+            "tool_coverage": tool_coverage,
             "unknowns": unknowns,
         }
 
