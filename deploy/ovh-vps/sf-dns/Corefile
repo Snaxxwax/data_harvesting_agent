@@ -1,0 +1,13 @@
+# The scanner's only DNS path. sf-celery-worker sits on internal networks only (no route
+# off-host), and Docker gives such containers no external DNS at all, so without this every
+# DNS module -- and every resolve_host() -- fails. Queries leave over DNS-over-TLS to one
+# named resolver rather than in the clear from this VPS, and `log` records every one of them:
+#   docker logs sf-dns
+.:53 {
+    forward . tls://1.1.1.1 tls://1.0.0.1 {
+        tls_servername cloudflare-dns.com
+    }
+    cache 300
+    log
+    errors
+}
