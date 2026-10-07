@@ -228,9 +228,7 @@ def test_pivots_enrich_discovered_identifiers_in_their_own_jobs(engine, source, 
         child = engine.run(p["child"])
         assert child["root_id"] == child["parent_id"] == root["id"]
     username = engine.store.job(pivots[0]["child"])["spec"]["tools"]
-    assert username == [
-        {"name": "maigret", "target": "exalt", "crawl": False, "top_sites": 500}
-    ]
+    assert username == [{"name": "maigret", "target": "exalt", "crawl": False, "top_sites": 500}]
     assert argvs[1][argvs[1].index("--top-sites") + 1] == "500"
     # One hop: a pivot's own discoveries (the same report) never pivot again.
     for p in pivots:
