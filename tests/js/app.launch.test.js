@@ -69,13 +69,16 @@ test("presets never offer a tool the plan did not, and stay within limits.tool_r
   assert.deepEqual(app.presetSettings("deep", ["maigret"]).tools, ["maigret"]);
 });
 
-test("Deep widens breadth without unbounded budgets", () => {
+test("Thorough widens breadth with the production 60-minute bound", () => {
   const deep = app.presetSettings("deep", ["maigret"]);
   assert.equal(deep.topSites, null); // Maigret's full site database
-  assert.ok(deep.requests <= 1000 && deep.seconds <= 3600);
+  assert.equal(deep.requests, 300);
+  assert.equal(deep.seconds, 3600);
+  assert.equal(deep.toolRuns, 8);
+  assert.equal(deep.followupTopSites, null);
 });
 
-test("unknown preset falls back to Standard", () => {
+test("unknown preset falls back to Standard for compatibility", () => {
   assert.deepEqual(app.presetSettings("bogus", ["ghunt"]), app.presetSettings("standard", ["ghunt"]));
 });
 
@@ -131,12 +134,19 @@ test("launch payload keeps the JobSpec shape the previous form sent", () => {
     objective: "Investigate jane@example.org",
     dataset: "jane-example-org",
     mode: "targeted",
+    preset: null,
     seeds: [],
     discovery_queries: EMAIL_PLAN.discovery_queries,
     fields: EMAIL_PLAN.fields,
     tools: [{ name: "ghunt", target: "jane@example.org", crawl: true }],
     use_model: false,
-    limits: { requests: 100, seconds: 900 },
+    limits: {
+      requests: 100,
+      seconds: 900,
+      pivots: 0,
+      tool_runs: 1,
+      followup_top_sites: null,
+    },
   });
 });
 
@@ -167,12 +177,38 @@ test("Deep opts into pivots and budgets tool runs for them; other presets never 
   assert.equal(app.presetSettings("deep", []).pivots, 3);
   assert.equal(app.presetSettings("standard", []).pivots, 0);
   assert.equal(app.presetSettings("quick", []).pivots, 0);
-  const base = { plan: EMAIL_PLAN, dataset: "", seeds: [], fields: [], crawl: true, topSites: null, requests: 300, seconds: 2700 };
-  const deep = app.buildInvestigationSpec({ ...base, tools: ["ghunt", "spiderfoot"], pivots: 3 });
-  // 2 root runs + up to 2 tools for each of 3 pivots.
-  assert.deepEqual(deep.limits, { requests: 300, seconds: 2700, pivots: 3, tool_runs: 8 });
-  const standard = app.buildInvestigationSpec({ ...base, tools: ["ghunt"], pivots: 0 });
-  assert.deepEqual(standard.limits, { requests: 300, seconds: 2700 });
+  const base = { plan: EMAIL_PLAN, dataset: "", seeds: [], fields: [], crawl: true, topSites: null, requests: 300, seconds: 3600 };
+  const deep = app.buildInvestigationSpec({
+    ...base,
+    tools: ["ghunt", "spiderfoot"],
+    presetKey: "deep",
+    pivots: 3,
+    toolRuns: 8,
+    followupTopSites: null,
+  });
+  assert.deepEqual(deep.limits, {
+    requests: 300,
+    seconds: 3600,
+    pivots: 3,
+    tool_runs: 8,
+    followup_top_sites: null,
+  });
+  assert.equal(deep.preset, "deep");
+  const standard = app.buildInvestigationSpec({
+    ...base,
+    tools: ["ghunt"],
+    presetKey: "standard",
+    pivots: 0,
+    toolRuns: 3,
+    followupTopSites: 500,
+  });
+  assert.deepEqual(standard.limits, {
+    requests: 300,
+    seconds: 3600,
+    pivots: 0,
+    tool_runs: 3,
+    followup_top_sites: 500,
+  });
 });
 
 function job(status, spec) {
