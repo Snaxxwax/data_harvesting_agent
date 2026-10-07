@@ -624,6 +624,14 @@ class Store:
         result["details"] = json.loads(result["details"])
         return result
 
+    def mark_backup_offhost(self, backup_id: int, at: float | None = None):
+        with self.transaction() as db:
+            if not db.execute(
+                "UPDATE backup_records SET offhost_at=? WHERE id=?",
+                (at or time.time(), backup_id),
+            ).rowcount:
+                raise KeyError(backup_id)
+
     def set_incident(self, key: str, *, active: bool, severity="warning", details=None):
         """Persist state transitions without generating duplicate incidents."""
         now = time.time()
