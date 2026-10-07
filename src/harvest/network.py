@@ -104,6 +104,10 @@ class Capture:
     headers: dict
     body: bytes
     retrieved: float
+    # Tool captures may carry a second, non-normalized structured artifact plus a
+    # credential-redacted execution envelope. HTTP fetches leave these unset.
+    native_body: bytes | None = None
+    tool_meta: dict | None = None
 
 
 # Names that must never leave through the proxy. In proxy mode the proxy resolves the

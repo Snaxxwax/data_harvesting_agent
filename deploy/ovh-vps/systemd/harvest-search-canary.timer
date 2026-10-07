@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Harvest search providers every 30 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+RandomizedDelaySec=60
+Unit=harvest-search-canary.service
+
+[Install]
+WantedBy=timers.target

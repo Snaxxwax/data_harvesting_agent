@@ -115,6 +115,36 @@ CREATE TABLE IF NOT EXISTS schedules (
  id TEXT PRIMARY KEY, spec TEXT NOT NULL, interval INTEGER NOT NULL, next_run REAL NOT NULL,
  last_job TEXT REFERENCES jobs(id), enabled INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS tool_executions (
+ id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL UNIQUE REFERENCES tasks(id),
+ job_id TEXT NOT NULL REFERENCES jobs(id), tool TEXT NOT NULL, target TEXT NOT NULL,
+ started REAL NOT NULL, finished REAL, outcome TEXT NOT NULL DEFAULT 'running',
+ settings TEXT NOT NULL, version TEXT, run_id TEXT,
+ diagnostics TEXT NOT NULL DEFAULT '{}', checks TEXT NOT NULL DEFAULT '{}',
+ capture_id INTEGER REFERENCES captures(id)
+);
+CREATE INDEX IF NOT EXISTS tool_execution_job ON tool_executions(job_id,id);
+CREATE TABLE IF NOT EXISTS tool_artifacts (
+ id INTEGER PRIMARY KEY, execution_id INTEGER NOT NULL REFERENCES tool_executions(id),
+ kind TEXT NOT NULL, body_hash TEXT NOT NULL REFERENCES blobs(hash),
+ content_type TEXT NOT NULL, created REAL NOT NULL,
+ UNIQUE(execution_id,kind)
+);
+CREATE INDEX IF NOT EXISTS tool_artifact_execution ON tool_artifacts(execution_id,id);
+CREATE TABLE IF NOT EXISTS service_heartbeats (
+ name TEXT PRIMARY KEY, at REAL NOT NULL, details TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS backup_records (
+ id INTEGER PRIMARY KEY, created REAL NOT NULL, kind TEXT NOT NULL, manifest_hash TEXT,
+ verified INTEGER NOT NULL DEFAULT 0, offhost_at REAL, details TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS backup_created ON backup_records(created DESC);
+CREATE TABLE IF NOT EXISTS incidents (
+ id INTEGER PRIMARY KEY, incident_key TEXT NOT NULL, opened REAL NOT NULL, updated REAL NOT NULL,
+ resolved REAL, severity TEXT NOT NULL, details TEXT NOT NULL,
+ UNIQUE(incident_key,resolved)
+);
+CREATE INDEX IF NOT EXISTS incident_updated ON incidents(updated DESC);
 """
 
 
@@ -448,6 +478,193 @@ class Store:
             (job, time.time(), kind, packed(details)),
         )
 
+    def start_tool_execution(self, task, *, tool: str, target: str, settings: dict, version=None):
+        """Persist the execution envelope before any external tool is started."""
+        with self.transaction() as db:
+            self.owned(db, task)
+            db.execute(
+                """INSERT INTO tool_executions(
+                    task_id,job_id,tool,target,started,outcome,settings,version
+                ) VALUES(?,?,?,?,?,'running',?,?)
+                ON CONFLICT(task_id) DO NOTHING""",
+                (task["id"], task["job_id"], tool, target, time.time(), packed(settings), version),
+            )
+
+    @staticmethod
+    def _finish_tool_execution(
+        db,
+        task_id: int,
+        *,
+        outcome: str,
+        capture_id=None,
+        run_id=None,
+        version=None,
+        diagnostics=None,
+        checks=None,
+        native_body: bytes | None = None,
+    ):
+        row = db.execute("SELECT id FROM tool_executions WHERE task_id=?", (task_id,)).fetchone()
+        if row is None:
+            return
+        execution_id = row["id"]
+        if native_body is not None:
+            body_hash = digest(native_body)
+            db.execute(
+                "INSERT OR IGNORE INTO blobs(hash,body) VALUES(?,?)", (body_hash, native_body)
+            )
+            db.execute(
+                """INSERT INTO tool_artifacts(execution_id,kind,body_hash,content_type,created)
+                VALUES(?,?,?,?,?)
+                ON CONFLICT(execution_id,kind) DO UPDATE SET
+                  body_hash=excluded.body_hash,content_type=excluded.content_type,created=excluded.created""",
+                (
+                    execution_id,
+                    "native-structured",
+                    body_hash,
+                    "application/json",
+                    time.time(),
+                ),
+            )
+        db.execute(
+            """UPDATE tool_executions SET finished=?,outcome=?,capture_id=coalesce(?,capture_id),
+            run_id=coalesce(?,run_id),version=coalesce(?,version),diagnostics=?,checks=?
+            WHERE id=?""",
+            (
+                time.time(),
+                outcome,
+                capture_id,
+                run_id,
+                version,
+                packed(diagnostics or {}),
+                packed(checks or {}),
+                execution_id,
+            ),
+        )
+
+    def tool_executions(self, job_id: str):
+        self.job(job_id)
+        with self.connection() as db:
+            rows = db.execute(
+                """SELECT e.*,
+                (SELECT count(*) FROM tool_artifacts a WHERE a.execution_id=e.id) artifacts
+                FROM tool_executions e WHERE e.job_id=? ORDER BY e.id""",
+                (job_id,),
+            ).fetchall()
+            return [
+                {
+                    **dict(r),
+                    "settings": json.loads(r["settings"]),
+                    "diagnostics": json.loads(r["diagnostics"]),
+                    "checks": json.loads(r["checks"]),
+                }
+                for r in rows
+            ]
+
+    def tool_artifact(self, execution_id: int, kind: str):
+        with self.connection() as db:
+            row = db.execute(
+                """SELECT a.*,b.body FROM tool_artifacts a JOIN blobs b ON b.hash=a.body_hash
+                WHERE a.execution_id=? AND a.kind=?""",
+                (execution_id, kind),
+            ).fetchone()
+            if row is None:
+                raise KeyError((execution_id, kind))
+            return dict(row)
+
+    def heartbeat_service(self, name: str, details=None):
+        with self.transaction() as db:
+            db.execute(
+                """INSERT INTO service_heartbeats(name,at,details) VALUES(?,?,?)
+                ON CONFLICT(name) DO UPDATE SET at=excluded.at,details=excluded.details""",
+                (name, time.time(), packed(details or {})),
+            )
+
+    def service_heartbeat(self, name: str):
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT name,at,details FROM service_heartbeats WHERE name=?", (name,)
+            ).fetchone()
+        return {**dict(row), "details": json.loads(row["details"])} if row is not None else None
+
+    def record_backup(
+        self,
+        *,
+        kind: str,
+        manifest_hash: str | None = None,
+        verified: bool = False,
+        offhost_at: float | None = None,
+        details=None,
+    ):
+        with self.transaction() as db:
+            return db.execute(
+                """INSERT INTO backup_records(created,kind,manifest_hash,verified,offhost_at,details)
+                VALUES(?,?,?,?,?,?)""",
+                (
+                    time.time(),
+                    kind,
+                    manifest_hash,
+                    int(verified),
+                    offhost_at,
+                    packed(details or {}),
+                ),
+            ).lastrowid
+
+    def latest_backup(self):
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT * FROM backup_records ORDER BY created DESC,id DESC LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["details"] = json.loads(result["details"])
+        return result
+
+    def mark_backup_offhost(self, backup_id: int, at: float | None = None):
+        with self.transaction() as db:
+            if not db.execute(
+                "UPDATE backup_records SET offhost_at=? WHERE id=?",
+                (at or time.time(), backup_id),
+            ).rowcount:
+                raise KeyError(backup_id)
+
+    def set_incident(self, key: str, *, active: bool, severity="warning", details=None):
+        """Persist state transitions without generating duplicate incidents."""
+        now = time.time()
+        with self.transaction() as db:
+            current = db.execute(
+                """SELECT * FROM incidents WHERE incident_key=? AND resolved IS NULL
+                ORDER BY id DESC LIMIT 1""",
+                (key,),
+            ).fetchone()
+            if active:
+                if current:
+                    db.execute(
+                        "UPDATE incidents SET updated=?,severity=?,details=? WHERE id=?",
+                        (now, severity, packed(details or {}), current["id"]),
+                    )
+                    return current["id"], False
+                rowid = db.execute(
+                    """INSERT INTO incidents(incident_key,opened,updated,resolved,severity,details)
+                    VALUES(?,?,?,NULL,?,?)""",
+                    (key, now, now, severity, packed(details or {})),
+                ).lastrowid
+                return rowid, True
+            if current:
+                db.execute(
+                    "UPDATE incidents SET updated=?,resolved=?,details=? WHERE id=?",
+                    (now, now, packed(details or {}), current["id"]),
+                )
+                return current["id"], True
+            return None, False
+
+    def incidents(self, limit=100):
+        with self.connection() as db:
+            rows = db.execute(
+                "SELECT * FROM incidents ORDER BY updated DESC,id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [{**dict(row), "details": json.loads(row["details"])} for row in rows]
+
     def create(
         self,
         spec: JobSpec,
@@ -550,7 +767,14 @@ class Store:
             raise LostLease("job cancelled or task lease lost")
         return row
 
-    def claim(self, job_id: str | None = None, lease_seconds: float = 120):
+    def claim(
+        self,
+        job_id: str | None = None,
+        lease_seconds: float = 120,
+        *,
+        max_active_investigations: int | None = None,
+        max_running_tools: int | None = None,
+    ):
         with self.transaction() as db:
             # BEGIN IMMEDIATE may wait for another writer. Start all claim timing only after
             # the transaction owns the write lock so lock contention cannot shorten the lease.
@@ -580,17 +804,51 @@ class Store:
                         task["id"],
                     ),
                 )
+                if task["kind"] == "tool":
+                    self._finish_tool_execution(
+                        db,
+                        task["id"],
+                        outcome="interrupted",
+                        diagnostics={"reason": "worker lease expired"},
+                    )
                 self.event(
                     db, task["job_id"], "lease_expired", {"task": task["id"], "status": status}
                 )
-            row = db.execute(
-                """SELECT t.*,j.spec,j.execution FROM tasks t JOIN jobs j ON j.id=t.job_id
+            candidates = db.execute(
+                """SELECT t.*,j.spec,j.execution,j.root_id,j.status job_status
+                FROM tasks t JOIN jobs j ON j.id=t.job_id
                 WHERE t.status='pending' AND t.ready<=? AND j.status IN ('queued','running')
                 AND (? IS NULL OR j.id=?)
                 AND NOT EXISTS(SELECT 1 FROM tasks r WHERE r.job_id=j.id AND r.status='running')
-                ORDER BY t.priority DESC,t.id LIMIT 1""",
+                ORDER BY t.priority DESC,t.id LIMIT 100""",
                 (now, job_id, job_id),
-            ).fetchone()
+            ).fetchall()
+            active_roots = {
+                r[0]
+                for r in db.execute(
+                    "SELECT DISTINCT coalesce(root_id,id) FROM jobs WHERE status='running'"
+                )
+            }
+            running_tools = db.execute(
+                "SELECT count(*) FROM tasks WHERE kind='tool' AND status='running'"
+            ).fetchone()[0]
+            row = None
+            for candidate in candidates:
+                root = candidate["root_id"] or candidate["job_id"]
+                if (
+                    max_active_investigations is not None
+                    and root not in active_roots
+                    and len(active_roots) >= max_active_investigations
+                ):
+                    continue
+                if (
+                    candidate["kind"] == "tool"
+                    and max_running_tools is not None
+                    and running_tools >= max_running_tools
+                ):
+                    continue
+                row = candidate
+                break
             if row is None:
                 return None
             token = uuid.uuid4().hex
@@ -695,6 +953,13 @@ class Store:
                 "failed" if failed else "deferred",
                 {"task": task["id"], "reason": str(error)[:1000], "delay": delay},
             )
+            if task["kind"] == "tool":
+                self._finish_tool_execution(
+                    db,
+                    task["id"],
+                    outcome="failed" if failed else "interrupted",
+                    diagnostics={"reason": str(error)[:1000]},
+                )
 
     def fail(self, task, error, status="failed"):
         with self.transaction() as db:
@@ -706,6 +971,13 @@ class Store:
             self.event(
                 db, task["job_id"], status, {"task": task["id"], "reason": str(error)[:1000]}
             )
+            if task["kind"] == "tool":
+                self._finish_tool_execution(
+                    db,
+                    task["id"],
+                    outcome="cancelled" if status == "cancelled" else "failed",
+                    diagnostics={"reason": str(error)[:1000]},
+                )
 
     def finish(
         self,
@@ -924,6 +1196,19 @@ class Store:
             if batch is not None and not batch.done:
                 # Keep the same lease and parser iterator. A crash reclaims this task at its cursor.
                 return capture_id
+            if task["kind"] == "tool" and response is not None:
+                meta = getattr(response, "tool_meta", None) or {}
+                self._finish_tool_execution(
+                    db,
+                    task["id"],
+                    outcome="partial" if meta.get("partial") else "complete",
+                    capture_id=capture_id,
+                    run_id=meta.get("run_id"),
+                    version=meta.get("version"),
+                    diagnostics=meta.get("diagnostics"),
+                    checks=meta.get("checks"),
+                    native_body=getattr(response, "native_body", None),
+                )
             db.execute(
                 "UPDATE tasks SET status='done',token=NULL,lease_until=NULL,error=NULL WHERE id=?",
                 (task["id"],),
@@ -975,6 +1260,12 @@ class Store:
                 db.execute(
                     "UPDATE jobs SET status=?,finished=?,reason=? WHERE id=?",
                     (status, time.time(), why, job),
+                )
+                db.execute(
+                    """UPDATE tool_executions SET finished=coalesce(finished,?),outcome=
+                    CASE WHEN outcome='running' THEN ? ELSE outcome END
+                    WHERE job_id=?""",
+                    (time.time(), "cancelled" if status == "cancelled" else "interrupted", job),
                 )
                 self.event(db, job, status, {"reason": why})
 
@@ -1542,6 +1833,43 @@ class Store:
                 f"{search['accepted_leads']} lead(s) accepted from {search['results']} "
                 "result(s), so missing web leads are not evidence of absence"
             )
+        tool_execution_rows = [execution for jid in jobs for execution in self.tool_executions(jid)]
+        with self.connection() as db:
+            tool_task_count = db.execute(
+                f"SELECT count(*) FROM tasks WHERE kind='tool' AND job_id IN ({marks})",
+                jobs,
+            ).fetchone()[0]
+        legacy_tool_runs = max(0, tool_task_count - len(tool_execution_rows))
+        tool_coverage = {
+            "executions": len(tool_execution_rows),
+            "legacy_unknown": legacy_tool_runs,
+            "outcomes": {},
+            "checks": {
+                "found": 0,
+                "absent": 0,
+                "blocked": 0,
+                "errored": 0,
+                "unsupported": 0,
+                "skipped": 0,
+                "unfinished": 0,
+            },
+        }
+        for execution in tool_execution_rows:
+            outcome = execution["outcome"]
+            tool_coverage["outcomes"][outcome] = tool_coverage["outcomes"].get(outcome, 0) + 1
+            for name in tool_coverage["checks"]:
+                tool_coverage["checks"][name] += int(execution["checks"].get(name, 0) or 0)
+            coverage = execution["diagnostics"].get("coverage")
+            if coverage in {"unknown", "partial"}:
+                unknowns.append(
+                    f"{execution['tool']} execution {execution['id']} has {coverage} native "
+                    "check coverage; a finished process is not evidence every source was checked"
+                )
+        if legacy_tool_runs:
+            unknowns.append(
+                f"{legacy_tool_runs} legacy tool run(s) predate execution diagnostics; "
+                "their acquisition coverage is unknown"
+            )
         limits = job["spec"]["limits"]
         tool_runs = job["investigation"]["enforced"]["tool_runs"]
         return {
@@ -1557,6 +1885,7 @@ class Store:
             "verified_pages": sum(a["page_check"] == "profile_evidence" for a in accounts),
             "pivots": pivot_rows,
             "search": search,
+            "tool_coverage": tool_coverage,
             "unknowns": unknowns,
         }
 

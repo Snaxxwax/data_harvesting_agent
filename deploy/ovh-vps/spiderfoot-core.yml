@@ -14,15 +14,10 @@ services:
   api:
     ports:
       - "100.118.181.47:8001:8001"
-    # NOT attached to harvest-egress here on purpose. Harvest's proxy-only mode
-    # confines its worker to that internal network and needs sf-api reachable on
-    # it, but declaring it `external` here would make SpiderFoot refuse to start
-    # whenever the network is absent -- trading a working core service for an
-    # optional feature. Attach it at proxy-enable time instead:
-    #   docker network connect harvest-egress sf-api
-    # The attachment survives restarts but not a container recreate, so redo it
-    # after rebuilding sf-api. See /opt/harvest/DEPLOYMENT.md.
-    networks: [default, osint-net]
+    # Production Harvest always uses the shared egress network, declared below as
+    # external. Compose owns the attachment so recreating sf-api cannot silently drop
+    # the worker-to-API path.
+    networks: [default, osint-net, harvest-egress]
     environment:
       # core.yml does not pass this through. Without it the API key manager
       # generates a RANDOM HMAC secret per process and cannot persist it (the
@@ -65,7 +60,7 @@ services:
     # socket.connect(('1.1.1.1', 443)) succeeded). Now HTTP leaves via the relay, DNS via
     # sf-dns, and nothing else leaves at all; verify-deployment.sh lists each allowlisted
     # module's transports and fails on one that needs anything else.
-    networks: !override [sf-backend, sf-dns]
+    networks: !override [sf-backend, sf-dns, harvest-egress]
     dns: [172.31.253.2]
     # THIS is what actually proxies SpiderFoot's scans. Its modules use `requests`, which
     # honours HTTP(S)_PROXY, and measured from inside this container the exit IP becomes the
@@ -143,6 +138,9 @@ services:
 
 networks:
   osint-net:
+    external: true
+  harvest-egress:
+    name: harvest-egress
     external: true
   sf-dns:
     name: sf-dns
