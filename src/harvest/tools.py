@@ -763,7 +763,7 @@ def _spiderfoot_empty_profile(data) -> bool:
     if not isinstance(data, str) or "{" not in data:
         return False
     try:
-        obj = json.loads(data[data.index("{"):])
+        obj = json.loads(data[data.index("{") :])
     except ValueError:
         return False
     return isinstance(obj, dict) and not any(v for k, v in obj.items() if k != "username")
