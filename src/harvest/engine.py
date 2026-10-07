@@ -294,6 +294,39 @@ class Engine:
         }
 
         cap = __import__("harvest.capabilities", fromlist=["readiness"]).readiness(self.settings)
+        worker_tools = checks["worker"]["details"].get("tools", {})
+        for name in sorted(self.settings.tools):
+            entry = cap.get(name)
+            if entry is None or not entry["ready"]:
+                continue
+            runtime = worker_tools.get(name, {})
+            if name in {"maigret", "ghunt"}:
+                if not runtime.get("binary"):
+                    entry["ready"] = False
+                    entry["detail"] = f"{name} binary is unavailable in the worker image"
+                elif name == "ghunt" and not runtime.get("credentials"):
+                    entry["ready"] = False
+                    entry["detail"] = "GHunt credential is unavailable in the worker"
+            elif name == "spiderfoot" and self.settings.spiderfoot_url:
+                try:
+                    response = httpx.get(
+                        self.settings.spiderfoot_url.rstrip("/") + "/api/v1/scans",
+                        params={"page": 1, "page_size": 1},
+                        headers={"X-API-Key": self.settings.spiderfoot_api_key},
+                        timeout=5.0,
+                        trust_env=False,
+                    )
+                    if response.status_code in (401, 403):
+                        entry["ready"] = False
+                        entry["detail"] = "SpiderFoot rejected its configured API credential"
+                    else:
+                        response.raise_for_status()
+                except httpx.HTTPError as exc:
+                    entry["ready"] = False
+                    entry["detail"] = (
+                        "authenticated SpiderFoot connectivity failed: "
+                        + type(exc).__name__
+                    )
         checks["capabilities"] = {
             "ok": all(
                 entry["ready"]
