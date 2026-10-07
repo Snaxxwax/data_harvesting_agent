@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Harvest readiness every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Unit=harvest-readiness.service
+
+[Install]
+WantedBy=timers.target
