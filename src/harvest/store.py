@@ -584,11 +584,7 @@ class Store:
             row = db.execute(
                 "SELECT name,at,details FROM service_heartbeats WHERE name=?", (name,)
             ).fetchone()
-        return (
-            {**dict(row), "details": json.loads(row["details"])}
-            if row is not None
-            else None
-        )
+        return {**dict(row), "details": json.loads(row["details"])} if row is not None else None
 
     def record_backup(
         self,
@@ -667,10 +663,7 @@ class Store:
             rows = db.execute(
                 "SELECT * FROM incidents ORDER BY updated DESC,id DESC LIMIT ?", (limit,)
             ).fetchall()
-        return [
-            {**dict(row), "details": json.loads(row["details"])}
-            for row in rows
-        ]
+        return [{**dict(row), "details": json.loads(row["details"])} for row in rows]
 
     def create(
         self,
