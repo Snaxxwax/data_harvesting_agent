@@ -254,3 +254,47 @@ def test_pivots_are_off_by_default_bounded_and_refused_past_the_budget(engine, s
     assert skipped[0]["value"] == "exalt" and "tool_runs" in skipped[0]["reason"]
     assert [e["details"]["kind"] for e in events if e["type"] == "pivot"] == ["person"]
     assert tight["status"] == "completed"
+
+
+def test_json_api_captures_only_expand_through_links_carrying_the_identifier(
+    engine, source, monkeypatch
+):
+    # GitHub's API is extracted in batches, so it never gets a page check; its links used to
+    # be followed wholesale, into received_events and other users' repositories.
+    base = source["base"]
+    api = {
+        "login": "exampleuser",
+        "repos_url": f"{base}/api/users/exampleuser/repos",
+        "received_events_url": f"{base}/api/user/123/received_events",
+        "starred": f"{base}/api/repos/someoneelse/tool",
+    }
+    source["routes"] = {
+        "/api/users/exampleuser": (json.dumps(api), "application/json"),
+        "/api/users/exampleuser/repos": ("[]", "application/json"),
+        "/api/user/123/received_events": ("[]", "application/json"),
+        "/api/repos/someoneelse/tool": ("{}", "application/json"),
+    }
+    source["robots"] = "User-agent: *\nAllow: /\n"
+    engine.settings.tools = frozenset({"maigret"})
+    report = {
+        "Code": {
+            "url_user": f"{base}/api/users/exampleuser",
+            "http_status": 200,
+            "status": {"status": "Claimed"},
+            "site": {"name": "Code", "checkType": "message"},
+        }
+    }
+    _maigret_report(monkeypatch, report)
+    spec = JobSpec.model_validate(
+        {
+            "objective": "Investigate exampleuser",
+            "allowed_domains": ["127.0.0.1"],
+            "tools": [{"name": "maigret", "target": "exampleuser"}],
+            "limits": {"domain_delay": 0.1, "depth": 3},
+        }
+    )
+    engine.run(engine.submit(spec))
+    paths = [r.split("?")[0] for r in source["requests"] if not r.startswith("/robots.txt")]
+    assert "/api/users/exampleuser" in paths and "/api/users/exampleuser/repos" in paths
+    assert "/api/user/123/received_events" not in paths
+    assert "/api/repos/someoneelse/tool" not in paths
