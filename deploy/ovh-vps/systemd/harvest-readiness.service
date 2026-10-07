@@ -1,0 +1,9 @@
+[Unit]
+Description=Record Harvest readiness transitions
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/harvest/app
+ExecStart=/bin/sh -c 'rc=0; docker compose exec -T api harvest readiness >/dev/null || rc=$?; [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]'
