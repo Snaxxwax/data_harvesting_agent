@@ -1,0 +1,88 @@
+TAP version 13
+# Subtest: formatApiErrorDetail passes through a plain string detail unchanged
+ok 1 - formatApiErrorDetail passes through a plain string detail unchanged
+  ---
+  duration_ms: 1.112991
+  type: 'test'
+  ...
+# Subtest: formatApiErrorDetail renders a FastAPI validation-error array as readable text
+ok 2 - formatApiErrorDetail renders a FastAPI validation-error array as readable text
+  ---
+  duration_ms: 1.384954
+  type: 'test'
+  ...
+# Subtest: api() surfaces a FastAPI array-shaped 422 detail as readable text, never [object Object]
+ok 3 - api() surfaces a FastAPI array-shaped 422 detail as readable text, never [object Object]
+  ---
+  duration_ms: 308.224133
+  type: 'test'
+  ...
+# Subtest: api() still surfaces a plain string 422 detail unchanged
+ok 4 - api() still surfaces a plain string 422 detail unchanged
+  ---
+  duration_ms: 90.487283
+  type: 'test'
+  ...
+# Subtest: canCreateInvestigationJob disables creation for a seedless plan when search is not configured
+ok 5 - canCreateInvestigationJob disables creation for a seedless plan when search is not configured
+  ---
+  duration_ms: 0.859996
+  type: 'test'
+  ...
+# Subtest: canCreateInvestigationJob allows creation once a valid seed is present, even without search
+ok 6 - canCreateInvestigationJob allows creation once a valid seed is present, even without search
+  ---
+  duration_ms: 0.396176
+  type: 'test'
+  ...
+# Subtest: canCreateInvestigationJob allows seedless creation when search is configured
+ok 7 - canCreateInvestigationJob allows seedless creation when search is configured
+  ---
+  duration_ms: 0.301894
+  type: 'test'
+  ...
+# Subtest: canCreateInvestigationJob allows direct seeds even when search is configured
+ok 8 - canCreateInvestigationJob allows direct seeds even when search is configured
+  ---
+  duration_ms: 0.260758
+  type: 'test'
+  ...
+# Subtest: modelCapabilityState disables the checkbox and shows a hint when model is not configured
+ok 9 - modelCapabilityState disables the checkbox and shows a hint when model is not configured
+  ---
+  duration_ms: 0.929856
+  type: 'test'
+  ...
+# Subtest: modelCapabilityState enables the checkbox and hides the hint when model is configured
+ok 10 - modelCapabilityState enables the checkbox and hides the hint when model is configured
+  ---
+  duration_ms: 0.205246
+  type: 'test'
+  ...
+# Subtest: canCreateInvestigationJob allows a seedless plan when a tool is selected
+ok 11 - canCreateInvestigationJob allows a seedless plan when a tool is selected
+  ---
+  duration_ms: 0.088092
+  type: 'test'
+  ...
+# Subtest: canCreateInvestigationJob still blocks a seedless plan with no tool selected
+ok 12 - canCreateInvestigationJob still blocks a seedless plan with no tool selected
+  ---
+  duration_ms: 0.043425
+  type: 'test'
+  ...
+# Subtest: formatApiErrorDetail turns a structured refusal into its reason and suggestion
+ok 13 - formatApiErrorDetail turns a structured refusal into its reason and suggestion
+  ---
+  duration_ms: 0.035445
+  type: 'test'
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 502.008444

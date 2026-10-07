@@ -1,0 +1,7 @@
+[Unit]
+Description=Pull and verify Harvest encrypted backups over Tailscale
+[Service]
+Type=oneshot
+UMask=0077
+WorkingDirectory=/home/pop/data_harvesting_agent
+ExecStart=/home/pop/data_harvesting_agent/.venv/bin/python scripts/backup_workstation.py

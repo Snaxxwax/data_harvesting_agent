@@ -1,0 +1,5 @@
+{
+  "quick": {"label":"Quick","requests":30,"seconds":300,"crawl":false,"tools":["ghunt","maigret"],"topSites":100,"pivots":0,"tool_runs":3},
+  "standard": {"label":"Standard","requests":100,"seconds":900,"crawl":true,"tools":["ghunt","maigret","spiderfoot"],"topSites":500,"pivots":0,"tool_runs":3},
+  "deep": {"label":"Thorough","requests":300,"seconds":3600,"crawl":true,"tools":["ghunt","maigret","spiderfoot"],"topSites":null,"pivots":3,"tool_runs":8}
+}

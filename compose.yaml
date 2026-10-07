@@ -6,7 +6,8 @@ x-common: &common
       # Space-separated pinned specs, e.g. HARVEST_TOOL_PACKAGES="maigret==0.6.6" before
       # `docker compose build`. Empty installs no external CLI, matching HARVEST_TOOLS.
       HARVEST_TOOL_PACKAGES: ${HARVEST_TOOL_PACKAGES:-}
-  image: harvest-platform:local
+      HARVEST_BUILD_REVISION: ${HARVEST_BUILD_REVISION:-development}
+  image: ${HARVEST_IMAGE:-harvest-platform:local}
   restart: unless-stopped
   init: true
   env_file:
@@ -49,5 +50,8 @@ services:
     <<: *common
     command: ["harvest", "worker"]
     stop_grace_period: 90s
+  monitor:
+    <<: *common
+    command: ["python", "-m", "harvest.operations"]
 volumes:
   harvest-data:

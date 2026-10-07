@@ -75,8 +75,8 @@ test("Deep widens breadth without unbounded budgets", () => {
   assert.ok(deep.requests <= 1000 && deep.seconds <= 3600);
 });
 
-test("unknown preset falls back to Standard", () => {
-  assert.deepEqual(app.presetSettings("bogus", ["ghunt"]), app.presetSettings("standard", ["ghunt"]));
+test("unknown preset falls back to Thorough", () => {
+  assert.deepEqual(app.presetSettings("bogus", ["ghunt"]), app.presetSettings("deep", ["ghunt"]));
 });
 
 test("proxy usage follows budgets and tool breadth", () => {
@@ -167,12 +167,12 @@ test("Deep opts into pivots and budgets tool runs for them; other presets never 
   assert.equal(app.presetSettings("deep", []).pivots, 3);
   assert.equal(app.presetSettings("standard", []).pivots, 0);
   assert.equal(app.presetSettings("quick", []).pivots, 0);
-  const base = { plan: EMAIL_PLAN, dataset: "", seeds: [], fields: [], crawl: true, topSites: null, requests: 300, seconds: 2700 };
+  const base = { plan: EMAIL_PLAN, dataset: "", seeds: [], fields: [], crawl: true, topSites: null, requests: 300, seconds: 3600 };
   const deep = app.buildInvestigationSpec({ ...base, tools: ["ghunt", "spiderfoot"], pivots: 3 });
   // 2 root runs + up to 2 tools for each of 3 pivots.
-  assert.deepEqual(deep.limits, { requests: 300, seconds: 2700, pivots: 3, tool_runs: 8 });
+  assert.deepEqual(deep.limits, { requests: 300, seconds: 3600, pivots: 3, tool_runs: 8, followup_top_sites: null });
   const standard = app.buildInvestigationSpec({ ...base, tools: ["ghunt"], pivots: 0 });
-  assert.deepEqual(standard.limits, { requests: 300, seconds: 2700 });
+  assert.deepEqual(standard.limits, { requests: 300, seconds: 3600 });
 });
 
 function job(status, spec) {

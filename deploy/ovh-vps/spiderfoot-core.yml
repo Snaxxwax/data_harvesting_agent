@@ -9,21 +9,20 @@ services:
   # Published on the Tailscale address only. Docker's DOCKER-USER iptables rules
   # bypass ufw, so the interface-bound publish is the real access control.
   frontend:
+    image: ${SF_FRONTEND_IMAGE:?Set SF_FRONTEND_IMAGE to the existing tested image identity}
     ports: !override
       - "100.118.181.47:3000:80"
   api:
+    image: ${SF_API_IMAGE:?Set SF_API_IMAGE to the tested release image identity}
     ports:
       - "100.118.181.47:8001:8001"
-    # NOT attached to harvest-egress here on purpose. Harvest's proxy-only mode
-    # confines its worker to that internal network and needs sf-api reachable on
-    # it, but declaring it `external` here would make SpiderFoot refuse to start
-    # whenever the network is absent -- trading a working core service for an
-    # optional feature. Attach it at proxy-enable time instead:
-    #   docker network connect harvest-egress sf-api
-    # The attachment survives restarts but not a container recreate, so redo it
-    # after rebuilding sf-api. See /opt/harvest/DEPLOYMENT.md.
-    networks: [default, osint-net]
+    networks: [default, osint-net, harvest-egress]
     environment:
+      SF_MINIO_ENABLED: "false"
+      SF_QDRANT_ENABLED: "false"
+      SF_VECTOR_ENABLED: "false"
+      SF_VECTOR_CORRELATION_ENABLED: "false"
+      SF_VECTOR_AUTO_INDEX: "false"
       # core.yml does not pass this through. Without it the API key manager
       # generates a RANDOM HMAC secret per process and cannot persist it (the
       # filesystem is read-only), so a minted key dies on restart and the two
@@ -58,14 +57,15 @@ services:
   # (exit 69 in both cases) -- so it still reports unhealthy for the real
   # failures, which is the point of keeping a probe at all.
   celery-worker:
+    image: ${SF_SCANNER_IMAGE:?Set SF_SCANNER_IMAGE to the tested release image identity}
     # Confined: sf-backend (postgres/redis, internal) and sf-dns (internal) only, plus
-    # harvest-egress attached at enable time. core.yml also put it on sf-frontend, a normal
+    # harvest-egress declared here. core.yml also put it on sf-frontend, a normal
     # bridge, which let any code path that ignores HTTP(S)_PROXY -- a raw socket, a library
     # with trust_env off -- connect straight out from this VPS (measured 2026-10-06:
     # socket.connect(('1.1.1.1', 443)) succeeded). Now HTTP leaves via the relay, DNS via
     # sf-dns, and nothing else leaves at all; verify-deployment.sh lists each allowlisted
     # module's transports and fails on one that needs anything else.
-    networks: !override [sf-backend, sf-dns]
+    networks: !override [sf-backend, sf-dns, harvest-egress]
     dns: [172.31.253.2]
     # THIS is what actually proxies SpiderFoot's scans. Its modules use `requests`, which
     # honours HTTP(S)_PROXY, and measured from inside this container the exit IP becomes the
@@ -83,11 +83,12 @@ services:
     # spiderfoot run since proxy mode was enabled) and reads HARVEST_SPIDERFOOT_EGRESS
     # instead, which declares exactly this block. verify-deployment.sh checks it for real.
     #
-    # Requires `docker network connect harvest-egress sf-celery-worker`, as sf-api does --
-    # without it `egress-relay` does not resolve and every module request fails. That is
-    # fail-closed and deliberate: for an attribution-control tool, no scan beats a scan that
-    # silently leaves from this host. The attachment survives a restart, not a recreate.
     environment:
+      SF_MINIO_ENABLED: "false"
+      SF_QDRANT_ENABLED: "false"
+      SF_VECTOR_ENABLED: "false"
+      SF_VECTOR_CORRELATION_ENABLED: "false"
+      SF_VECTOR_AUTO_INDEX: "false"
       HTTP_PROXY: http://egress-relay:8888
       HTTPS_PROXY: http://egress-relay:8888
       # Internal service traffic must NOT go through the relay: the relay has a blanket
@@ -133,15 +134,19 @@ services:
   # core.yml leaves these unbounded, so on a shared host they would inherit all
   # 11 GiB. Capped well above observed steady state (postgres ~65M, redis ~5M).
   postgres:
+    image: postgres@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81
     deploy:
       resources:
         limits: {cpus: "1.0", memory: 768M}
   redis:
+    image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     deploy:
       resources:
         limits: {cpus: "0.5", memory: 256M}
 
 networks:
+  harvest-egress:
+    external: true
   osint-net:
     external: true
   sf-dns:

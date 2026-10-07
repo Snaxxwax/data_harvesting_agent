@@ -1,0 +1,70 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-9.1.1, pluggy-1.6.0 -- /home/pop/data_harvesting_agent/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/pop/data_harvesting_agent
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collecting ... collected 1 item
+
+tests/test_readiness.py::test_artifact_download_requires_auth_and_job_membership Timeout (0:00:30)!
+Thread 0x000074ce07cfe640 (most recent call first):
+  File "/home/pop/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/selectors.py", line 468 in select
+  File "/home/pop/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 1961 in _run_once
+  File "/home/pop/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 645 in run_forever
+  File "/home/pop/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 678 in run_until_complete
+  File "/home/pop/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py", line 118 in run
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 2548 in run
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/anyio/_core/_eventloop.py", line 83 in run
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/anyio/from_thread.py", line 538 in run_blocking_portal
+  File "/home/pop/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1012 in run
+  File "/home/pop/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1075 in _bootstrap_inner
+  File "/home/pop/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1032 in _bootstrap
+
+Thread 0x000074ce0bff2740 (most recent call first):
+  File "/home/pop/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 355 in wait
+  File "/home/pop/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 451 in result
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 2780 in run_sync_from_thread
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/anyio/from_thread.py", line 119 in run_sync
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/anyio/from_thread.py", line 303 in _spawn_task_from_thread
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/anyio/from_thread.py", line 384 in start_task_soon
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/anyio/from_thread.py", line 340 in call
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/starlette/testclient.py", line 350 in handle_request
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/httpx2/_client.py", line 1076 in _send_single_request
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/httpx2/_client.py", line 1043 in _send_handling_redirects
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/httpx2/_client.py", line 1008 in _send_handling_auth
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/httpx2/_client.py", line 980 in send
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/httpx2/_client.py", line 797 in request
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/starlette/testclient.py", line 455 in request
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/httpx2/_client.py", line 1113 in get
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/starlette/testclient.py", line 483 in get
+  File "/home/pop/data_harvesting_agent/tests/test_readiness.py", line 189 in test_artifact_download_requires_auth_and_job_membership
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/python.py", line 167 in pytest_pyfunc_call
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/python.py", line 1707 in runtest
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/runner.py", line 184 in pytest_runtest_call
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/runner.py", line 250 in <lambda>
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/runner.py", line 361 in from_call
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/runner.py", line 249 in call_and_report
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/runner.py", line 139 in runtestprotocol
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/runner.py", line 118 in pytest_runtest_protocol
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/main.py", line 408 in pytest_runtestloop
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/main.py", line 384 in _main
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/main.py", line 330 in wrap_session
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/main.py", line 377 in pytest_cmdline_main
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_callers.py", line 121 in _multicall
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_manager.py", line 120 in _hookexec
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/pluggy/_hooks.py", line 512 in __call__
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/config/__init__.py", line 229 in _main
+  File "/home/pop/data_harvesting_agent/.venv/lib/python3.12/site-packages/_pytest/config/__init__.py", line 253 in _console_main
+  File "/home/pop/data_harvesting_agent/.venv/bin/pytest", line 10 in <module>

@@ -1,0 +1,37 @@
+{
+  "tested_at": 1791370410.0218492,
+  "route": "deployed SearXNG \u2192 required egress relay \u2192 existing proxy",
+  "providers": [
+    {
+      "engine": "bing",
+      "returned": 10,
+      "relevant": 0,
+      "failures": [],
+      "sources": []
+    },
+    {
+      "engine": "brave",
+      "returned": 0,
+      "relevant": 0,
+      "failures": [
+        [
+          "brave",
+          "too many requests"
+        ]
+      ],
+      "sources": []
+    },
+    {
+      "engine": "duckduckgo",
+      "returned": 10,
+      "relevant": 8,
+      "failures": [],
+      "sources": [
+        "https://www.iana.org/domains/reserved",
+        "https://www.iana.org/help/example-domains",
+        "https://www.iana.org/help/example-domains?1219"
+      ]
+    }
+  ],
+  "passed": true
+}

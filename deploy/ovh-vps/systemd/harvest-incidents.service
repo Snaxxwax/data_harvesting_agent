@@ -1,0 +1,6 @@
+[Unit]
+Description=Harvest incident desktop notifications
+[Service]
+Type=oneshot
+WorkingDirectory=/home/pop/data_harvesting_agent
+ExecStart=/home/pop/data_harvesting_agent/.venv/bin/python scripts/notify_incidents.py

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import signal
 import sys
 import threading
@@ -153,6 +154,19 @@ def main():
         stop = threading.Event()
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, lambda *_: stop.set())
+
+        def maintenance():
+            from .operations import state
+
+            while not stop.is_set():
+                try:
+                    state(engine.store, "worker_heartbeat", {"pid": os.getpid()})
+                    engine.recover_external_scans()
+                except Exception:
+                    pass
+                stop.wait(15)
+
+        threading.Thread(target=maintenance, daemon=True).start()
         if args.once or engine.settings.worker_threads == 1:
             engine.worker(stop, args.once)
         else:

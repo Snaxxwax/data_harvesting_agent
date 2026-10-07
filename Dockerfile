@@ -1,9 +1,12 @@
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HARVEST_DB=/data/harvest.sqlite
 RUN pip install --no-cache-dir uv==0.12.11
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
+COPY deploy/tool-hooks /opt/harvest-hooks
+ARG HARVEST_BUILD_REVISION=development
+ENV HARVEST_BUILD_REVISION=$HARVEST_BUILD_REVISION
 RUN uv sync --frozen --no-dev --no-editable && \
     groupadd --gid 10001 harvest && useradd --uid 10001 --gid 10001 --no-create-home harvest && \
     mkdir /data && chown harvest:harvest /data && \
@@ -19,7 +22,7 @@ ARG HARVEST_TOOL_PACKAGES=""
 RUN if [ -n "$HARVEST_TOOL_PACKAGES" ]; then \
         for spec in $HARVEST_TOOL_PACKAGES; do \
             UV_TOOL_DIR=/opt/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin \
-                uv tool install --no-cache "$spec"; \
+                uv tool install --no-cache --constraints "/opt/harvest-hooks/${spec%%==*}-constraints.txt" "$spec"; \
         done && \
         chmod -R a+rX /opt/uv-tools /usr/local/bin; \
     fi
@@ -69,6 +72,16 @@ RUN set -e; \
             && { echo "ghunt maps-json patch did not apply"; exit 1; }; \
         python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$E"; \
     fi
+# Structured, version-guarded checkpoints inside the isolated tool interpreters.
+RUN set -e; for tool in maigret ghunt; do \
+      interpreter="/opt/uv-tools/$tool/bin/python"; \
+      if [ -x "$interpreter" ]; then \
+        package=$($interpreter -c "import $tool, pathlib; print(pathlib.Path($tool.__file__).parent)"); \
+        cp /opt/harvest-hooks/harvest_native.py "$(dirname "$package")/harvest_native.py"; \
+        case "$tool" in maigret) version=0.6.6 ;; ghunt) version=2.3.4 ;; esac; \
+        "$interpreter" /opt/harvest-hooks/patch_tools.py "$package" "$tool" "$version"; \
+      fi; \
+    done; python /opt/harvest-hooks/manifest.py
 # The service user has no home directory and the container filesystem is read-only, so
 # HOME must point at writable scratch: maigret creates MAIGRET_HOME on startup and aborts
 # with EROFS otherwise. Compose mounts a tmpfs here; its contents are an expendable cache.

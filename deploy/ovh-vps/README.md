@@ -27,16 +27,16 @@ docker compose -f compose.yaml -f compose.override.yaml up -d
 
 ## Proxy-only egress
 
-`compose.egress-proxy.yaml` creates the `harvest-egress` network itself. SpiderFoot
-deliberately does **not** declare that network, so its absence can never stop sf-api
-from starting; the cost is that sf-api is attached manually when enabling the mode.
+`compose.egress-proxy.yaml` creates `harvest-egress`. The production-readiness
+SpiderFoot overlay declares it as an external network for both API and scanner.
+Create the Harvest network before starting SpiderFoot; attachments survive recreation.
 
 Set the `Upstream` line in `egress-relay/tinyproxy.conf`, then:
 
 ```sh
 docker compose -f compose.yaml -f compose.override.yaml \
                -f compose.egress-proxy.yaml up -d
-docker network connect harvest-egress sf-api   # redo after recreating sf-api
+docker compose -f /opt/harvest/spiderfoot-ng/compose.core.yml up -d
 ```
 
 The worker then joins only `harvest-egress`, which has no gateway, so it has no
@@ -47,3 +47,5 @@ egress turns out to work.
 
 See `/opt/harvest/DEPLOYMENT.md` for which traffic paths this does and does not
 cover — notably DNS, which an HTTP proxy cannot carry.
+
+Production-readiness release procedure and gates: [runbook](../../docs/releases/production-readiness.md).

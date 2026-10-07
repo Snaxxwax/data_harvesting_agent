@@ -83,6 +83,7 @@ class Limits(StrictModel):
     # discovery from authorizing anything; setting it is the operator authorizing that many
     # one-hop pivots. Each pivot's tool runs still count against tool_runs above.
     pivots: int = Field(default=0, ge=0, le=20)
+    followup_top_sites: int | None = Field(default=500, ge=1, le=100000)
 
 
 MAX_DISCOVERY_QUERIES = 5

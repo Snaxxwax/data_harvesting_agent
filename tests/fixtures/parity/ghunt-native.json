@@ -1,0 +1,68 @@
+{
+  "PROFILE_CONTAINER": {
+    "profile": {
+      "personId": "100000000000000001",
+      "sourceIds": {
+        "PROFILE": {
+          "lastUpdated": "2026/10/06 17:06:30 (UTC)"
+        }
+      },
+      "emails": {
+        "PROFILE": {
+          "value": "audit.person@example.test"
+        }
+      },
+      "names": {},
+      "profileInfos": {
+        "PROFILE": {
+          "userTypes": [
+            "GOOGLE_USER"
+          ]
+        }
+      },
+      "profilePhotos": {
+        "PROFILE": {
+          "url": "https://example.test/url",
+          "isDefault": false,
+          "flathash": "ffffc3c3e7c38181"
+        }
+      },
+      "coverPhotos": {
+        "PROFILE": {
+          "url": "https://example.test/url",
+          "isDefault": true,
+          "flathash": null
+        }
+      },
+      "inAppReachability": {
+        "PROFILE": {
+          "apps": [
+            "Youtube",
+            "Photos",
+            "Kaboo",
+            "Maps"
+          ]
+        }
+      },
+      "extendedData": {
+        "dynamiteData": {
+          "presence": "UNKNOWN",
+          "entityType": "PERSON",
+          "dndState": "AVAILABLE",
+          "customerId": ""
+        },
+        "gplusData": {
+          "contentRestriction": "",
+          "isEntrepriseUser": false
+        }
+      }
+    },
+    "play_games": null,
+    "maps": {
+      "photos": null,
+      "reviews": null,
+      "stats": {}
+    },
+    "calendar": null
+  }
+}

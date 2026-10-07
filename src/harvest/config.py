@@ -1,4 +1,5 @@
 import os
+import re
 from dataclasses import dataclass, field
 
 
@@ -50,14 +51,24 @@ class Settings:
     # Worker threads in one `harvest worker` process. A job still runs one task at a time;
     # more threads stop one job's long tool scan from stalling every other job.
     worker_threads: int = field(
-        default_factory=lambda: max(1, int(os.getenv("HARVEST_WORKER_THREADS", "1")))
+        default_factory=lambda: max(1, int(os.getenv("HARVEST_WORKER_THREADS", "2")))
     )
-    # 600, as deployed: Maigret --all-sites through the egress relay measured 293 s, and a
-    # SpiderFoot email sweep ~254 s, so 300 left either one a few seconds from a timeout.
-    # A job's remaining wall clock still bounds every run (Engine.process).
+    # Deployment ceiling; the planner's per-tool ceiling and remaining investigation
+    # deadline further bound every invocation (Engine.process).
     tool_timeout: float = field(
-        default_factory=lambda: float(os.getenv("HARVEST_TOOL_TIMEOUT", "600"))
+        default_factory=lambda: float(os.getenv("HARVEST_TOOL_TIMEOUT", "1800"))
     )
+    active_investigations: int = 2
+    active_tools: int = 2
+    tool_timeouts: dict[str, int] = field(
+        default_factory=lambda: {"ghunt": 120, "spiderfoot": 900, "maigret": 1800}
+    )
+    spiderfoot_profiles_path: str = field(
+        default_factory=lambda: os.getenv("HARVEST_SPIDERFOOT_PROFILES", "")
+    )
+    # Isolated databases must use a different namespace when sharing a SpiderFoot API.
+    # The empty value preserves ownership of existing production scans.
+    scan_namespace: str = field(default_factory=lambda: os.getenv("HARVEST_SCAN_NAMESPACE", ""))
     # Outbound connections this deployment may hold open at once, across every tool and
     # every worker thread. The egress relay enforces it for everything that leaves
     # (tinyproxy MaxClients, from the same variable), queueing the excess instead of letting
@@ -147,6 +158,17 @@ class Settings:
     request_timeout: float = 20
 
     def __post_init__(self) -> None:
+        if self.scan_namespace and not re.fullmatch(r"[a-z0-9_]{1,40}", self.scan_namespace):
+            raise ValueError(
+                "HARVEST_SCAN_NAMESPACE must contain 1–40 lowercase letters, digits or underscores"
+            )
+        if not 1 <= self.active_investigations <= 2 or not 1 <= self.active_tools <= 2:
+            raise ValueError("at most two investigations and two executing tools are supported")
+        if set(self.tool_timeouts) != {"ghunt", "spiderfoot", "maigret"} or any(
+            v <= 0 for v in self.tool_timeouts.values()
+        ):
+            raise ValueError("positive per-tool ceilings are required")
+
         if self.egress_mode not in {"direct", "proxy"}:
             raise ValueError("HARVEST_EGRESS_MODE must be 'direct' or 'proxy'")
         if self.egress_mode == "proxy" and not self.proxy:

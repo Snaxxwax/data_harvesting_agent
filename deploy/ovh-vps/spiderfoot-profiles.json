@@ -1,0 +1,20 @@
+{
+  "EMAILADDR": [
+    "sfp_accounts",
+    "sfp_debounce",
+    "sfp_gravatar",
+    "sfp_hudsonrock",
+    "sfp_pgp",
+    "sfp_tiktok_osint",
+    "sfp_wikileaks"
+  ],
+  "USERNAME": [
+    "sfp_accounts",
+    "sfp_hudsonrock",
+    "sfp_tiktok_osint"
+  ],
+  "INTERNET_NAME": [
+    "sfp_dnsresolve",
+    "sfp_pgp"
+  ]
+}

@@ -604,7 +604,9 @@ def test_a_partial_tool_run_makes_the_job_partial(tmp_path, monkeypatch):
     def partial_run(
         name, target, settings, cancelled=None, top_sites=None, timeout=None, task_id=None
     ):
-        body = json.dumps({"tool": name, "results": [], "partial": "scan stopped after 30s"})
+        body = json.dumps(
+            {"tool": name, "results": [], "partial": "scan stopped after its 30s time allowance"}
+        )
         url = f"tool://{name}/{target}"
         return Capture(url, url, 200, {"content-type": "application/json"}, body.encode(), 0)
 

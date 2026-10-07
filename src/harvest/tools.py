@@ -15,6 +15,7 @@ default, because these binaries make their own unbudgeted network requests outsi
 
 from __future__ import annotations
 
+import contextvars
 import functools
 import json
 import logging
@@ -34,6 +35,14 @@ from .models import TOOL_TARGET_PATTERN, ActionableError, LostLease, PolicyDenie
 from .network import Capture
 
 log = logging.getLogger("harvest")
+_RECORDER = contextvars.ContextVar("tool_recorder", default=None)
+
+
+def _checkpoint():
+    recorder = _RECORDER.get()
+    if recorder:
+        recorder.drain()
+
 
 # ToolRun applies this at submit; re-checked here because tools.run is also called
 # directly. fullmatch, not match: "$" would otherwise accept a trailing newline, letting
@@ -55,6 +64,9 @@ def _tool_env(proxy: str | None, inject: bool = False) -> dict[str, str]:
         for k, v in os.environ.items()
         if k.lower() not in {"http_proxy", "https_proxy", "all_proxy", "no_proxy"}
     }
+    recorder = _RECORDER.get()
+    if recorder and recorder.path:
+        env["HARVEST_CHECKPOINT"] = str(recorder.path)
     if not proxy:
         return env
     try:
@@ -117,6 +129,7 @@ def _exec(
             start_new_session=True,
         ) as proc:
             while True:
+                _checkpoint()
                 if cancelled.is_set():
                     _stop_process(proc)
                     raise LostLease("tool task cancelled or lease lost")
@@ -137,6 +150,11 @@ def _exec(
                     stdout, _stderr = proc.communicate(timeout=min(1, remaining))
                 except subprocess.TimeoutExpired:
                     continue
+                _checkpoint()
+                if _RECORDER.get():
+                    _RECORDER.get().artifact(
+                        "diagnostic", "process", {"returncode": proc.returncode}
+                    )
                 if proc.returncode != 0:
                     # stderr can contain proxy credentials or tool cookies. Never log it.
                     log.warning("tool_failed argv0=%s rc=%s", argv[0], proc.returncode)
@@ -344,6 +362,7 @@ def _merge_subdomain_duplicates(records: list[dict]) -> list[dict]:
         best = dict(keep)
         # The merged-away hosts stay on the record as a claim: the duplicate entity is gone,
         # the evidence that maigret saw the account at those hosts is not.
+        best["related_findings"] = [r for r in group if r is not keep]
         best["related_sites"] = sorted(
             f"{r['sitename']}: {r['url']}" for r in group if r is not keep
         )
@@ -423,7 +442,7 @@ def _maigret(
     # the site list -- which is authorization-relevant, not just a volume question --
     # change under a deployment without the image changing. Pinning the database to
     # the image keeps a scan's breadth reproducible.
-    argv.append("--no-autoupdate")
+    argv.extend(["--no-autoupdate", "--no-recursion"])
     if proxy:
         argv.extend(["--proxy", proxy])
         # Maigret's activation helpers use separate ClientSession calls that do
@@ -445,6 +464,9 @@ def _maigret(
     if not report.exists():
         raise ActionableError("maigret exited cleanly but wrote no JSON report")
     data = json.loads(report.read_text(encoding="utf-8"))
+    if _RECORDER.get():
+        _RECORDER.get().artifact("native", report.name, data)
+    _checkpoint()
     if not isinstance(data, dict):
         raise ActionableError("maigret JSON report was not an object keyed by sitename")
     return _merge_subdomain_duplicates(
@@ -556,8 +578,15 @@ def _ghunt(
     if not report.exists():
         raise ActionableError("ghunt exited cleanly but wrote no JSON report")
     data = json.loads(report.read_text(encoding="utf-8"))
+    if _RECORDER.get():
+        _RECORDER.get().artifact("native", report.name, data)
+    _checkpoint()
     if not isinstance(data, dict):
         raise ActionableError("ghunt JSON report was not an object keyed by container")
+    return _ghunt_records(data, target)
+
+
+def _ghunt_records(data, target):
     records = []
     for name, container in data.items():
         if not isinstance(container, dict):
@@ -565,6 +594,8 @@ def _ghunt(
         profile = container.get("profile")
         profile = profile if isinstance(profile, dict) else {}
         person = profile.get("personId")
+        if not profile or not any(profile.values()):
+            continue
         records.append(
             {
                 "container": name,
@@ -763,7 +794,7 @@ def _spiderfoot_empty_profile(data) -> bool:
     if not isinstance(data, str) or "{" not in data:
         return False
     try:
-        obj = json.loads(data[data.index("{"):])
+        obj = json.loads(data[data.index("{") :])
     except ValueError:
         return False
     return isinstance(obj, dict) and not any(v for k, v in obj.items() if k != "username")
@@ -1004,7 +1035,18 @@ def spiderfoot_plan(target_type: str, settings) -> dict:
     meta = _sf_meta()
     keyed = getattr(settings, "spiderfoot_keyed_modules", frozenset())
     keyless_ok = {m for (m, _), outcome in _SF_TESTED.items() if outcome == "events"}
-    profile = SPIDERFOOT_PROFILES.get(target_type, ())
+    profiles = SPIDERFOOT_PROFILES
+    configured = getattr(settings, "spiderfoot_profiles_path", "")
+    if configured:
+        profiles = json.loads(Path(configured).read_text())
+        if not isinstance(profiles, dict) or any(
+            kind not in SPIDERFOOT_PROFILES
+            or not isinstance(names, list)
+            or any(not isinstance(m, str) or m not in meta for m in names)
+            for kind, names in profiles.items()
+        ):
+            raise ValueError("invalid SpiderFoot deployment profiles")
+    profile = profiles.get(target_type, ())
     excluded: dict[str, str] = {}
     usable: dict[str, dict] = {}
     for module in getattr(settings, "spiderfoot_modules", ()) or ():
@@ -1012,7 +1054,7 @@ def spiderfoot_plan(target_type: str, settings) -> dict:
         if info is None:
             excluded[module] = "unknown to this build's SpiderFoot module metadata; not sent"
         elif module not in profile:
-            excluded[module] = f"not in the {target_type} profile (tools.SPIDERFOOT_PROFILES)"
+            excluded[module] = f"not in the {target_type} profile (deployment configuration)"
         elif "apikey" in info["flags"] and module not in keyed and module not in keyless_ok:
             excluded[module] = (
                 "needs an API key not declared configured (HARVEST_SPIDERFOOT_KEYED_MODULES)"
@@ -1138,7 +1180,7 @@ def _spiderfoot(
                 "/api/v1/scans",
                 json={
                     # The owning task id lets the orphan sweep stop exactly this scan.
-                    "name": f"harvest-t{task_id}-{target}" if task_id else f"harvest-{target}",
+                    "name": _scan_prefix(settings) + (f"t{task_id}-" if task_id else "") + target,
                     "target": target,
                     "target_type": target_type,
                     "modules": modules,
@@ -1150,10 +1192,21 @@ def _spiderfoot(
             scan_id = created.json().get("id")
             if not scan_id:
                 raise ActionableError("SpiderFoot did not return a scan id")
+            recorder = _RECORDER.get()
+            if recorder:
+                recorder.external(scan_id)
+            next_checkpoint = 0.0
             created_at = time.time()
 
             while True:
+                if recorder and time.monotonic() >= next_checkpoint:
+                    _spiderfoot_snapshot(client, scan_id, target, recorder, modules)
+                    next_checkpoint = time.monotonic() + 15
                 if cancelled is not None and cancelled.is_set():
+                    _stop_spiderfoot_scan(client, scan_id)
+                    partial = "cancelled; completed events retained"
+                    if recorder:
+                        _spiderfoot_snapshot(client, scan_id, target, recorder, modules)
                     raise LostLease("spiderfoot scan cancelled or lease lost")
                 if time.time() > deadline:
                     # Out of time is not out of evidence: stop the scan (no more external
@@ -1186,29 +1239,11 @@ def _spiderfoot(
                 # Anything else terminal is a failed scan: a partial result set would
                 # present an incomplete scan as a finished one.
                 if state in {"ERROR-FAILED", "ABORTED", "ABORT-REQUESTED"}:
-                    raise ActionableError(f"spiderfoot scan ended as {state}")
+                    partial = f"spiderfoot scan ended as {state}; completed findings retained"
+                    break
                 time.sleep(2)
 
-            records: list[dict] = []
-            page = 1
-            while True:
-                got = client.get(
-                    f"/api/v1/scans/{scan_id}/events",
-                    params={"page": page, "page_size": 500},
-                )
-                got.raise_for_status()
-                payload = got.json()
-                events = payload.get("events") or []
-                records.extend(events)
-                if not payload.get("has_next") or not events:
-                    break
-                if len(records) >= _SPIDERFOOT_MAX_EVENTS:
-                    log.warning(
-                        "spiderfoot scan produced >= %d events; stopping pagination",
-                        _SPIDERFOOT_MAX_EVENTS,
-                    )
-                    break
-                page += 1
+            records = _spiderfoot_snapshot(client, scan_id, target, recorder, modules)
             finished = partial is None
             # The scan id joins this capture to SpiderFoot's own scan record, its raw events
             # and its container logs; the counts say what normalisation discarded.
@@ -1233,10 +1268,135 @@ def _spiderfoot(
                 _stop_spiderfoot_scan(client, scan_id)
 
 
+def _spiderfoot_snapshot(client, scan_id, target, recorder=None, modules=()):
+    """The deployed API returns all events as {events,total}; support old pagination too."""
+    records, page = [], 1
+    while True:
+        got = client.get(f"/api/v1/scans/{scan_id}/events", params={"page": page, "page_size": 500})
+        got.raise_for_status()
+        payload = got.json()
+        events = payload.get("events")
+        if not isinstance(events, list):
+            raise ActionableError("SpiderFoot events contract mismatch")
+        records.extend(events)
+        if recorder:
+            # Commit each completed page before requesting another; a malformed later
+            # response must not discard findings already acquired from this scan.
+            for index, event in enumerate(events):
+                if isinstance(event, dict):
+                    recorder.artifact(
+                        "native-event", str(event.get("hash") or f"{page}:{index}"), event
+                    )
+            recorder.artifact(
+                "normalized", "checkpoint", {"results": _spiderfoot_records(records, target)}
+            )
+        if not payload.get("has_next") or not events:
+            if isinstance(payload.get("total"), int) and payload["total"] > len(records):
+                raise ActionableError(
+                    "SpiderFoot event export incomplete; completed pages retained"
+                )
+            break
+        if len(records) >= _SPIDERFOOT_MAX_EVENTS:
+            raise ActionableError("SpiderFoot event pagination exceeded configured safety limit")
+        page += 1
+    if recorder:
+        recorder.artifact(
+            "normalized", "checkpoint", {"results": _spiderfoot_records(records, target)}
+        )
+        # Never persist free-form log messages: provider diagnostics can contain credentials.
+        response = client.get(f"/api/v1/scans/{scan_id}/logs", params={"limit": 10000})
+        failures = {}
+        if response.status_code == 200:
+            for row in response.json().get("logs", []):
+                message = str(row.get("message", ""))
+                if message.startswith("HARVEST_CHECK "):
+                    try:
+                        check = json.loads(message.removeprefix("HARVEST_CHECK "))
+                        from .executions import OUTCOMES
+
+                        if check.get("outcome") in OUTCOMES and isinstance(check.get("name"), str):
+                            recorder.check(
+                                check["name"][:300],
+                                check["outcome"],
+                                str(check.get("reason", ""))[:200],
+                            )
+                    except (ValueError, TypeError):
+                        recorder.check(
+                            "scanner-diagnostics", "errored", "malformed structured check"
+                        )
+                    continue
+                component = str(row.get("component", ""))
+                text = str(row.get("message", "")).lower()
+                outcome = (
+                    "blocked"
+                    if re.search("captcha|rate limit|too many requests|403|429", text)
+                    else "errored"
+                )
+                if row.get("type") in {"ERROR", "CRITICAL", "WARNING"}:
+                    failures[component] = outcome
+                    recorder.artifact(
+                        "diagnostic",
+                        str(row.get("rowid", "")),
+                        {
+                            "component": component,
+                            "level": row.get("type"),
+                            "outcome": outcome,
+                            "reason": "provider/module failure",
+                            "generated": row.get("generated"),
+                        },
+                    )
+        for module in modules:
+            if module == "sfp_accounts" and any(
+                str(r.get("message", "")).startswith("HARVEST_CHECK ")
+                for r in (response.json().get("logs", []) if response.status_code == 200 else [])
+            ):
+                continue
+            if module in failures:
+                recorder.check(module, failures[module], "native module reported a failed check")
+            else:
+                # Events prove findings, never coverage of all the module's attempted sites.
+                recorder.check(
+                    module, "unsupported", "per-check coverage unavailable in scanner contract"
+                )
+        recorder.artifact("exclusions", "native-events", spiderfoot_exclusions(records, target))
+    return records
+
+
+def spiderfoot_exclusions(events, target):
+    seen, out = set(), []
+    for index, event in enumerate(events):
+        reason = None
+        if not isinstance(event, dict):
+            reason = "malformed event"
+        else:
+            data, kind = event.get("data"), event.get("type")
+            if kind in _SF_NOISE_TYPES or not kind:
+                reason = "scan input or non-finding event"
+            elif not isinstance(data, str) or not data.strip():
+                reason = "empty response"
+            elif _spiderfoot_empty_profile(data):
+                reason = "empty profile: identifier echo only"
+            elif data.strip().casefold() == target.strip().casefold():
+                reason = "input echo"
+            elif (kind, data) in seen:
+                reason = "duplicate finding; provenance merged"
+            seen.add((kind, str(data)))
+        if reason:
+            out.append({"index": index, "reason": reason})
+    return out
+
+
 _SPIDERFOOT_TERMINAL = {"FINISHED", "ABORTED", "ERROR-FAILED", "ABORT-REQUESTED"}
 
 
-_OWNER = re.compile(r"^harvest-t(\d+)-")
+_OWNER = re.compile(r"^t(\d+)-")
+
+
+def _scan_prefix(settings):
+    namespace = getattr(settings, "scan_namespace", "")
+    # The dot also isolates audit scans from old production workers which recognize
+    # every 'harvest-' scan as theirs. Namespace is validated by Settings.
+    return f"harvest.{namespace}-" if namespace else "harvest-"
 
 
 def stop_orphaned_spiderfoot_scans(settings, live_task_ids: set[int]) -> int:
@@ -1252,30 +1412,39 @@ def stop_orphaned_spiderfoot_scans(settings, live_task_ids: set[int]) -> int:
 
     headers = {"X-API-Key": settings.spiderfoot_api_key}
     stopped = 0
-    with httpx.Client(base_url=settings.spiderfoot_url, headers=headers, timeout=30.0) as client:
-        listing = client.get(
-            "/api/v1/scans", params={"page_size": 50, "sort_by": "created", "sort_order": "desc"}
-        )
-        listing.raise_for_status()
-        for scan in listing.json().get("items") or []:
-            name, state = str(scan.get("name") or ""), str(scan.get("status") or "").upper()
-            if not name.startswith("harvest-") or state in _SPIDERFOOT_TERMINAL:
-                continue
-            owner = _OWNER.match(name)
-            if (int(owner.group(1)) in live_task_ids) if owner else bool(live_task_ids):
-                continue
-            _stop_spiderfoot_scan(client, scan.get("scan_id") or scan.get("id"))
-            stopped += 1
+    prefix, page = _scan_prefix(settings), 1
+    with httpx.Client(base_url=settings.spiderfoot_url, headers=headers, timeout=10.0) as client:
+        while True:
+            listing = client.get(
+                "/api/v1/scans",
+                params={"page": page, "page_size": 1000, "sort_by": "created", "sort_order": "asc"},
+            )
+            listing.raise_for_status()
+            payload = listing.json()
+            for scan in payload.get("items") or []:
+                name, state = str(scan.get("name") or ""), str(scan.get("status") or "").upper()
+                if not name.startswith(prefix) or state in _SPIDERFOOT_TERMINAL:
+                    continue
+                owner = _OWNER.match(name[len(prefix) :])
+                if (int(owner.group(1)) in live_task_ids) if owner else bool(live_task_ids):
+                    continue
+                stopped += int(_stop_spiderfoot_scan(client, scan.get("scan_id") or scan.get("id")))
+            if not payload.get("has_next"):
+                break
+            page += 1
     return stopped
 
 
-def _stop_spiderfoot_scan(client, scan_id) -> None:
+def _stop_spiderfoot_scan(client, scan_id) -> bool:
     import httpx
 
     try:
-        client.post(f"/api/v1/scans/{scan_id}/stop")
+        response = client.post(f"/api/v1/scans/{scan_id}/stop")
+        response.raise_for_status()
+        return True
     except httpx.HTTPError:
         log.warning("could not stop an unfinished spiderfoot scan")
+        return False
 
 
 _PIVOT_EMAIL = re.compile(r"[A-Za-z0-9_.+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
@@ -1360,7 +1529,22 @@ def run(
         if task_id is not None and name == "spiderfoot":
             kwargs["task_id"] = task_id
         timeout = settings.tool_timeout if timeout is None else min(timeout, settings.tool_timeout)
-        records = tool["run"](target, workdir, timeout, cancelled, settings, **kwargs)
+        try:
+            records = tool["run"](target, workdir, timeout, cancelled, settings, **kwargs)
+        except ActionableError:
+            recorder = _RECORDER.get()
+            if not recorder:
+                raise
+            recorder.drain()
+            records = recorder.results(name, target)
+            if not records:
+                raise
+            recorder.check("execution", "unfinished", "tool stopped before completion")
+            records = {
+                "results": records,
+                "partial": "tool stopped; completed checkpoints retained",
+            }
+
     result = {"tool": name, "target": target, "results": records}
     if isinstance(records, dict):
         # A run stopped early that still produced evidence: kept, and labelled as partial.
