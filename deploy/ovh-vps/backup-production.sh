@@ -65,7 +65,7 @@ MANIFEST_HASH="$(sha256sum "$TMP/manifest.sha256" | awk '{print $1}')"
 tar -C "$TMP" -czf - . | age -r "$AGE_RECIPIENT" -o "$OUT.tmp"
 test -s "$OUT.tmp"
 mv "$OUT.tmp" "$OUT"
-sha256sum "$OUT" > "$OUT.sha256"
+(cd "$BACKUP_DIR" && sha256sum "$(basename "$OUT")" > "$(basename "$OUT").sha256")
 
 BACKUP_ID="$(docker compose exec -T api harvest record-backup   --kind production --manifest-hash "$MANIFEST_HASH" --verified | tr -d '\r')"
 printf '%s\n' "$BACKUP_ID" > "$OUT.backup-id"
