@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import sys
 from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 PATTERN = re.compile(r"^harvest-(\d{8}T\d{6}Z)\.tar\.gz\.age$")
@@ -18,7 +18,7 @@ def main() -> None:
             items.append(
                 (
                     datetime.strptime(match.group(1), "%Y%m%dT%H%M%SZ").replace(
-                        tzinfo=timezone.utc
+                        tzinfo=UTC
                     ),
                     path,
                 )
