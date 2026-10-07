@@ -6,14 +6,13 @@ from pathlib import Path
 
 from harvest import tools
 from harvest.config import Settings
-from harvest.engine import PIVOT_TOP_SITES
 from harvest.models import JobSpec
 from harvest.store import stop_advice
 
 
 def test_safe_tool_timeout_default_matches_production(monkeypatch):
     monkeypatch.delenv("HARVEST_TOOL_TIMEOUT", raising=False)
-    assert Settings().tool_timeout == 600
+    assert Settings().tool_timeout == 1800
 
 
 def test_investigation_seconds_stop_counting_when_it_finishes(engine):
@@ -230,9 +229,9 @@ def test_pivots_enrich_discovered_identifiers_in_their_own_jobs(engine, source, 
         assert child["root_id"] == child["parent_id"] == root["id"]
     username = engine.store.job(pivots[0]["child"])["spec"]["tools"]
     assert username == [
-        {"name": "maigret", "target": "exalt", "crawl": False, "top_sites": PIVOT_TOP_SITES}
+        {"name": "maigret", "target": "exalt", "crawl": False, "top_sites": 500}
     ]
-    assert argvs[1][argvs[1].index("--top-sites") + 1] == str(PIVOT_TOP_SITES)
+    assert argvs[1][argvs[1].index("--top-sites") + 1] == "500"
     # One hop: a pivot's own discoveries (the same report) never pivot again.
     for p in pivots:
         assert not [e for e in engine.store.events(p["child"]) if e["type"] == "pivot"]
