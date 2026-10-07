@@ -131,6 +131,20 @@ CREATE TABLE IF NOT EXISTS tool_artifacts (
  UNIQUE(execution_id,kind)
 );
 CREATE INDEX IF NOT EXISTS tool_artifact_execution ON tool_artifacts(execution_id,id);
+CREATE TABLE IF NOT EXISTS service_heartbeats (
+ name TEXT PRIMARY KEY, at REAL NOT NULL, details TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS backup_records (
+ id INTEGER PRIMARY KEY, created REAL NOT NULL, kind TEXT NOT NULL, manifest_hash TEXT,
+ verified INTEGER NOT NULL DEFAULT 0, offhost_at REAL, details TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS backup_created ON backup_records(created DESC);
+CREATE TABLE IF NOT EXISTS incidents (
+ id INTEGER PRIMARY KEY, incident_key TEXT NOT NULL, opened REAL NOT NULL, updated REAL NOT NULL,
+ resolved REAL, severity TEXT NOT NULL, details TEXT NOT NULL,
+ UNIQUE(incident_key,resolved)
+);
+CREATE INDEX IF NOT EXISTS incident_updated ON incidents(updated DESC);
 """
 
 
@@ -556,6 +570,99 @@ class Store:
             if row is None:
                 raise KeyError((execution_id, kind))
             return dict(row)
+
+    def heartbeat_service(self, name: str, details=None):
+        with self.transaction() as db:
+            db.execute(
+                """INSERT INTO service_heartbeats(name,at,details) VALUES(?,?,?)
+                ON CONFLICT(name) DO UPDATE SET at=excluded.at,details=excluded.details""",
+                (name, time.time(), packed(details or {})),
+            )
+
+    def service_heartbeat(self, name: str):
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT name,at,details FROM service_heartbeats WHERE name=?", (name,)
+            ).fetchone()
+        return (
+            {**dict(row), "details": json.loads(row["details"])}
+            if row is not None
+            else None
+        )
+
+    def record_backup(
+        self,
+        *,
+        kind: str,
+        manifest_hash: str | None = None,
+        verified: bool = False,
+        offhost_at: float | None = None,
+        details=None,
+    ):
+        with self.transaction() as db:
+            return db.execute(
+                """INSERT INTO backup_records(created,kind,manifest_hash,verified,offhost_at,details)
+                VALUES(?,?,?,?,?,?)""",
+                (
+                    time.time(),
+                    kind,
+                    manifest_hash,
+                    int(verified),
+                    offhost_at,
+                    packed(details or {}),
+                ),
+            ).lastrowid
+
+    def latest_backup(self):
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT * FROM backup_records ORDER BY created DESC,id DESC LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["details"] = json.loads(result["details"])
+        return result
+
+    def set_incident(self, key: str, *, active: bool, severity="warning", details=None):
+        """Persist state transitions without generating duplicate incidents."""
+        now = time.time()
+        with self.transaction() as db:
+            current = db.execute(
+                """SELECT * FROM incidents WHERE incident_key=? AND resolved IS NULL
+                ORDER BY id DESC LIMIT 1""",
+                (key,),
+            ).fetchone()
+            if active:
+                if current:
+                    db.execute(
+                        "UPDATE incidents SET updated=?,severity=?,details=? WHERE id=?",
+                        (now, severity, packed(details or {}), current["id"]),
+                    )
+                    return current["id"], False
+                rowid = db.execute(
+                    """INSERT INTO incidents(incident_key,opened,updated,resolved,severity,details)
+                    VALUES(?,?,?,NULL,?,?)""",
+                    (key, now, now, severity, packed(details or {})),
+                ).lastrowid
+                return rowid, True
+            if current:
+                db.execute(
+                    "UPDATE incidents SET updated=?,resolved=?,details=? WHERE id=?",
+                    (now, now, packed(details or {}), current["id"]),
+                )
+                return current["id"], True
+            return None, False
+
+    def incidents(self, limit=100):
+        with self.connection() as db:
+            rows = db.execute(
+                "SELECT * FROM incidents ORDER BY updated DESC,id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [
+            {**dict(row), "details": json.loads(row["details"])}
+            for row in rows
+        ]
 
     def create(
         self,
