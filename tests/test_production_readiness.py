@@ -110,7 +110,6 @@ def test_tool_execution_worker_loss_is_interrupted_not_replayed(tmp_path):
     assert row["status"] == "failed"
 
 
-
 def _fetch_task(key):
     return {
         "kind": "fetch",
@@ -124,10 +123,7 @@ def _fetch_task(key):
 
 def test_shared_admission_limits_two_investigations(tmp_path):
     store = Store(tmp_path / "harvest.sqlite")
-    jobs = [
-        store.create(JobSpec(objective=f"job {i}"), [_fetch_task(f"p{i}")])
-        for i in range(3)
-    ]
+    jobs = [store.create(JobSpec(objective=f"job {i}"), [_fetch_task(f"p{i}")]) for i in range(3)]
     assert store.claim(jobs[0], max_active_investigations=2, max_running_tools=2)
     assert store.claim(jobs[1], max_active_investigations=2, max_running_tools=2)
     assert store.claim(jobs[2], max_active_investigations=2, max_running_tools=2) is None
