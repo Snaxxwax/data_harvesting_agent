@@ -115,8 +115,11 @@ def test_identifier_searches_drop_results_that_never_mention_the_identifier(
     # ...and it reaches the summary instead of staying buried in task events.
     summary = engine.store.job_summary(job["id"])
     assert summary["search"] == {
-        "runs": 1, "degraded": 1, "unresponsive_engines": ["wikidata"],
-        "results": 2, "accepted_leads": 1,
+        "runs": 1,
+        "degraded": 1,
+        "unresponsive_engines": ["wikidata"],
+        "results": 2,
+        "accepted_leads": 1,
     }
     assert any(u.startswith("discovery search degraded: 1/1") for u in summary["unknowns"])
 
