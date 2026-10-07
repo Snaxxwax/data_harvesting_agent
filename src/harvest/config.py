@@ -52,11 +52,20 @@ class Settings:
     worker_threads: int = field(
         default_factory=lambda: max(1, int(os.getenv("HARVEST_WORKER_THREADS", "1")))
     )
-    # 600, as deployed: Maigret --all-sites through the egress relay measured 293 s, and a
-    # SpiderFoot email sweep ~254 s, so 300 left either one a few seconds from a timeout.
-    # A job's remaining wall clock still bounds every run (Engine.process).
+    # Global ceiling plus per-tool ceilings. The investigation's remaining wall clock is
+    # still the final bound in Engine.process. The global default is high enough for Thorough;
+    # deployments may lower it deliberately without changing the individual defaults.
     tool_timeout: float = field(
-        default_factory=lambda: float(os.getenv("HARVEST_TOOL_TIMEOUT", "600"))
+        default_factory=lambda: float(os.getenv("HARVEST_TOOL_TIMEOUT", "1800"))
+    )
+    ghunt_timeout: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_GHUNT_TIMEOUT", "120"))
+    )
+    spiderfoot_timeout: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_SPIDERFOOT_TIMEOUT", "900"))
+    )
+    maigret_timeout: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_MAIGRET_TIMEOUT", "1800"))
     )
     # Outbound connections this deployment may hold open at once, across every tool and
     # every worker thread. The egress relay enforces it for everything that leaves
@@ -158,6 +167,14 @@ class Settings:
             host, _, port = self.egress_probe.rpartition(":")
             if not host or not port.isdigit() or not 0 < int(port) < 65536:
                 raise ValueError("HARVEST_EGRESS_PROBE must be host:port")
+
+    def tool_timeout_for(self, name: str) -> float:
+        specific = {
+            "ghunt": self.ghunt_timeout,
+            "spiderfoot": self.spiderfoot_timeout,
+            "maigret": self.maigret_timeout,
+        }.get(name, self.tool_timeout)
+        return min(self.tool_timeout, specific)
 
     @property
     def proxy_only(self) -> bool:
