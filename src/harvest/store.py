@@ -659,7 +659,14 @@ class Store:
             raise LostLease("job cancelled or task lease lost")
         return row
 
-    def claim(self, job_id: str | None = None, lease_seconds: float = 120):
+    def claim(
+        self,
+        job_id: str | None = None,
+        lease_seconds: float = 120,
+        *,
+        max_active_investigations: int | None = None,
+        max_running_tools: int | None = None,
+    ):
         with self.transaction() as db:
             # BEGIN IMMEDIATE may wait for another writer. Start all claim timing only after
             # the transaction owns the write lock so lock contention cannot shorten the lease.
@@ -699,14 +706,41 @@ class Store:
                 self.event(
                     db, task["job_id"], "lease_expired", {"task": task["id"], "status": status}
                 )
-            row = db.execute(
-                """SELECT t.*,j.spec,j.execution FROM tasks t JOIN jobs j ON j.id=t.job_id
+            candidates = db.execute(
+                """SELECT t.*,j.spec,j.execution,j.root_id,j.status job_status
+                FROM tasks t JOIN jobs j ON j.id=t.job_id
                 WHERE t.status='pending' AND t.ready<=? AND j.status IN ('queued','running')
                 AND (? IS NULL OR j.id=?)
                 AND NOT EXISTS(SELECT 1 FROM tasks r WHERE r.job_id=j.id AND r.status='running')
-                ORDER BY t.priority DESC,t.id LIMIT 1""",
+                ORDER BY t.priority DESC,t.id LIMIT 100""",
                 (now, job_id, job_id),
-            ).fetchone()
+            ).fetchall()
+            active_roots = {
+                r[0]
+                for r in db.execute(
+                    "SELECT DISTINCT coalesce(root_id,id) FROM jobs WHERE status='running'"
+                )
+            }
+            running_tools = db.execute(
+                "SELECT count(*) FROM tasks WHERE kind='tool' AND status='running'"
+            ).fetchone()[0]
+            row = None
+            for candidate in candidates:
+                root = candidate["root_id"] or candidate["job_id"]
+                if (
+                    max_active_investigations is not None
+                    and root not in active_roots
+                    and len(active_roots) >= max_active_investigations
+                ):
+                    continue
+                if (
+                    candidate["kind"] == "tool"
+                    and max_running_tools is not None
+                    and running_tools >= max_running_tools
+                ):
+                    continue
+                row = candidate
+                break
             if row is None:
                 return None
             token = uuid.uuid4().hex
