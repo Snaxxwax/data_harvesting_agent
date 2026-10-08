@@ -1,14 +1,20 @@
 # Private OVH readiness release
 
-Status: **candidate; not deployed or approved for production**. The release keeps SQLite,
-Compose, Tailscale-only ingress and the existing proxy/providers. Do not treat this document,
-an HTTP 200, or the preliminary soak as production sign-off.
+Status: **approved and deployed 2026-10-08** (admission reopened after acceptance). The release
+keeps SQLite, Compose, Tailscale-only ingress and the existing proxy/providers.
 
-The [verification ledger](verification.json) records the source hash, retained test logs and
-outstanding gates. Latest local checks: 29 focused Python tests, 57 tool regression tests and
-32 JavaScript tests pass (the Python selections overlap); lint/format checks and a separate
-schema-1-to-4 preservation drill pass. Both pinned native hook source guards pass against local
-tool distributions. Full production-image verification remains outstanding.
+| Identity | Value |
+| --- | --- |
+| Source | `8f62ce6f6830-a8f85a3b04b0` (branch `release/v1.0.1-readiness`, commit `8f62ce6`) |
+| Harvest api/worker/monitor | `sha256:7b0508061d0673668188d3c4904978271e11bd94fe159fac2614b4a6edbda8fb` |
+| SpiderFoot API | `sha256:defe0cfda9a227e46a9eba836b193cbbd6b35e3ead331d1d345996b8a8be0cbf` |
+| SpiderFoot scanner | `sha256:709c056f03c82ca7282fb04d7fdb29b5a42271fb1fc761035b6b68591c74f531` |
+| SpiderFoot source | fork `f3b4ec3c` + `deploy/spiderfoot/production-readiness.patch` (`c0218903…`) |
+| Tools | Maigret 0.6.6 (5,178 eligible sites, DB `ef6ca66e…`), GHunt 2.3.4 |
+| Pre-release backup | `harvest-20261008T200626Z.tar.gpg`, sha256 `6a0d4648…`, verified off-host |
+| Rollback identities | Harvest `8b1269c0…`, SF API `9c9b30cc…`, scanner `167ee0ad…` ([previous-identities.txt](previous-identities.txt)) |
+
+The [verification ledger](verification.json) is the authoritative record of every gate below.
 
 ## Candidate behavior
 
@@ -37,25 +43,52 @@ tool distributions. Full production-image verification remains outstanding.
 - Disk below 20% free opens an incident; below 10% blocks new admission. Evidence is retained.
   Tool traffic is outside Harvest's request and dollar counters; these do not cap proxy spend.
 
-## Evidence and remaining gates
+## Evidence
 
-| Gate | Current evidence | Remaining requirement |
-| --- | --- | --- |
-| Deterministic parity | Sanitized Maigret/GHunt/SpiderFoot fixtures; audited SpiderFoot sets both normalize to four usable findings | Final candidate test report; retain every exclusion reason and nested field |
-| Workflow | Offline email → discovered handle → Maigret, all-site follow-up and shared-budget tests pass | Verify final image uses declared root/follow-up breadth |
-| Failure injection | Native found/absent/blocked/errored/skipped/unfinished tests; malformed/truncated checkpoint and expired-lease preservation tests | Final-image proxy/CAPTCHA/expired-credential/deadline/cancellation/worker-death/database-restart matrix |
-| Recovery | Transactional migration, no automatic external rerun, paginated namespace-aware orphan sweep; declarative networks and credential volume | Recreate containers and prove credentials/networks survive; measure orphan stop within 60 seconds after dependencies recover |
-| Matched live tools | `scripts/live_parity.py` records a durable ceiling of twelve invocations and field-level discrepancies | Two matched rounds per tool using existing authorized targets; review every discrepancy, without silently repeating interrupted invocations |
-| Search | [Canary evidence](search-canary.json): DuckDuckGo returned relevant IANA sources; Bing returned irrelevant sources; Brave rate-limited | Recheck final deployment; retain degradation. Minimum search gate passed on the earlier deployment only |
-| Endurance | Preliminary offline replay soak active at concurrency two, over six hours without a recorded failure | Full 24 hours on frozen candidate content, with source hash, memory/storage bounds and API latency report; preliminary run predates subsequent edits |
-| Restore | [Restore drill](restore-drill.json): 40.39 seconds; 513 evidence blobs, 359 SpiderFoot events, 14 configuration files; both databases restored in an isolated internal network; migrated schema 4; no active jobs | Repeat with final candidate; active-job recovery fixture and paired database/image rollback demonstration |
-| Existing checks | Earlier full Python run: 518 passed, four failures; corrected assertions/partial reasons pass focused reruns. JS: 32 tests pass | Entire Python/lint/migration/deployment suite against final production image with tools; latest sandbox denies sockets and local Docker |
+| Gate | Result |
+| --- | --- |
+| Tests | 536 local Python, 523 in the production image with tools (git-dependent patch test run with ephemeral git), 32 JS, ruff, format, diff check ([logs](logs/)) |
+| Migration | Copy of production schema 3 → 4 in the candidate image: 223 jobs, 146 idempotency keys, immutable hashes preserved ([report](migration-check-production.json)); production migrated on rollout, integrity ok |
+| Failure injection | Final image: cancellation, worker death (Maigret, SpiderFoot), deadline, SpiderFoot DB + API restart, proxy failure, invalid GHunt credential, container recreate, active-job restore — all pass; none converted to absent, no tool run repeated ([summary](failure-injection.json)) |
+| Orphan recovery | Dead worker's scan stopped 5.1 s after worker and SpiderFoot API recovered (gate 60 s) |
+| Workflow | Thorough email → GHunt/SpiderFoot → discovered handle → Maigret all 5,178 sites within the shared budget (staging and production acceptance) |
+| Live parity | 12/12 invocations, none interrupted or repeated, retention 12/12. GHunt matches; SpiderFoot identical findings, only per-scan `generated` timestamps differ; Maigret round 2 differs on nondeterministic sites — reviewed, no adapter loss (ledger `live_parity`) |
+| Search | Canary ready via DuckDuckGo/Bing; Brave rate-limited and Bing intermittently irrelevant stay open incidents |
+| Soak | 24 h on the final image: 2,784 rounds, 0 failures, API max 67 ms, RSS ≤ 66 MB, DB 107 MB ([report](soak-final.json)) |
+| Restore | Pre-release archive with final image: 8.5 s, schema 4, 525 blobs, 371 SpiderFoot events ([report](restore-drill-final.json)) |
+| Paired rollback | Previous images on the pre-release archive: 12/12 checks, old code refuses schema 4 ([report](rollback-drill-final.json), [script](rollback_drill.py)) |
+| Deployment | `verify-deployment.sh` 52/52, `/ready` all true, monitor confined, no orphans at start, incident timer enabled |
+| Acceptance | Production root `0b8d79c8…` + follow-up `45bdfd78…`: SpiderFoot 1,439 checks measured, Maigret 5,178 accounted, status partial (robots, provider degradation) ([summary](acceptance.json)) |
 
-The current environment blocks new SSH sockets, Docker access and loopback test servers.
-An attempted full rerun stops in the HTTP fixture with `PermissionError: Operation not
-permitted`; the artifact TestClient check also hangs in its thread portal. These are not
-successful verification results. No release gate is waived because of the environment.
-The checked-in source manifest intentionally says `release_allowed: false`.
+Defects found during validation and fixed with regression tests: `verify_upgrade.py` rebuilt
+replay specs without the investigation (false idempotency failure on production data), and
+SpiderFoot per-site checks were replayed newest-first so every site stayed `unfinished`.
+
+## Known limitations
+
+- A SpiderFoot PostgreSQL restart while a scan is starting leaves that scan `STARTING`; Harvest
+  stops it at the 900 s ceiling and records partial. Interrupted SpiderFoot runs keep their
+  partial events in SpiderFoot only (referenced by scan id).
+- Maigret reports dead-proxy failures as `unfinished` (no native verdict), not `errored`; several
+  Maigret site definitions flip between runs. Operator-cancel execution reasons read "worker stopped".
+- Readiness sees GHunt credential presence, not validity. GHunt 2.3.4 name/Maps detail unsupported.
+- Live parity ran on build `f15bc829…` (ceiling spent); its compared code is identical to the deployed build.
+- `scripts/pin_release.py` defaults `--spiderfoot-frontend` to `sf-frontend`; this host needs `sf-frontend-ui`.
+- Tool traffic and proxy spend are outside Harvest request and dollar budgets.
+
+## Operator handoff
+
+- Daily backup 03:00 UTC on OVH (installed script now includes readiness/release files); hourly
+  pull and verification on the workstation; `/ready` fails if either is older than 24 h.
+- Desktop incident alerts: `systemctl --user status harvest-incidents.timer` on the workstation.
+- Verify after any change: `cd /opt/harvest/app && ./verify-deployment.sh`, then authenticated `/ready`.
+- Pins live in write-once `/opt/harvest/app/.env.release`, mirrored into `.env` and
+  `spiderfoot-ng/.env`; always roll out with `--no-build --pull never`.
+- Rollback: stop api/worker/monitor, restore the pre-release archive into fresh volumes with the
+  interrupted-job rule, restore `*.bak.prerelease-20261008T2010Z` configuration, start the
+  previous images listed above. Never run the previous image on the schema-4 database.
+- Release evidence that names sites or targets stays private: `/opt/harvest/releases/` on OVH and
+  `/home/pop/backups/harvest/release-evidence/` on the workstation.
 
 ## Build and validation
 
@@ -101,7 +134,7 @@ their external scans to finish or explicitly cancel them. Create and verify a fr
 pre-release backup. Record previous image IDs, the archive hash, configuration and tool builds.
 Do not stop the database before the online SQLite backup/PostgreSQL dump completes.
 
-Use `scripts/pin_release.py` on the deployment host to resolve tested builds and unchanged
+Use `scripts/pin_release.py --spiderfoot-frontend sf-frontend-ui` on the deployment host to resolve tested builds and unchanged
 sidecars into `HARVEST_IMAGE`, `SF_API_IMAGE`, `SF_SCANNER_IMAGE`, `SF_FRONTEND_IMAGE` and
 `FLARESOLVERR_IMAGE`; save them in protected `.env.release`. The script refuses to overwrite
 previous rollback identities. Use the same Harvest image for API,
@@ -127,8 +160,7 @@ Stop API, workers and monitor before swapping database volumes; stop/reconcile e
 Restore into fresh volumes, keep current volumes intact for evidence, and apply the interrupted
 job rule before starting any worker. Do not run old code against schema-4 data. Restore the
 matching PostgreSQL dump and protected configuration; verify blob hashes, database integrity,
-credentials, networks and API access. Keep acquisition stopped until checks pass. The isolated
-rollback demonstration is still a gate, not an already tested procedure.
+credentials, networks and API access. Keep acquisition stopped until checks pass. The isolated paired rollback drill passed on the pre-release archive (rollback-drill-final.json).
 
 ## Backups and alerts
 
@@ -164,7 +196,7 @@ where the account/services provide them. Empty profile shells are excluded expli
 
 The initial seven-module SpiderFoot email profile is unchanged. `sfp_accounts` has structured
 site outcomes; modules without that contract disclose unsupported per-check coverage rather
-than inferring success from missing errors. Full module/site instrumentation and the patched
-scanner's live log path still require release validation. TLS-incompatible sites fail checks.
-The preliminary restore did not contain active jobs, so it does not prove active-job restore
-semantics. The final image and patched scanner have not yet passed all deployment gates.
+than inferring success from missing errors. The patched scanner's live log path is validated:
+production acceptance measured all 1,439 `sfp_accounts` site checks. Other modules remain
+`unsupported` per check. TLS-incompatible sites fail checks. Active-job restore semantics are
+proven by the final-image failure-injection run (backup taken mid-execution).

@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-10-07T20:40:44Z",
+  "recorded_at": "2026-10-08T21:25:28Z",
   "release_candidate": {
     "source_revision": "8f62ce6f6830-a8f85a3b04b0",
     "git_commit": "8f62ce6f6830 (branch release/v1.0.1-readiness)",
@@ -21,10 +21,10 @@
     "f0b178ebd0c3-db457461a085": "verify_upgrade.py false idempotency failure on production schema-3 replays (verifier bug, fixed f15bc82)",
     "f15bc8298117-04a518e59cc6 (sha256:49e155dd...)": "SpiderFoot per-site checks always 'unfinished' (newest-first log replay; fixed 8f62ce6); its soak stopped at 171 rounds, 0 failures, not counted"
   },
-  "production_sign_off": false,
-  "deployed": false,
+  "production_sign_off": true,
+  "deployed": true,
   "checks": {
-    "local_python": "536 passed (logs/final-local-python.log is the f15bc82 run: 535; 8f62ce6 rerun 536 passed)",
+    "local_python": "536 passed on 8f62ce6 content",
     "image_python": "522 passed + test_spiderfoot_log_patch passed with ephemeral git; 10 skips (mcp extra, docker-only relay tests) pass locally",
     "javascript": "32 passed",
     "ruff_check": "passed",
@@ -83,18 +83,97 @@
     "paired_rollback": "rollback-drill-demo.json (previous images + backup taken under them, 12/12 checks)"
   },
   "soak": {
-    "directory": "/opt/harvest/releases/soak-8f62ce6f6830",
-    "container": "harvest-soak-8f62ce6f6830",
-    "started_utc": "2026-10-07T20:05Z",
-    "due_utc": "2026-10-08T20:05Z",
-    "status": "running"
+    "report": "soak-final.json",
+    "status": "passed",
+    "image": "sha256:7b0508061d0673668188d3c4904978271e11bd94fe159fac2614b4a6edbda8fb",
+    "elapsed_seconds": 86400.01002335548,
+    "rounds": 2784,
+    "concurrency": 2,
+    "failures": [],
+    "api_max_seconds": 0.06655081699136645,
+    "max_rss_kib": 63784,
+    "api_max_rss_kib": 66352,
+    "database_bytes": 107347968,
+    "source_sha256": "cbb8b6955ac96f801078f1d7fe9e0beca8b4febfbdcf2810e071beb32971d5dc",
+    "window_utc": "2026-10-07T20:05Z..2026-10-08T20:05Z",
+    "superseded": "soak-superseded-f15bc8298117.json (171 rounds, 0 failures, invalidated by source change); local preliminary soak stopped at 1047 rounds, never qualifying"
   },
-  "remaining": [
-    "24-hour soak completion",
-    "drain/stop admission, pre-release backup + off-host verification",
-    "rollout of exact images",
-    "post-deployment acceptance",
-    "incident notification timer",
-    "reopen admission"
+  "remaining": [],
+  "deployment": {
+    "completed_utc": "2026-10-08T20:10Z",
+    "admission_closed_utc": "2026-10-08T20:06:23Z",
+    "admission_reopened_utc": "2026-10-08T21:25:28Z",
+    "host": "OVH /opt/harvest (Tailscale-only ingress)",
+    "app_checkout": "/opt/harvest/app on release/v1.0.1-readiness (release content 8f62ce6f6830-a8f85a3b04b0)",
+    "deployed_images": {
+      "HARVEST_IMAGE (api, worker, monitor)": "sha256:7b0508061d0673668188d3c4904978271e11bd94fe159fac2614b4a6edbda8fb",
+      "SF_API_IMAGE": "sha256:defe0cfda9a227e46a9eba836b193cbbd6b35e3ead331d1d345996b8a8be0cbf",
+      "SF_SCANNER_IMAGE": "sha256:709c056f03c82ca7282fb04d7fdb29b5a42271fb1fc761035b6b68591c74f531",
+      "SF_FRONTEND_IMAGE (unchanged)": "sha256:90cae6ca513863700a1173be204a43e59bfd34609e57634e742ff9b92c7a19bb",
+      "FLARESOLVERR_IMAGE (unchanged)": "sha256:f104ee51e5124d83cf3be9b37480649355d223f7d8f9e453d0d5ef06c6e3b31b",
+      "unchanged sidecars pinned by digest": "postgres f7d23353, redis 858f009f, coredns 986f04c2, tinyproxy 72b441b9, searxng c642712f"
+    },
+    "pins": "/opt/harvest/app/.env.release (write-once, pin_release.py) mirrored into the protected .env and spiderfoot-ng/.env so a bare `docker compose` is correct",
+    "previous_identities": "previous-identities.txt (previous Harvest 8b1269c0, SF api 9c9b30cc, scanner 167ee0ad; app 06a056e; pre-release config hashes); backups of every changed config file *.bak.prerelease-20261008T2010Z",
+    "pre_release_backup": {
+      "archive": "harvest-20261008T200626Z.tar.gpg",
+      "sha256": "6a0d46480a4f07b3b935bab8519d77ae70c4b20b2b48d88f3084aae5943b9a23",
+      "off_host_verified": true,
+      "restore_drill_final_image": "restore-drill-final.json (passed, 8.5 s, schema 4, 525 blobs, 371 SpiderFoot events)",
+      "paired_rollback_drill": "rollback-drill-final.json (passed 12/12, 28.1 s, previous images on this archive)"
+    },
+    "migration": "production schema 3 -> 4 on first API start (API started alone), integrity ok, 224 jobs, none active",
+    "verify_deployment": "52 passed, 0 failed",
+    "ready": "all checks true including backup receipt",
+    "post_deploy_checks": {
+      "monitor_direct_egress": "blocked",
+      "orphan_scans_at_worker_start": "none",
+      "search_canary": "ready; duckduckgo and bing completed, brave blocked (rate limited) -> open incident",
+      "incident_timer": "harvest-incidents.timer enabled on workstation; first run notified open incidents"
+    },
+    "acceptance": {
+      "evidence": "acceptance.json",
+      "root_job": "0b8d79c803394cd3b048c8ea500d858b",
+      "followup_job": "45bdfd78e34445b1837c133faa655355",
+      "result": "family terminal in 628 s; root ghunt+spiderfoot; follow-up maigret top_sites=None, all 5178 sites accounted; spiderfoot 1439 checks measured, 0 unfinished; status partial (robots-blocked crawl, provider degradation)",
+      "coverage": {
+        "ghunt": {
+          "absent": 2,
+          "errored": 1,
+          "found": 2,
+          "skipped": 1,
+          "unsupported": 2
+        },
+        "spiderfoot": {
+          "absent": 1067,
+          "blocked": 270,
+          "errored": 90,
+          "found": 3,
+          "skipped": 2,
+          "unsupported": 7
+        },
+        "maigret": {
+          "absent": 4364,
+          "blocked": 277,
+          "errored": 79,
+          "found": 20,
+          "skipped": 11,
+          "unfinished": 427
+        }
+      }
+    },
+    "jobs_admitted_between_rollout_and_acceptance": "only the acceptance root and its follow-up"
+  },
+  "known_limitations": [
+    "SpiderFoot fork: if its PostgreSQL restarts while a scan is starting, the scan stays STARTING; Harvest stops it at the 900 s SpiderFoot ceiling and records partial (reproduced twice). Costs one tool slot for up to 15 minutes; never reported as absence.",
+    "Interrupted SpiderFoot runs keep partial events in SpiderFoot (referenced by scan id); Harvest preserves no capture for them.",
+    "Maigret reports dead-proxy failures as 'unfinished: no conclusive native verdict', not 'errored'.",
+    "Execution reason after an operator cancel reads 'worker stopped; ...' (the job reason is correct).",
+    "Readiness checks GHunt credential presence only; validity is established by acquisition (invalid credentials surface as blocked/errored checks).",
+    "Several Maigret site definitions are nondeterministic (found/absent flips between consecutive runs: RussianFI, chaturbator.su, AllTheLyrics).",
+    "Live parity ran on f15bc8298117 (12-invocation ceiling spent); compared capture/normalization code is identical to the deployed build.",
+    "Search: Brave is rate-limited (open incident); Bing intermittently returns irrelevant results. DuckDuckGo carries the known-answer canary.",
+    "scripts/pin_release.py default --spiderfoot-frontend is 'sf-frontend'; this host's container is 'sf-frontend-ui' (pass the flag).",
+    "GHunt 2.3.4 cannot extract names or Maps photo/review detail (unsupported checks). Tool traffic and proxy spend are outside Harvest budgets."
   ]
 }

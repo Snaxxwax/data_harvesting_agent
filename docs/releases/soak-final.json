@@ -1,0 +1,14 @@
+{
+  "status": "passed",
+  "started": 1791403543.0061936,
+  "required_seconds": 86400.0,
+  "concurrency": 2,
+  "rounds": 2784,
+  "failures": [],
+  "api_max_seconds": 0.06655081699136645,
+  "max_rss_kib": 63784,
+  "api_max_rss_kib": 66352,
+  "source_sha256": "cbb8b6955ac96f801078f1d7fe9e0beca8b4febfbdcf2810e071beb32971d5dc",
+  "elapsed_seconds": 86400.01002335548,
+  "database_bytes": 107347968
+}
