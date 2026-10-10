@@ -29,7 +29,9 @@
     <h1>Sign in</h1>
     <p>Enter the operator API token configured on this deployment
       (<code>HARVEST_API_TOKEN</code>). It is exchanged once for a session cookie and is
-      never stored or displayed after that.</p>
+      never stored or displayed after that. This is not your Apify token. To skip this form, run
+      <code>harvest-ui</code> (VPS) or <code>scripts/harvest-ui-local</code>, which open this
+      page already signed in.</p>
     <form id="login-form">
       <label for="login-token">API token</label>
       <input id="login-token" name="token" type="password" autocomplete="current-password" required>
