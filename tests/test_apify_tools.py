@@ -162,3 +162,33 @@ def test_username_pivots_include_the_apify_platforms_only_with_a_token():
 
     assert {"apify_instagram", "apify_tiktok", "apify_reddit"} <= set(PIVOT_TOOLS["username"])
     assert "apify_google" not in PIVOT_TOOLS["username"]  # names/dorks stay on SearXNG
+
+
+class _Recorder:
+    def __init__(self):
+        self.checks = []
+
+    def check(self, name, outcome, reason=""):
+        self.checks.append((name, outcome, reason))
+
+
+@pytest.mark.parametrize(
+    "rows,outcome",
+    [
+        ([{"error": "does not exist", "errorCode": "NOT_FOUND", "url": "u"}], "absent"),
+        ([{"error": "blocked", "errorCode": "RATE_LIMITED"}], "errored"),
+        ([], "absent"),
+        ([{"id": "v1", "authorMeta": {"id": "u1"}}], "found"),
+    ],
+)
+def test_lookup_outcome_is_reported_and_error_rows_are_never_records(api, rows, outcome):
+    _, reply = api
+    reply["json"] = rows
+    recorder = _Recorder()
+    marker = tools._RECORDER.set(recorder)
+    try:
+        records = json.loads(tools.run("apify_tiktok", "nasa", _settings()).body)["results"]
+    finally:
+        tools._RECORDER.reset(marker)
+    assert [c[:2] for c in recorder.checks] == [("lookup", outcome)]
+    assert all("error" not in r for r in records)
