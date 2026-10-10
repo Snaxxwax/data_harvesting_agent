@@ -45,6 +45,7 @@ class FakeWebshare(socketserver.ThreadingTCPServer):
 
     def __init__(self, limit):
         self.limit, self.active, self.peak = limit, 0, 0
+        self.relay_peak = 0
         self.accepted = self.rejected = self.unauthenticated = 0
         self.lock = threading.Lock()
         super().__init__(("127.0.0.1", 0), _Upstream)
@@ -137,12 +138,31 @@ def _run_relay(tmp_path, template, secret, max_connections, detach):
         pytest.fail("relay started and kept running when it should have refused to")
 
 
+def _sample_relay_sockets(up, stop):
+    """Track the most connections the relay itself held open to the upstream at once.
+
+    The relay runs on the host network, so `ss` sees its end of each tunnel (destination port =
+    the upstream's). Unlike the fake's own `active`, this does not lag the relay when a handler
+    thread is slow to notice a close.
+    """
+    port = up.server_address[1]
+    while not stop.is_set():
+        out = subprocess.run(
+            ["ss", "-Htn", "state", "established", "dport", "=", f":{port}"],
+            capture_output=True, text=True,
+        ).stdout  # fmt: skip
+        up.relay_peak = max(up.relay_peak, len(out.splitlines()))
+        stop.wait(0.02)
+
+
 @pytest.fixture
 def relay(tmp_path, upstream):
     names = []
+    stop = threading.Event()
 
     def start(max_connections, upstream_limit):
         up = upstream(upstream_limit)
+        threading.Thread(target=_sample_relay_sockets, args=(up, stop), daemon=True).start()
         port = _free_port()
         template, secret = _relay_files(tmp_path, up.server_address[1], port)
         name, proc = _run_relay(tmp_path, template, secret, max_connections, detach=True)
@@ -161,6 +181,7 @@ def relay(tmp_path, upstream):
         return port, up
 
     yield start
+    stop.set()
     for name in names:
         subprocess.run(["docker", "rm", "-f", name], capture_output=True)
 
@@ -195,7 +216,7 @@ def test_relay_cap_keeps_a_burst_under_the_upstream_limit(relay):
     assert statuses == ["200"] * 40
     assert up.rejected == 0 and up.unauthenticated == 0
     assert up.accepted == 40
-    assert up.peak <= 8
+    assert 0 < up.relay_peak <= 8
 
 
 def test_uncapped_relay_reproduces_the_429_burst(relay):
@@ -235,7 +256,7 @@ def test_cancelled_clients_do_not_hold_relay_or_upstream_slots(relay):
     while up.active and time.monotonic() < deadline:
         time.sleep(0.1)
     assert up.active == 0
-    assert up.peak <= 4
+    assert 0 < up.relay_peak <= 4
 
 
 @pytest.mark.parametrize("value", ["abc", "0", "501", "12x", "-3"])
