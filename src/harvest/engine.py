@@ -37,7 +37,10 @@ TOOL_FINISH_MARGIN = 15  # seconds a tool run leaves before the deadline to save
 TOOL_LEASE = 30  # seconds; with SWEEP_SECONDS, bounds a dead worker's orphaned scan to ~45 s
 SWEEP_SECONDS = 15
 # Which tools enrich a pivoted identifier. A name is never a tool target (see Engine.pivot).
-PIVOT_TOOLS = {"username": ("maigret",), "email": ("ghunt", "spiderfoot")}
+PIVOT_TOOLS = {
+    "username": ("maigret", "apify_instagram", "apify_tiktok", "apify_reddit"),
+    "email": ("ghunt", "spiderfoot"),
+}
 # ponytail: fixed Maigret breadth for pivots, ~1/10 of --all-sites traffic. Make it a limit if
 # an investigation needs full sweeps of what it discovers.
 PIVOT_TOP_SITES = 500  # legacy default; effective breadth is persisted in Limits
@@ -356,7 +359,9 @@ class Engine:
                         ),
                     }
                     for name in PIVOT_TOOLS[kind]
-                    if name in self.settings.tools and f"{name}:{value}".casefold() not in ran
+                    if name in self.settings.tools
+                    and (self.settings.apify_token or not name.startswith("apify_"))
+                    and f"{name}:{value}".casefold() not in ran
                 ]
                 if not runs:
                     continue

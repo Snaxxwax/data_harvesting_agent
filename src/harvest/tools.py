@@ -31,7 +31,13 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .extract import http_url
-from .models import TOOL_TARGET_PATTERN, ActionableError, LostLease, PolicyDenied
+from .models import (
+    TOOL_TARGET_PATTERN,
+    ActionableError,
+    LostLease,
+    PolicyDenied,
+    tool_target_pattern,
+)
 from .network import Capture
 
 log = logging.getLogger("harvest")
@@ -649,6 +655,9 @@ def attribute_record(tool: str, record: dict, target: str) -> dict:
         ownership = _spiderfoot_ownership(existence, record.get("derived_via"))
     elif tool == "ghunt":
         existence, ownership = "observed", "self"
+    elif tool.startswith("apify_"):
+        # A handle or a search hit is a candidate, never proof that a person owns it.
+        existence, ownership = record.get("existence") or "observed", "candidate"
     else:
         return record
     out, derived = dict(record), {}
@@ -1504,11 +1513,162 @@ def pivot_candidates(tool: str, records: list, target: str) -> list[tuple[str, s
     return sorted(found.values(), key=lambda c: order[c[0]])
 
 
+# --- Apify Actors ------------------------------------------------------------------------
+#
+# One synchronous HTTPS call per run: the Actor's dataset comes back in the response, so there
+# is no subprocess, report file or scan lifecycle to manage. The per-platform parts are only
+# the input an Actor wants and how its rows become records. Every call carries a hard spend
+# cap (maxTotalChargeUsd). Apify scrapes from its own infrastructure, so neither Harvest's
+# egress proxy nor its egress probe covers the target-facing traffic -- only the call to
+# api.apify.com, which goes through HARVEST_EGRESS_PROXY when one is set.
+
+_APIFY_API = "https://api.apify.com/v2"
+
+
+def _apify_rows(platform, **extra):
+    def rows(items, target):
+        # ponytail: rows with an `error` key are dropped, so "not found" is indistinguishable
+        # from "Actor failed" in the capture; record them as existence=absent if that matters.
+        return [
+            {**r, "platform": platform, "existence": "observed", **extra}
+            for r in items
+            if isinstance(r, dict) and not r.get("error")
+        ]
+
+    return rows
+
+
+def _apify_tiktok(items, target):
+    """Rows are one per video with the profile repeated on each: one profile record, then videos."""
+    out, seen = [], set()
+    for r in items:
+        if not isinstance(r, dict):
+            continue
+        meta = r.get("authorMeta") or {}
+        if meta.get("id") and meta["id"] not in seen:
+            seen.add(meta["id"])
+            out.append({**meta, "platform": "tiktok", "dataType": "user_profile"})
+        video = {k: v for k, v in r.items() if k != "authorMeta"}
+        out.append({**video, "platform": "tiktok", "dataType": "video"})
+    return [{**r, "existence": "observed"} for r in out]
+
+
+def _apify_google(items, target):
+    """One row per results page; each organic result becomes a record whose url is a lead."""
+    return [
+        {
+            **hit,
+            "id": hit.get("url"),
+            "query": target,
+            "platform": "google",
+            "existence": "observed",
+        }
+        for page in items
+        if isinstance(page, dict)
+        for hit in page.get("organicResults") or []
+        if isinstance(hit, dict) and hit.get("url")
+    ]
+
+
+# tool name -> (Actor, input from the target, per-run spend cap in USD, rows -> records).
+# Google's Actor refuses any cap under $0.50; a run of one page costs about half a cent.
+_APIFY: dict[str, tuple] = {
+    "apify_instagram": (
+        "apify~instagram-profile-scraper",
+        lambda t: {"usernames": [t], "includeAboutSection": True},
+        0.05,
+        _apify_rows("instagram"),
+    ),
+    "apify_tiktok": (
+        "clockworks~tiktok-profile-scraper",
+        lambda t: {"profiles": [t], "resultsPerPage": 10, "profileScrapeSections": ["videos"]},
+        0.10,
+        _apify_tiktok,
+    ),
+    "apify_linkedin": (
+        "harvestapi~linkedin-profile-scraper",
+        lambda t: {
+            "profileScraperMode": "Profile details no email ($4 per 1k)",
+            "publicIdentifiers": [t],
+        },
+        0.05,
+        _apify_rows("linkedin"),
+    ),
+    "apify_reddit": (
+        "harshmaur~reddit-user-scraper",
+        lambda t: {"usernames": [t], "maxPostsCount": 20, "maxCommentsCount": 20},
+        0.10,
+        _apify_rows("reddit"),
+    ),
+    "apify_google": (
+        "apify~google-search-scraper",
+        lambda t: {"queries": t, "maxPagesPerQuery": 1},
+        0.50,
+        _apify_google,
+    ),
+}
+
+
+def _apify(tool: str):
+    actor, build, cap, to_records = _APIFY[tool]
+
+    def run(target, workdir, timeout, cancelled=None, settings=None):
+        import httpx
+
+        token = getattr(settings, "apify_token", "") or ""
+        if not token:
+            raise PolicyDenied("HARVEST_APIFY_TOKEN is not configured")
+        if cancelled is not None and cancelled.is_set():
+            raise LostLease("apify run cancelled before it started")
+        if getattr(settings, "proxy_only", False):
+            _assert_no_direct_egress(settings)
+        wait = int(min(timeout, 290))
+        try:
+            # ponytail: the call blocks until the Actor finishes, so `cancelled` is only checked
+            # before it starts; switch to POST /runs plus polling if cancel latency matters.
+            with httpx.Client(
+                proxy=getattr(settings, "proxy", None),
+                timeout=wait + 15,
+                headers={"Authorization": f"Bearer {token}"},
+            ) as client:
+                response = client.post(
+                    f"{_APIFY_API}/acts/{actor}/run-sync-get-dataset-items",
+                    params={"maxTotalChargeUsd": cap, "timeout": wait, "clean": "true"},
+                    json=build(target),
+                )
+        except httpx.HTTPError as exc:
+            # The type only: an exception string can carry the proxy URL or request headers.
+            raise ActionableError(f"apify request failed: {type(exc).__name__}") from None
+        if response.status_code in (401, 403):
+            raise PolicyDenied("Apify rejected HARVEST_APIFY_TOKEN")
+        if response.status_code == 402:
+            raise ActionableError("Apify spend limit or plan credit exhausted")
+        if response.status_code >= 400:
+            raise ActionableError(f"apify returned HTTP {response.status_code}")
+        items = response.json()
+        if not isinstance(items, list):
+            raise ActionableError("apify dataset response was not a list")
+        return to_records(items, target)
+
+    return run
+
+
+# Handle-based platforms take a username; Google takes a quoted name. LinkedIn is explicit only:
+# a vanity slug is not the handle, so guessing it from one would mostly return the wrong person.
+_APIFY_KINDS = {
+    "apify_instagram": ("username",),
+    "apify_tiktok": ("username",),
+    "apify_reddit": ("username",),
+    "apify_linkedin": (),
+    "apify_google": ("person", "organization", "username", "email"),
+}
+
 # kinds: the planning investigation types whose normalized value is a valid target.
 TOOLS: dict[str, dict] = {
     "maigret": {"kinds": ("username",), "run": _maigret},
     "ghunt": {"kinds": ("email",), "run": _ghunt},
     "spiderfoot": {"kinds": tuple(SPIDERFOOT_KIND_TYPES), "run": _spiderfoot},
+    **{name: {"kinds": _APIFY_KINDS[name], "run": _apify(name)} for name in _APIFY},
 }
 
 
@@ -1527,9 +1687,11 @@ def run(
         raise ValueError(f"unknown tool {name!r}")
     if name not in settings.tools:
         raise PolicyDenied(f"tool {name!r} is not enabled; add it to HARVEST_TOOLS")
-    if not _TARGET_RE.fullmatch(target):
+    if not re.fullmatch(tool_target_pattern(name), target):
         raise ValueError(
-            "tool target must start with a letter, digit or underscore and contain only "
+            "tool target must be one printable line without leading or trailing space"
+            if name.startswith("apify_")
+            else "tool target must start with a letter, digit or underscore and contain only "
             "letters, digits and _ . @ + -"
         )
     started = time.time()

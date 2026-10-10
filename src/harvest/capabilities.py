@@ -96,6 +96,8 @@ def _tool_requirements(name: str) -> tuple[str, ...]:
             "HARVEST_SPIDERFOOT_MODULES",
         ),
     }
+    if name.startswith("apify_"):
+        return ("HARVEST_TOOLS contains " + name, "HARVEST_APIFY_TOKEN")
     return reqs.get(name, ("HARVEST_TOOLS contains " + name,))
 
 
@@ -105,7 +107,15 @@ def registry() -> list[Capability]:
 
     caps = list(_BUILTIN)
     for name, tool in TOOLS.items():
-        notes = _TOOL_NOTES.get(name, {})
+        notes = _TOOL_NOTES.get(name) or (
+            {
+                "evidence": "the platform's own profile and post rows from an Apify Actor",
+                "cost": "paid per result by Apify, hard-capped per run; Apify scrapes from its "
+                "own network, outside Harvest's egress proxy",
+            }
+            if name.startswith("apify_")
+            else {}
+        )
         caps.append(
             Capability(
                 name=name,
@@ -127,6 +137,8 @@ def _tool_blocker(name: str, settings) -> str:
     """
     if name not in settings.tools:
         return "not in HARVEST_TOOLS"
+    if name.startswith("apify_") and not settings.apify_token:
+        return "HARVEST_APIFY_TOKEN is not set"
     if name == "spiderfoot":
         if not settings.spiderfoot_url:
             return "HARVEST_SPIDERFOOT_URL is not set"
