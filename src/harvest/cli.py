@@ -29,8 +29,8 @@ def export(engine, job_id, path):
 
 
 def parse_tool(value: str) -> dict:
-    """NAME:TARGET. A tool target can never contain ":" (see tools._TARGET_RE), so the
-    first colon always separates the two; ToolRun validates both halves."""
+    """NAME:TARGET. A tool name never contains ":", so the first colon always separates the
+    two (an apify_* target may contain more, e.g. a dork); ToolRun validates both halves."""
     name, separator, target = value.partition(":")
     if not separator:
         raise SystemExit(f"--tool expects NAME:TARGET, got {value!r}")

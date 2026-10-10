@@ -43,7 +43,7 @@ def canonical_source_url(value: str) -> str:
     match = _TOOL_SOURCE_RE.match(value)
     if match is None:
         return canonical_url(value)
-    if re.fullmatch(TOOL_TARGET_PATTERN, match.group(2)) is None:
+    if re.fullmatch(tool_target_pattern(match.group(1)), match.group(2)) is None:
         raise ValueError("tool:// source URL target is not a valid tool target")
     return value
 
@@ -94,6 +94,16 @@ TARGET_KEY_PATTERN = r"^[a-zA-Z0-9_-]{1,80}$"
 # so the value can never be read as a flag by an argparse-based tool. Shared with tools.py so
 # a spec is rejected at submit instead of failing mid-job with a generic adapter error.
 TOOL_TARGET_PATTERN = r"^[A-Za-z0-9_][A-Za-z0-9_.@+-]{0,253}$"
+# `apify_*` tools only make an HTTPS call with the target inside a JSON body: it never reaches
+# an argv, a flag or a filename, so a name or a search dork (site:x.com "Jane Doe") is safe.
+# No control characters and no leading/trailing space, so a target stays one printable line.
+FREE_TEXT_TOOL_TARGET_PATTERN = (
+    r"^[^\s\x00-\x1f\x7f](?:[^\x00-\x1f\x7f]{0,252}[^\s\x00-\x1f\x7f])?$"
+)
+
+
+def tool_target_pattern(tool: str) -> str:
+    return FREE_TEXT_TOOL_TARGET_PATTERN if tool.startswith("apify_") else TOOL_TARGET_PATTERN
 
 
 class Target(StrictModel):
@@ -121,7 +131,7 @@ class ToolRun(StrictModel):
     consume different identifier types (Maigret a username, GHunt an email)."""
 
     name: str = Field(pattern=r"^[a-z0-9_-]{1,40}$")
-    target: str = Field(pattern=TOOL_TARGET_PATTERN, min_length=1, max_length=254)
+    target: str = Field(min_length=1, max_length=254)
     # Whether the tool's own findings may become fetch tasks. A tool run is useful on its
     # own -- the capture and its claims are the evidence -- so crawling every profile URL it
     # reports is a separate, much larger decision than running the tool. Default True keeps
@@ -132,6 +142,12 @@ class ToolRun(StrictModel):
     # tools ignore it; it lives here rather than in Settings because breadth is a
     # per-run authorization and cost decision, not a deployment-wide one.
     top_sites: int | None = Field(default=None, ge=1, le=10_000)
+
+    @model_validator(mode="after")
+    def target_matches_tool(self) -> ToolRun:
+        if re.fullmatch(tool_target_pattern(self.name), self.target) is None:
+            raise ValueError(f"target is not valid for tool {self.name!r}")
+        return self
 
 
 class SourceRule(StrictModel):

@@ -2,6 +2,14 @@ import os
 import re
 from dataclasses import dataclass, field
 
+_DEFAULT_TOOL_TIMEOUTS = {
+    "ghunt": 120,
+    "spiderfoot": 900,
+    "maigret": 1800,
+    # Apify's run-sync endpoint answers within 300 s or not at all.
+    **{f"apify_{p}": 300 for p in ("instagram", "tiktok", "linkedin", "reddit", "google")},
+}
+
 
 @dataclass
 class Settings:
@@ -60,9 +68,9 @@ class Settings:
     )
     active_investigations: int = 2
     active_tools: int = 2
-    tool_timeouts: dict[str, int] = field(
-        default_factory=lambda: {"ghunt": 120, "spiderfoot": 900, "maigret": 1800}
-    )
+    tool_timeouts: dict[str, int] = field(default_factory=lambda: dict(_DEFAULT_TOOL_TIMEOUTS))
+    # Apify API token for the apify_* tools. Each run also carries a hard per-run spend cap.
+    apify_token: str = field(default_factory=lambda: os.getenv("HARVEST_APIFY_TOKEN", ""))
     spiderfoot_profiles_path: str = field(
         default_factory=lambda: os.getenv("HARVEST_SPIDERFOOT_PROFILES", "")
     )
@@ -164,7 +172,7 @@ class Settings:
             )
         if not 1 <= self.active_investigations <= 2 or not 1 <= self.active_tools <= 2:
             raise ValueError("at most two investigations and two executing tools are supported")
-        if set(self.tool_timeouts) != {"ghunt", "spiderfoot", "maigret"} or any(
+        if set(self.tool_timeouts) != set(_DEFAULT_TOOL_TIMEOUTS) or any(
             v <= 0 for v in self.tool_timeouts.values()
         ):
             raise ValueError("positive per-tool ceilings are required")

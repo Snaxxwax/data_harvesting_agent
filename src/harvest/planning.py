@@ -132,6 +132,29 @@ def tools_for(kind: str) -> list[str]:
     return sorted(name for name, tool in TOOLS.items() if kind in tool["kinds"])
 
 
+DORKS = {
+    "username": (
+        '"{v}" -site:instagram.com -site:tiktok.com -site:reddit.com',
+        'site:github.com "{v}"',
+        '"{v}" inurl:profile OR inurl:user',
+    ),
+    "email": ('"{v}"', '"{v}" -site:{domain}', '"{local}" "{domain}" filetype:pdf'),
+    "person": ('"{v}"', 'site:linkedin.com/in "{v}"', '"{v}" filetype:pdf OR filetype:docx'),
+    "organization": ('"{v}" filetype:pdf', 'site:linkedin.com/company "{v}"'),
+}
+
+
+def _tools(kind: str, value: str, **parts: str) -> list[dict]:
+    """Suggested tool runs: each non-Google tool takes the value; Google gets one run per dork."""
+    names = tools_for(kind)
+    runs = [{"name": n, "target": value} for n in names if n != "apify_google"]
+    if "apify_google" in names:
+        value = value.replace('"', "")
+        dorks = (d.format(v=value, **parts) for d in DORKS[kind])
+        runs += [{"name": "apify_google", "target": d} for d in dorks if len(d) <= 254]
+    return runs
+
+
 def detect_investigation_type(value: str) -> str:
     v = value.strip()
     if not v:
@@ -201,7 +224,7 @@ def plan_investigation(value: str, kind: str | None = None) -> Plan:
             normalized=email,
             discovery_queries=queries,
             fields=DEFAULT_FIELDS["email"],
-            tools=[{"name": name, "target": email} for name in tools_for("email")],
+            tools=_tools("email", email, domain=domain, local=local),
         )
     if detected == "phone":
         digits = re.sub(r"[^0-9+]", "", value)
@@ -220,7 +243,7 @@ def plan_investigation(value: str, kind: str | None = None) -> Plan:
             normalized=handle,
             discovery_queries=queries,
             fields=DEFAULT_FIELDS["username"],
-            tools=[{"name": name, "target": handle} for name in tools_for("username")],
+            tools=_tools("username", handle),
         )
     if detected == "person":
         name = " ".join(value.split())
@@ -230,6 +253,7 @@ def plan_investigation(value: str, kind: str | None = None) -> Plan:
             normalized=name,
             discovery_queries=queries,
             fields=DEFAULT_FIELDS["person"],
+            tools=_tools("person", name),
         )
     if detected == "organization":
         name = " ".join(value.split())
@@ -239,6 +263,7 @@ def plan_investigation(value: str, kind: str | None = None) -> Plan:
             normalized=name,
             discovery_queries=queries,
             fields=DEFAULT_FIELDS["organization"],
+            tools=_tools("organization", name),
         )
     if detected == "address":
         address = " ".join(value.split())

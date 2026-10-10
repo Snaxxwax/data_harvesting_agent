@@ -370,6 +370,11 @@ const SOURCE_LABELS = {
   ghunt: "Google account enrichment",
   maigret: "Profile & account discovery",
   spiderfoot: "Linked accounts & breach records",
+  apify_instagram: "Instagram profile",
+  apify_tiktok: "TikTok profile",
+  apify_linkedin: "LinkedIn profile",
+  apify_reddit: "Reddit profile",
+  apify_google: "Google search results",
 };
 
 function sourceLabel(name) {

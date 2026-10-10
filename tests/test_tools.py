@@ -324,9 +324,12 @@ def test_missing_binary_is_a_policy_denial(monkeypatch):
 def test_plan_suggests_maigret_for_a_username():
     plan = plan_investigation("@janedoe")
     # The static planner names every tool that accepts the kind; the API filters to ready ones.
-    assert plan.tools == [
-        {"name": "maigret", "target": "janedoe"},
-        {"name": "spiderfoot", "target": "janedoe"},
+    assert [t["name"] for t in plan.tools if t["name"] != "apify_google"] == [
+        "apify_instagram",
+        "apify_reddit",
+        "apify_tiktok",
+        "maigret",
+        "spiderfoot",
     ]
     # A tool is never suggested for an input it cannot consume: maigret takes a username,
     # so an email plan must not offer it (it may offer email-consuming tools instead).
