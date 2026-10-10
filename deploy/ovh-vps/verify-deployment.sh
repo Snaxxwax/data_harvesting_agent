@@ -353,10 +353,10 @@ import json,urllib.request
 d=json.load(urllib.request.urlopen('$SEARCH_URL/config', timeout=15))
 print(','.join(sorted(e['name'] for e in d['engines'] if e.get('enabled'))))
 " 2>/dev/null | tr -d '\r')
-    if [[ "$ENGINES" == "bing,brave,duckduckgo" ]]; then
-        ok "its enabled engines are exactly bing, brave, duckduckgo"
+    if [[ "$ENGINES" == "bing,duckduckgo" ]]; then
+        ok "its enabled engines are exactly bing, duckduckgo"
     else
-        bad "its enabled engines are '${ENGINES:-unreadable}', not bing,brave,duckduckgo -- check use_default_settings.engines.keep_only"
+        bad "its enabled engines are '${ENGINES:-unreadable}', not bing,duckduckgo -- check use_default_settings.engines.keep_only"
     fi
     # Its own engine queries must leave through the relay, or the searches are attributable
     # to this VPS while every other request in the deployment is not.

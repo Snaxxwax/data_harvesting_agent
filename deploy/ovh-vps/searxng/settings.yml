@@ -18,7 +18,6 @@ use_default_settings:
     keep_only:
       - duckduckgo
       - bing
-      - brave
 
 general:
   debug: false
@@ -73,8 +72,8 @@ engines:
     disabled: false
   - name: bing
     disabled: false
-  - name: brave
-    disabled: false
+  # Not brave: it answered "too many requests"/"Suspended" on every pass from the single
+  # upstream proxy IP and never yielded a lead, so it only added blocked traffic.
   # Not startpage/mojeek: the image ships both `inactive: true` (proof-of-work CAPTCHAs), so
   # `disabled: false` here never made them run. Re-adding one needs `inactive: false` AND a
   # search through the relay showing it answers.
