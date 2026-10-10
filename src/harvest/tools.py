@@ -1542,7 +1542,7 @@ def _apify_tiktok(items, target):
     """Rows are one per video with the profile repeated on each: one profile record, then videos."""
     out, seen = [], set()
     for r in items:
-        if not isinstance(r, dict):
+        if not isinstance(r, dict) or r.get("error"):
             continue
         meta = r.get("authorMeta") or {}
         if meta.get("id") and meta["id"] not in seen:
@@ -1609,6 +1609,22 @@ _APIFY: dict[str, tuple] = {
 }
 
 
+def _apify_check(items, records) -> None:
+    """Report the lookup to the execution recorder, so a clean "not found" is a finding
+    (absent) rather than a missing diagnostic that would mark the whole job partial."""
+    recorder = _RECORDER.get()
+    if not recorder:
+        return
+    errors = [r for r in items if isinstance(r, dict) and r.get("error")]
+    if records:
+        recorder.check("lookup", "found", f"{len(records)} record(s)")
+    elif not errors or all(r.get("errorCode") == "NOT_FOUND" for r in errors):
+        reason = str(errors[0]["error"]) if errors else "the Actor returned no rows"
+        recorder.check("lookup", "absent", reason[:200])
+    else:
+        recorder.check("lookup", "errored", str(errors[0]["error"])[:200])
+
+
 def _apify(tool: str):
     actor, build, cap, to_records = _APIFY[tool]
 
@@ -1648,7 +1664,9 @@ def _apify(tool: str):
         items = response.json()
         if not isinstance(items, list):
             raise ActionableError("apify dataset response was not a list")
-        return to_records(items, target)
+        records = to_records(items, target)
+        _apify_check(items, records)
+        return records
 
     return run
 
