@@ -255,6 +255,14 @@ for t in "${TOOLS[@]}"; do
                 bad "spiderfoot allowlisted but HARVEST_SPIDERFOOT_URL is empty"
             fi
             ;;
+        apify_*)
+            # An HTTPS call, not an argv: there is no binary, only a token to hold.
+            if [[ -n "$(dc exec -T worker printenv HARVEST_APIFY_TOKEN 2>/dev/null | tr -d '\r')" ]]; then
+                ok "$t allowlisted and HARVEST_APIFY_TOKEN is set"
+            else
+                bad "$t allowlisted but HARVEST_APIFY_TOKEN is empty"
+            fi
+            ;;
         *)
             if dc exec -T worker sh -c "command -v $t >/dev/null 2>&1"; then
                 ok "$t is allowlisted and present in the worker image"
