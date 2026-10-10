@@ -1,0 +1,7 @@
+#!/bin/sh
+# Open the local docker-compose Harvest UI already signed in: mints a 60-second login ticket
+# inside the api container, so nobody pastes a token. Browser: override with HARVEST_BROWSER.
+set -eu
+cd "$(dirname "$0")/.."
+url=$(docker compose exec -T api harvest login-link --base-url "${HARVEST_URL:-http://127.0.0.1:8000}")
+${HARVEST_BROWSER:-xdg-open} "$url" >/dev/null 2>&1 &
