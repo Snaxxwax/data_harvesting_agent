@@ -110,6 +110,19 @@ Before upgrading, stop old API/workers and back up the database. Startup upgrade
 1 or 2 to schema 3 through transactional migrations. Older binaries cannot open schema 3.
 See [OPERATIONS.md](OPERATIONS.md).
 
+## Search historical exposures
+
+Import normalized exposure metadata with `harvest import-exposures FILE.jsonl --dataset NAME`
+and query it with `harvest search-exposures QUERY.json`. The authenticated API exposes
+`POST /exposures/import` and `POST /exposures/search`; MCP offers
+`search_historical_exposures`. Exact identifier matches retain source references, historical
+revisions, dates, and observed versus reported field categories. Coverage is limited to
+imported records; no external breach database is included.
+The breach catalog and coverage registry distinguish metadata-only incidents, disconnected
+providers, and locally searchable records. Historical search includes per-incident match
+outcomes; `harvest breach-coverage QUERY.json` and MCP `get_breach_coverage` expose the matrix.
+See [the schema, synthetic examples, and limitations](docs/historical-exposures.md).
+
 ## Enumerate larger registers
 
 Built-in JSON and CSV jobs process the whole permitted response in batches of at most

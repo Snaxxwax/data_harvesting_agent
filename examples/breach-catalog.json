@@ -1,0 +1,122 @@
+{
+  "entries": [
+    {
+      "id": "adobe-2013",
+      "name": "Adobe",
+      "kind": "incident",
+      "breach_date": "2013-10-04",
+      "reported_fields": [
+        "Email addresses",
+        "Password hints",
+        "Passwords",
+        "Usernames"
+      ],
+      "counts": [
+        {
+          "value": 152445165,
+          "unit": "accounts",
+          "status": "reported",
+          "source_url": "https://haveibeenpwned.com/api/v3/breach/Adobe"
+        }
+      ],
+      "references": [
+        {
+          "url": "https://haveibeenpwned.com/api/v3/breach/Adobe",
+          "publisher": "Have I Been Pwned",
+          "role": "provider",
+          "checked_at": "2026-10-14T07:51:44.940405+00:00"
+        }
+      ],
+      "notes": "Provider metadata; individual exposure records have not been imported."
+    },
+    {
+      "id": "linkedin-2012",
+      "name": "LinkedIn (2012)",
+      "kind": "incident",
+      "breach_date": "2012-05-05",
+      "reported_fields": [
+        "Email addresses",
+        "Passwords"
+      ],
+      "counts": [
+        {
+          "value": 164611595,
+          "unit": "accounts",
+          "status": "reported",
+          "source_url": "https://haveibeenpwned.com/api/v3/breach/LinkedIn"
+        }
+      ],
+      "references": [
+        {
+          "url": "https://haveibeenpwned.com/api/v3/breach/LinkedIn",
+          "publisher": "Have I Been Pwned",
+          "role": "provider",
+          "checked_at": "2026-10-14T07:51:44.940405+00:00"
+        }
+      ],
+      "notes": "Provider metadata; individual exposure records have not been imported. This incident is separate from the 2021 LinkedIn scraping incident."
+    },
+    {
+      "id": "verifications-io-2019",
+      "name": "Verifications.io",
+      "kind": "exposure",
+      "breach_date": "2019-02-25",
+      "reported_fields": [
+        "Dates of birth",
+        "Email addresses",
+        "Employers",
+        "Genders",
+        "Geographic locations",
+        "IP addresses",
+        "Job titles",
+        "Names",
+        "Phone numbers",
+        "Physical addresses"
+      ],
+      "counts": [
+        {
+          "value": 763117241,
+          "unit": "accounts",
+          "status": "reported",
+          "source_url": "https://haveibeenpwned.com/api/v3/breach/VerificationsIO"
+        }
+      ],
+      "references": [
+        {
+          "url": "https://haveibeenpwned.com/api/v3/breach/VerificationsIO",
+          "publisher": "Have I Been Pwned",
+          "role": "provider",
+          "checked_at": "2026-10-14T07:51:44.940405+00:00"
+        }
+      ],
+      "notes": "Provider metadata; individual exposure records have not been imported."
+    },
+    {
+      "id": "collection-1",
+      "name": "Collection #1",
+      "kind": "compilation",
+      "breach_date": null,
+      "reported_fields": [
+        "Email addresses",
+        "Passwords"
+      ],
+      "counts": [
+        {
+          "value": 772904991,
+          "unit": "accounts",
+          "status": "reported",
+          "source_url": "https://haveibeenpwned.com/api/v3/breach/Collection1"
+        }
+      ],
+      "references": [
+        {
+          "url": "https://haveibeenpwned.com/api/v3/breach/Collection1",
+          "publisher": "Have I Been Pwned",
+          "role": "provider",
+          "checked_at": "2026-10-14T07:51:44.940405+00:00"
+        }
+      ],
+      "notes": "Provider metadata; individual exposure records have not been imported. HIBP marks this collection unverified. It has no single breach date."
+    }
+  ]
+}

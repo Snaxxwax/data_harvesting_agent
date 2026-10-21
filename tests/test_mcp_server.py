@@ -29,6 +29,8 @@ def test_registers_the_expected_tools():
         "get_evidence",
         "get_coverage",
         "get_artifact",
+        "search_historical_exposures",
+        "get_breach_coverage",
         "request_followup",
         "cancel_investigation",
     }
@@ -65,3 +67,42 @@ def test_result_surfaces_authorization_required_as_data():
 def test_result_reports_other_errors():
     out = mcp_server._result(_resp(422, {"detail": "bad spec"}))
     assert out["ok"] is False and out["error"] == "bad spec"
+
+
+def test_historical_exposure_tool_uses_authenticated_api_body(monkeypatch):
+    import json
+
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={"coverage": "local_imports_only", "items": []})
+
+    monkeypatch.setenv("HARVEST_API_TOKEN", "test-operator-token")
+    monkeypatch.setenv("HARVEST_API_URL", "https://harvest.example")
+    original_client = httpx.Client
+    monkeypatch.setattr(
+        mcp_server.httpx,
+        "Client",
+        lambda **kwargs: original_client(**kwargs, transport=httpx.MockTransport(respond)),
+    )
+    asyncio.run(
+        mcp_server.build_server().call_tool(
+            "search_historical_exposures",
+            {
+                "dataset": "demo",
+                "kind": "email",
+                "value": "alice@example.org",
+            },
+        )
+    )
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.method == "POST"
+    assert str(request.url) == "https://harvest.example/exposures/search"
+    assert request.headers["authorization"] == "Bearer test-operator-token"
+    assert json.loads(request.content)["identifier"] == {
+        "kind": "email",
+        "value": "alice@example.org",
+        "namespace": "",
+    }

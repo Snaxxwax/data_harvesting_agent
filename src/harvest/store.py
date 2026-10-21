@@ -138,6 +138,12 @@ class Store:
         from .executions import migrate
 
         migrate(self)
+        from .exposures import migrate as migrate_exposures
+
+        migrate_exposures(self)
+        from .breach_catalog import migrate as migrate_breach_catalog
+
+        migrate_breach_catalog(self)
 
     def _migrate(self):
         """Schema 1 -> 2, including existing evidence and in-flight reason tasks."""

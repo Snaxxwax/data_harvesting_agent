@@ -1,0 +1,5 @@
+{
+  "dataset": "exposure-demo",
+  "identifier": {"kind": "email", "value": "alice@example.org"},
+  "limit": 50
+}

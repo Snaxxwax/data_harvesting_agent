@@ -1,0 +1,77 @@
+{
+  "dataset": "exposure-demo",
+  "entries": [
+    {
+      "breach_id": "adobe-2013",
+      "source": "hibp",
+      "availability": "available",
+      "identifiers": [
+        {
+          "kind": "email"
+        }
+      ],
+      "evidence_detail": "membership",
+      "reference": {
+        "url": "https://haveibeenpwned.com/api/v3/breach/Adobe",
+        "publisher": "Have I Been Pwned",
+        "role": "provider",
+        "checked_at": "2026-10-14T07:51:44.940405+00:00"
+      },
+      "notes": "Listed in HIBP public metadata. Account lookup requires an eligible subscription; no connector or user lookup has been run. Breach-wide data categories do not establish individual field exposure."
+    },
+    {
+      "breach_id": "linkedin-2012",
+      "source": "hibp",
+      "availability": "available",
+      "identifiers": [
+        {
+          "kind": "email"
+        }
+      ],
+      "evidence_detail": "membership",
+      "reference": {
+        "url": "https://haveibeenpwned.com/api/v3/breach/LinkedIn",
+        "publisher": "Have I Been Pwned",
+        "role": "provider",
+        "checked_at": "2026-10-14T07:51:44.940405+00:00"
+      },
+      "notes": "Listed in HIBP public metadata. Account lookup requires an eligible subscription; no connector or user lookup has been run. Breach-wide data categories do not establish individual field exposure."
+    },
+    {
+      "breach_id": "verifications-io-2019",
+      "source": "hibp",
+      "availability": "available",
+      "identifiers": [
+        {
+          "kind": "email"
+        }
+      ],
+      "evidence_detail": "membership",
+      "reference": {
+        "url": "https://haveibeenpwned.com/api/v3/breach/VerificationsIO",
+        "publisher": "Have I Been Pwned",
+        "role": "provider",
+        "checked_at": "2026-10-14T07:51:44.940405+00:00"
+      },
+      "notes": "Listed in HIBP public metadata. Account lookup requires an eligible subscription; no connector or user lookup has been run. Breach-wide data categories do not establish individual field exposure."
+    },
+    {
+      "breach_id": "collection-1",
+      "source": "hibp",
+      "availability": "available",
+      "identifiers": [
+        {
+          "kind": "email"
+        }
+      ],
+      "evidence_detail": "membership",
+      "reference": {
+        "url": "https://haveibeenpwned.com/api/v3/breach/Collection1",
+        "publisher": "Have I Been Pwned",
+        "role": "provider",
+        "checked_at": "2026-10-14T07:51:44.940405+00:00"
+      },
+      "notes": "Listed in HIBP public metadata. Account lookup requires an eligible subscription; no connector or user lookup has been run. Breach-wide data categories do not establish individual field exposure."
+    }
+  ]
+}

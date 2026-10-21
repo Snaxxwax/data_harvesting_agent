@@ -86,6 +86,20 @@ def main():
     commands.add_parser("backup").add_argument("path")
     commands.add_parser("disable-schedule").add_argument("schedule_id")
     command = commands.add_parser(
+        "import-exposures", help="import normalized historical exposure metadata from JSONL"
+    )
+    command.add_argument("path")
+    command.add_argument("--dataset", required=True)
+    command = commands.add_parser(
+        "search-exposures", help="search imported historical exposures by exact identifier"
+    )
+    command.add_argument(
+        "query", help="path to JSON ExposureSearch (keeps identifiers out of argv)"
+    )
+    for name in ("import-breach-catalog", "import-breach-coverage", "breach-coverage"):
+        command = commands.add_parser(name, help="import or inspect historical breach coverage")
+        command.add_argument("path", help="path to JSON request; see docs/historical-exposures.md")
+    command = commands.add_parser(
         "login-link", help="print a 60-second browser sign-in link for the web UI"
     )
     command.add_argument("--base-url", default="http://127.0.0.1:8000")
@@ -114,6 +128,54 @@ def main():
         uvicorn.run(create_app(settings), host=args.host, port=args.port)
         return
     engine = Engine(settings)
+    if args.command in {"import-breach-catalog", "import-breach-coverage", "breach-coverage"}:
+        from .breach_catalog import (
+            BreachCatalogImport,
+            CoverageImport,
+            CoverageQuery,
+            coverage_matrix,
+            import_catalog,
+            import_coverage,
+        )
+
+        model, operation = {
+            "import-breach-catalog": (BreachCatalogImport, import_catalog),
+            "import-breach-coverage": (CoverageImport, import_coverage),
+            "breach-coverage": (CoverageQuery, coverage_matrix),
+        }[args.command]
+        try:
+            body = model.model_validate_json(Path(args.path).read_text())
+            result = operation(engine.store, body)
+        except (OSError, ValueError, KeyError):
+            print(
+                "error: invalid catalog/coverage request; check schema and breach IDs",
+                file=sys.stderr,
+            )
+            raise SystemExit(2) from None
+        print(json.dumps(result, indent=2))
+        return
+    if args.command in {"import-exposures", "search-exposures"}:
+        from .exposures import ExposureSearch, import_jsonl, search
+
+        try:
+            if args.command == "import-exposures":
+                result = import_jsonl(engine.store, args.path, args.dataset)
+            else:
+                query = ExposureSearch.model_validate_json(Path(args.query).read_text())
+                result = search(engine.store, query)
+        except (OSError, ValueError, KeyError) as exc:
+            # Pydantic errors include input values; don't copy them into CLI logs.
+            message = (
+                str(exc)
+                if str(exc).startswith("invalid exposure record at line ")
+                else (
+                    "could not read or validate exposure input; check the file and documented schema"
+                )
+            )
+            print(f"error: {message}", file=sys.stderr)
+            raise SystemExit(2) from None
+        print(json.dumps(result, indent=2))
+        return
     if args.command == "replay":
         investigation = (
             Investigation.model_validate_json(Path(args.investigation).read_text())

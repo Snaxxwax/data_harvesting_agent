@@ -20,9 +20,18 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 from . import capabilities, planning, sessions
+from .breach_catalog import (
+    BreachCatalogImport,
+    CoverageImport,
+    CoverageQuery,
+    coverage_matrix,
+    import_catalog,
+    import_coverage,
+)
 from .config import Settings
 from .engine import Engine
 from .export import render_csv
+from .exposures import ExposureImport, ExposureSearch, import_records, search
 from .models import BudgetExceeded, JobSpec, ReplaySpec
 from .tools import TOOLS
 
@@ -152,6 +161,37 @@ def create_app(settings: Settings | None = None):
 
     protected = APIRouter(dependencies=[Depends(authenticate)])
 
+    @protected.post("/exposures/import")
+    def import_exposures(body: ExposureImport, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return import_records(engine.store, body)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @protected.post("/breach-catalog/import")
+    def import_breach_catalog(body: BreachCatalogImport):
+        return import_catalog(engine.store, body)
+
+    @protected.post("/breach-coverage/import")
+    def import_breach_coverage(body: CoverageImport, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return import_coverage(engine.store, body)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @protected.post("/breach-coverage/search")
+    def search_breach_coverage(body: CoverageQuery, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        return coverage_matrix(engine.store, body)
+
+    @protected.post("/exposures/search")
+    def search_exposures(body: ExposureSearch, response: Response):
+        # Identifiers stay in the request body rather than URL/access-log query strings.
+        response.headers["Cache-Control"] = "no-store"
+        return search(engine.store, body)
+
     @protected.get("/meta")
     def meta():
         # One capability registry (capabilities.py) is the source of truth for what this
@@ -169,6 +209,16 @@ def create_app(settings: Settings | None = None):
             # these, so a plan can suggest a tool without the operator being able to
             # submit a job that submit() would reject.
             "tools_enabled": sorted(settings.tools & set(TOOLS)),
+            "historical_exposures": {
+                "search": "/exposures/search",
+                "import": "/exposures/import",
+                "coverage": "local_imports_only",
+                "identifier_kinds": ["email", "phone", "username"],
+                "external_provider_configured": False,
+                "catalog_import": "/breach-catalog/import",
+                "coverage_import": "/breach-coverage/import",
+                "coverage_search": "/breach-coverage/search",
+            },
         }
 
     @protected.post("/plan/investigation")
