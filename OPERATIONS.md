@@ -562,3 +562,12 @@ with an explicit extractor name/version. It operates on already acquired bytes a
 not perform its own IO. Validate with source fixtures, stable identities, exact evidence
 locators, limit handling and changed-content cases. The boundary is a trusted Python plugin
 contract, not a sandbox. Do not install source-supplied or model-generated code.
+
+## Tailnet browser login
+
+On the OVH deployment, SpiderFoot is reachable with automatic operator login from
+tailnet devices at `https://<TAILNET_HOST>:8443/`. The Harvest route was retired when
+Harvest was shut down on 2026-11-10. Port 3000 serves SpiderFoot. The original API
+ports continue to require credentials. Gateway configuration,
+trust boundaries, rotation, verification, and rollback are maintained in
+[the tailnet access runbook](deploy/ovh-vps/tailnet-access/README.md).

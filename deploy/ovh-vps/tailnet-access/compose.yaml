@@ -1,0 +1,23 @@
+name: harvest-tailnet-access
+services:
+  gateway:
+    image: ${GATEWAY_IMAGE:?Run render.py first}
+    container_name: harvest-tailnet-access
+    restart: unless-stopped
+    network_mode: host
+    entrypoint: [nginx]
+    command: [-g, "daemon off;"]
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:18084/]
+      interval: 30s
+      timeout: 5s
+      retries: 3
