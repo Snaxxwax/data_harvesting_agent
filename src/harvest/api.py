@@ -163,6 +163,15 @@ def create_app(settings: Settings | None = None):
             # these, so a plan can suggest a tool without the operator being able to
             # submit a job that submit() would reject.
             "tools_enabled": sorted(settings.tools & set(TOOLS)),
+            "investigation_presets": planning.investigation_presets(),
+            "default_investigation_preset": planning.DEFAULT_INVESTIGATION_PRESET,
+        }
+
+    @protected.get("/presets/investigation")
+    def investigation_presets_route():
+        return {
+            "default": planning.DEFAULT_INVESTIGATION_PRESET,
+            "presets": planning.investigation_presets(),
         }
 
     @protected.post("/plan/investigation")
@@ -193,9 +202,21 @@ def create_app(settings: Settings | None = None):
 
     @protected.get("/health")
     def health():
-        with engine.store.connection() as db:
-            db.execute("SELECT 1")
+        # Liveness only. Readiness has its own endpoint and may be degraded while this
+        # process is still healthy enough to answer requests.
         return {"status": "ok", "version": VERSION}
+
+    @protected.get("/ready")
+    def ready():
+        return engine.readiness(record_incidents=True)
+
+    @protected.get("/incidents")
+    def incidents(limit: int = Query(100, ge=1, le=1000)):
+        return engine.store.incidents(limit)
+
+    @protected.get("/backups/latest")
+    def latest_backup():
+        return engine.store.latest_backup() or {}
 
     @protected.post("/jobs", status_code=202)
     def submit(spec: JobSpec, idempotency_key: str | None = Header(default=None, max_length=200)):
@@ -303,6 +324,37 @@ def create_app(settings: Settings | None = None):
     @protected.get("/jobs/{job_id}/summary")
     def summary(job_id: str):
         return engine.store.job_summary(job_id)
+
+    @protected.get("/jobs/{job_id}/executions")
+    def executions(job_id: str):
+        return engine.store.tool_executions(job_id)
+
+    @protected.get("/jobs/{job_id}/coverage")
+    def coverage(job_id: str):
+        summary = engine.store.job_summary(job_id)
+        return {
+            "job_id": job_id,
+            "status": summary["status"],
+            "search": summary["search"],
+            "tools": summary["tool_coverage"],
+            "unknowns": summary["unknowns"],
+        }
+
+    @protected.get("/executions/{execution_id}/artifacts/{kind}")
+    def execution_artifact(execution_id: int, kind: str):
+        if kind not in {"native-structured"}:
+            raise HTTPException(status_code=404, detail="not found")
+        artifact = engine.store.tool_artifact(execution_id, kind)
+        return Response(
+            artifact["body"],
+            media_type=artifact["content_type"],
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="execution-{execution_id}-{kind}.json"'
+                ),
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @protected.get("/jobs/{job_id}/records")
     def records(job_id: str):

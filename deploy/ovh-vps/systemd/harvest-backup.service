@@ -1,0 +1,9 @@
+[Unit]
+Description=Harvest encrypted production backup
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/opt/harvest/backup.env
+ExecStart=/bin/bash /opt/harvest/app/deploy/ovh-vps/backup-production.sh

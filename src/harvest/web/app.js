@@ -6,6 +6,7 @@ const JOB_POLL_MS = 2000;
 // Populated from /meta on every route change; consulted by the Investigation tab to
 // avoid offering actions (seedless discovery, model reasoning) the deployment can't run.
 let capabilities = { search_configured: true, model_configured: true };
+let defaultInvestigationPreset = "standard";
 
 // FastAPI's automatic validation errors return `detail` as an array of
 // {loc, msg, type} objects rather than a string. Left unhandled, `new Error(detail)`
@@ -176,6 +177,8 @@ async function checkAuthAndConfig() {
     // because its container egress was undeclared), and that reads exactly like "found
     // nothing" unless the header says so; details live on #/status.
     lastMeta = meta;
+    PRESETS = presetsFromMeta(meta);
+    defaultInvestigationPreset = meta.default_investigation_preset || defaultInvestigationPreset;
     renderSystemIndicator(meta);
     applyModelCapability();
     return true;
@@ -406,33 +409,33 @@ function fieldLabel(field) {
 // whatever the deployment allowlisted. Tool runs never exceed the default limits.tool_runs (3),
 // except Deep's pivots: up to 3 discovered identifiers (an address's handle, an email or name a
 // profile states) each get their own enrichment job, so Deep raises tool_runs to cover them.
-const PRESETS = {
-  quick: {
-    label: "Quick",
-    requests: 30,
-    seconds: 300,
-    crawl: false,
-    tools: ["ghunt", "maigret"],
-    topSites: 100,
-  },
-  standard: {
-    label: "Standard",
-    requests: 100,
-    seconds: 900,
-    crawl: true,
-    tools: ["ghunt", "maigret", "spiderfoot"],
-    topSites: 500,
-  },
-  deep: {
-    label: "Deep",
-    requests: 300,
-    seconds: 2700,
-    crawl: true,
-    tools: ["ghunt", "maigret", "spiderfoot"],
-    topSites: null,
-    pivots: 3,
-  },
+const FALLBACK_PRESETS = {
+  quick: { label: "Quick", requests: 30, seconds: 300, crawl: false, tools: ["ghunt", "maigret"], topSites: 100, pivots: 0, toolRuns: 2, followupTopSites: 100 },
+  standard: { label: "Standard", requests: 100, seconds: 900, crawl: true, tools: ["ghunt", "maigret", "spiderfoot"], topSites: 500, pivots: 0, toolRuns: 3, followupTopSites: 500 },
+  deep: { label: "Thorough", requests: 300, seconds: 3600, crawl: true, tools: ["ghunt", "maigret", "spiderfoot"], topSites: null, pivots: 3, toolRuns: 8, followupTopSites: null },
 };
+let PRESETS = { ...FALLBACK_PRESETS };
+
+function presetsFromMeta(meta) {
+  const source = meta && meta.investigation_presets;
+  if (!source || typeof source !== "object") return { ...FALLBACK_PRESETS };
+  const mapped = {};
+  for (const [key, p] of Object.entries(source)) {
+    if (!p || typeof p !== "object") continue;
+    mapped[key] = {
+      label: p.label || key,
+      requests: Number(p.requests),
+      seconds: Number(p.seconds),
+      crawl: !!p.crawl,
+      tools: Array.isArray(p.tools) ? p.tools : [],
+      topSites: p.top_sites == null ? null : Number(p.top_sites),
+      pivots: Number(p.pivots || 0),
+      toolRuns: Number(p.tool_runs || 0),
+      followupTopSites: p.followup_top_sites == null ? null : Number(p.followup_top_sites),
+    };
+  }
+  return Object.keys(mapped).length ? mapped : { ...FALLBACK_PRESETS };
+}
 
 // The preset's settings for the tools this plan actually offers.
 function presetSettings(presetKey, offeredToolNames) {
@@ -443,6 +446,8 @@ function presetSettings(presetKey, offeredToolNames) {
     crawl: preset.crawl,
     topSites: preset.topSites,
     pivots: preset.pivots || 0,
+    toolRuns: preset.toolRuns || 0,
+    followupTopSites: preset.followupTopSites,
     tools: (offeredToolNames || []).filter((name) => preset.tools.includes(name)),
   };
 }
@@ -502,6 +507,7 @@ function buildInvestigationSpec(opts) {
     objective: `Investigate ${opts.plan.normalized}`.slice(0, 4000),
     dataset: opts.dataset || autoDatasetName(opts.plan.normalized),
     mode: "targeted",
+    preset: opts.presetKey || null,
     seeds: opts.seeds,
     discovery_queries: opts.plan.discovery_queries,
     fields: opts.fields,
@@ -510,8 +516,9 @@ function buildInvestigationSpec(opts) {
     limits: {
       requests: opts.requests,
       seconds: opts.seconds,
-      // An email pivot runs up to two tools (GHunt and SpiderFoot), so budget for that.
-      ...(opts.pivots ? { pivots: opts.pivots, tool_runs: Math.min(50, tools.length + 2 * opts.pivots) } : {}),
+      pivots: opts.pivots || 0,
+      tool_runs: opts.toolRuns || Math.max(tools.length, 1),
+      followup_top_sites: opts.followupTopSites == null ? null : opts.followupTopSites,
     },
   };
 }
@@ -552,7 +559,7 @@ function initInvestigationForm() {
   const SEEDLESS_HINT =
     "Search is not configured on this deployment, so this investigation needs a starting web page or a source under Advanced options.";
 
-  const preset = () => (form.querySelector('input[name="inv-preset"]:checked') || {}).value || "standard";
+  const preset = () => (form.querySelector('input[name="inv-preset"]:checked') || {}).value || defaultInvestigationPreset;
   const offeredTools = () => (plan ? (plan.tools || []).filter((t) => toolsEnabled.includes(t.name)) : []);
   const selectedTools = () =>
     Array.from(sourcesNode.querySelectorAll("input.tool-box"))
@@ -808,7 +815,10 @@ function initInvestigationForm() {
       useModel: document.getElementById("inv-model").checked,
       requests,
       seconds: minutes() * 60,
+      presetKey: preset(),
       pivots: PRESETS[preset()].pivots || 0,
+      toolRuns: PRESETS[preset()].toolRuns || Math.max(tools.length, 1),
+      followupTopSites: PRESETS[preset()].followupTopSites,
     });
     submitButton.disabled = true;
     try {

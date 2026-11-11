@@ -52,11 +52,27 @@ class Settings:
     worker_threads: int = field(
         default_factory=lambda: max(1, int(os.getenv("HARVEST_WORKER_THREADS", "1")))
     )
-    # 600, as deployed: Maigret --all-sites through the egress relay measured 293 s, and a
-    # SpiderFoot email sweep ~254 s, so 300 left either one a few seconds from a timeout.
-    # A job's remaining wall clock still bounds every run (Engine.process).
+    # Admission limits are shared through SQLite, not per worker process/thread.
+    max_active_investigations: int = field(
+        default_factory=lambda: max(1, int(os.getenv("HARVEST_MAX_ACTIVE_INVESTIGATIONS", "2")))
+    )
+    max_tool_tasks: int = field(
+        default_factory=lambda: max(1, int(os.getenv("HARVEST_MAX_TOOL_TASKS", "2")))
+    )
+    # Global ceiling plus per-tool ceilings. The investigation's remaining wall clock is
+    # still the final bound in Engine.process. The global default is high enough for Thorough;
+    # deployments may lower it deliberately without changing the individual defaults.
     tool_timeout: float = field(
-        default_factory=lambda: float(os.getenv("HARVEST_TOOL_TIMEOUT", "600"))
+        default_factory=lambda: float(os.getenv("HARVEST_TOOL_TIMEOUT", "1800"))
+    )
+    ghunt_timeout: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_GHUNT_TIMEOUT", "120"))
+    )
+    spiderfoot_timeout: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_SPIDERFOOT_TIMEOUT", "900"))
+    )
+    maigret_timeout: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_MAIGRET_TIMEOUT", "1800"))
     )
     # Outbound connections this deployment may hold open at once, across every tool and
     # every worker thread. The egress relay enforces it for everything that leaves
@@ -145,6 +161,18 @@ class Settings:
     )
     model_output_tokens: int = 2000
     request_timeout: float = 20
+    worker_heartbeat_stale_seconds: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_WORKER_HEARTBEAT_STALE", "90"))
+    )
+    backup_stale_seconds: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_BACKUP_STALE_SECONDS", "86400"))
+    )
+    disk_warn_percent: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_DISK_WARN_PERCENT", "20"))
+    )
+    disk_stop_percent: float = field(
+        default_factory=lambda: float(os.getenv("HARVEST_DISK_STOP_PERCENT", "10"))
+    )
 
     def __post_init__(self) -> None:
         if self.egress_mode not in {"direct", "proxy"}:
@@ -154,10 +182,22 @@ class Settings:
         # 500 is Webshare's standard per-account cap; above it the relay cannot protect it.
         if not 1 <= self.egress_max_connections <= 500:
             raise ValueError("HARVEST_EGRESS_MAX_CONNECTIONS must be between 1 and 500")
+        if not 0 <= self.disk_stop_percent < self.disk_warn_percent <= 100:
+            raise ValueError(
+                "HARVEST_DISK_STOP_PERCENT must be below HARVEST_DISK_WARN_PERCENT (0..100)"
+            )
         if self.proxy_only:
             host, _, port = self.egress_probe.rpartition(":")
             if not host or not port.isdigit() or not 0 < int(port) < 65536:
                 raise ValueError("HARVEST_EGRESS_PROBE must be host:port")
+
+    def tool_timeout_for(self, name: str) -> float:
+        specific = {
+            "ghunt": self.ghunt_timeout,
+            "spiderfoot": self.spiderfoot_timeout,
+            "maigret": self.maigret_timeout,
+        }.get(name, self.tool_timeout)
+        return min(self.tool_timeout, specific)
 
     @property
     def proxy_only(self) -> bool:

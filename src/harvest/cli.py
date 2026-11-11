@@ -83,6 +83,19 @@ def main():
     command.add_argument("--format", choices=["json", "markdown"], default="json")
     command.add_argument("--output")
     commands.add_parser("backup").add_argument("path")
+    command = commands.add_parser("record-backup")
+    command.add_argument("--kind", default="production")
+    command.add_argument("--manifest-hash")
+    command.add_argument("--verified", action="store_true")
+    command = commands.add_parser("mark-backup-offhost")
+    command.add_argument("backup_id", type=int)
+    commands.add_parser("readiness")
+    command = commands.add_parser("search-canary")
+    command.add_argument(
+        "--query",
+        default='site:iana.org "IANA-managed Reserved Domains"',
+        help="known-answer query used only for provider readiness",
+    )
     commands.add_parser("disable-schedule").add_argument("schedule_id")
     command = commands.add_parser(
         "login-link", help="print a 60-second browser sign-in link for the web UI"
@@ -201,6 +214,60 @@ def main():
             print(text)
     elif args.command == "backup":
         engine.store.backup(args.path)
+    elif args.command == "record-backup":
+        backup_id = engine.store.record_backup(
+            kind=args.kind,
+            manifest_hash=args.manifest_hash,
+            verified=args.verified,
+        )
+        print(backup_id)
+    elif args.command == "mark-backup-offhost":
+        engine.store.mark_backup_offhost(args.backup_id)
+    elif args.command == "readiness":
+        result = engine.readiness(record_incidents=True)
+        print(json.dumps(result, indent=2))
+        raise SystemExit(0 if result["ready"] else 2)
+    elif args.command == "search-canary":
+        if not settings.search_url:
+            engine.store.set_incident(
+                "search-canary",
+                active=True,
+                details={"reason": "HARVEST_SEARCH_URL is not configured"},
+            )
+            print(json.dumps({"ok": False, "reason": "search not configured"}))
+            raise SystemExit(2)
+        import httpx
+
+        try:
+            response = httpx.get(
+                settings.search_url.rstrip("/") + "/search",
+                params={"q": args.query, "format": "json"},
+                timeout=min(settings.request_timeout, 20),
+                trust_env=False,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            results = payload.get("results") if isinstance(payload, dict) else None
+            failures = payload.get("unresponsive_engines") if isinstance(payload, dict) else None
+            known = any(
+                "iana.org" in str(item.get("url", "")).casefold()
+                for item in (results or [])
+                if isinstance(item, dict)
+            )
+            details = {
+                "query": args.query,
+                "results": len(results or []),
+                "known_answer": known,
+                "unresponsive_engines": failures or [],
+            }
+            engine.store.set_incident("search-canary", active=not known, details=details)
+            print(json.dumps({"ok": known, **details}))
+            raise SystemExit(0 if known else 2)
+        except (httpx.HTTPError, ValueError) as exc:
+            details = {"reason": type(exc).__name__}
+            engine.store.set_incident("search-canary", active=True, details=details)
+            print(json.dumps({"ok": False, **details}))
+            raise SystemExit(2) from exc
     elif args.command == "disable-schedule":
         engine.store.disable_schedule(args.schedule_id)
 
