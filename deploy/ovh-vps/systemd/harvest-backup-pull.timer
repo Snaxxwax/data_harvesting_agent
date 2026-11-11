@@ -1,8 +1,9 @@
 [Unit]
 Description=Hourly Harvest off-host verification
 [Timer]
-OnBootSec=5m
-OnUnitActiveSec=1h
+# OnCalendar, not OnBootSec+OnUnitActiveSec: as a user timer, OnBootSec had already
+# passed when the user manager started, so the timer never fired after a reboot.
+OnCalendar=hourly
 Persistent=true
 [Install]
 WantedBy=timers.target

@@ -68,12 +68,18 @@ def verify(archive, keyring):
                 or hashlib.sha256(path.read_bytes()).hexdigest() != expected
             ):
                 raise ValueError("backup content hash mismatch")
-        with sqlite3.connect(root / "harvest.sqlite") as db:
-            if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-                raise ValueError("SQLite integrity check failed")
-            for hashed, body in db.execute("SELECT hash,body FROM blobs"):
-                if hashlib.sha256(body).hexdigest() != hashed:
-                    raise ValueError("evidence hash mismatch")
+        # harvest.sqlite is absent while Harvest is stopped; SpiderFoot's dump never is.
+        if (root / "harvest.sqlite").exists():
+            with sqlite3.connect(root / "harvest.sqlite") as db:
+                if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise ValueError("SQLite integrity check failed")
+                for hashed, body in db.execute("SELECT hash,body FROM blobs"):
+                    if hashlib.sha256(body).hexdigest() != hashed:
+                        raise ValueError("evidence hash mismatch")
+        # ponytail: header check only (no pg_restore here); a restore test would catch more.
+        dump = root / "spiderfoot.dump"
+        if not dump.exists() or dump.stat().st_size < 1024 or dump.read_bytes()[:5] != b"PGDMP":
+            raise ValueError("SpiderFoot database dump missing or not a pg_dump archive")
         return manifest
 
 
@@ -125,7 +131,8 @@ def main():
         ],
         input=json.dumps(acknowledgment),
         text=True,
-        check=True,
+        # Harvest's freshness badge; not a failure while Harvest is stopped.
+        check=False,
     )
     keep = retained(paths)
     for path in paths:

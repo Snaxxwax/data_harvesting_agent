@@ -16,6 +16,15 @@ def run(*args, **kwargs):
     return subprocess.run(args, check=True, **kwargs)
 
 
+def running(container):
+    probe = subprocess.run(
+        ["docker", "inspect", "--format", "{{.State.Running}}", container],
+        capture_output=True,
+        text=True,
+    )
+    return probe.stdout.strip() == "true"
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path("/opt/harvest"))
@@ -26,16 +35,21 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="harvest-backup-") as temporary:
         work = Path(temporary)
-        # SQLite's online backup API handles active readers/writers and rollback journals.
-        code = "import sqlite3; s=sqlite3.connect('/data/harvest.sqlite'); d=sqlite3.connect('/data/backup.sqlite'); s.backup(d); assert d.execute('pragma integrity_check').fetchone()[0]=='ok'; d.close(); s.close()"
-        run("docker", "exec", "harvest-platform-worker-1", "python", "-c", code)
-        run(
-            "docker",
-            "cp",
-            "harvest-platform-worker-1:/data/backup.sqlite",
-            str(work / "harvest.sqlite"),
-        )
-        run("docker", "exec", "harvest-platform-worker-1", "rm", "/data/backup.sqlite")
+        # Harvest is stopped since SpiderFoot took over its tools (2026-11-10); its last
+        # database is still in the volume. Back it up only while it runs, so a stopped
+        # Harvest no longer fails the whole job and takes the SpiderFoot dump with it.
+        harvest = running("harvest-platform-worker-1")
+        if harvest:
+            # SQLite's online backup API handles active readers/writers and rollback journals.
+            code = "import sqlite3; s=sqlite3.connect('/data/harvest.sqlite'); d=sqlite3.connect('/data/backup.sqlite'); s.backup(d); assert d.execute('pragma integrity_check').fetchone()[0]=='ok'; d.close(); s.close()"
+            run("docker", "exec", "harvest-platform-worker-1", "python", "-c", code)
+            run(
+                "docker",
+                "cp",
+                "harvest-platform-worker-1:/data/backup.sqlite",
+                str(work / "harvest.sqlite"),
+            )
+            run("docker", "exec", "harvest-platform-worker-1", "rm", "/data/backup.sqlite")
         with (work / "spiderfoot.dump").open("wb") as output:
             run(
                 "docker",
@@ -49,17 +63,20 @@ def main():
                 "-Fc",
                 stdout=output,
             )
+        # Same GHunt volume either way; SpiderFoot's worker mounts it read-only at /run/ghunt.
         run(
             "docker",
             "cp",
-            "harvest-platform-worker-1:/home/harvest/.malfrats",
+            "harvest-platform-worker-1:/home/harvest/.malfrats"
+            if harvest
+            else "sf-celery-worker:/run/ghunt",
             str(work / "ghunt-credentials"),
         )
         # Include tool journals so the most recent completed checks survive an interrupted run.
         probe = subprocess.run(
             ["docker", "exec", "harvest-platform-worker-1", "test", "-d", "/data/checkpoints"]
-        )
-        if probe.returncode == 0:
+        ) if harvest else None
+        if probe and probe.returncode == 0:
             run(
                 "docker",
                 "cp",
@@ -84,6 +101,8 @@ def main():
                 "spiderfoot-ng/compose.core.yml",
                 "searxng/settings.yml",
                 "sf-dns/Corefile",
+                "tailnet-access/compose.yaml",
+                "tailnet-access/nginx.conf.template",
                 "egress-relay/tinyproxy.conf",
                 "egress-relay/upstream.secret",
                 "egress-relay/tinyproxy.conf.template",
@@ -105,10 +124,13 @@ def main():
             "sf-celery-worker",
             "sf-postgres",
         ):
-            result = subprocess.check_output(
-                ["docker", "inspect", "--format", "{{.Image}}", container], text=True
-            ).strip()
-            manifest["images"][container] = result
+            result = subprocess.run(
+                ["docker", "inspect", "--format", "{{.Image}}", container],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                manifest["images"][container] = result.stdout.strip()
         (work / "manifest.json").write_text(json.dumps(manifest, indent=2))
         archive = work / "backup.tar"
         with tarfile.open(archive, "w") as bundle:
