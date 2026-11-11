@@ -140,7 +140,7 @@ replay are **unverified handle matches** and the dossier says so — each is lab
 
 ## Access
 
-Everything is Tailscale-only, on `<vps-tailscale-ip>` / `ovh-vps.<tailnet>.ts.net`.
+Everything is Tailscale-only, on `<vps-tailscale-ip>` / `<vps>.<tailnet>.ts.net`.
 
 | Service | URL | Auth |
 |---|---|---|
@@ -341,7 +341,7 @@ each row cross-checked against SpiderFoot's own `tbl_scan_config._modulesenabled
 
 | Input (target type) | Harvest job | SF scan | Modules sent | Records (module) |
 |---|---|---|---|---|
-| `<operator email>` (EMAILADDR) | `3a7b41fb` | `8C39B07C` | accounts, debounce, gravatar, hudsonrock, names, pgp, tiktok_osint, wikileaks | accounts 4, tiktok_osint 2 |
+| `<operator test address>` (EMAILADDR) | `3a7b41fb` | `8C39B07C` | accounts, debounce, gravatar, hudsonrock, names, pgp, tiktok_osint, wikileaks | accounts 4, tiktok_osint 2 |
 | `Snaxxwax` (USERNAME) | `16ea0166` | `79DC9EBB` | accounts, hudsonrock, tiktok_osint | accounts 5, tiktok_osint 2 |
 | `example.org` (INTERNET_NAME) | `06630f5d` | `01B622FF` | dnsresolve, pgp | pgp 74, dnsresolve 4 |
 

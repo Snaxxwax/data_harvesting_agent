@@ -1,6 +1,6 @@
 # ovh-vps deployment overrides. NOT part of the upstream repo.
 #
-# Every published port is bound to the Tailscale address (<vps-tailscale-ip>) rather
+# Every published port is bound to the Tailscale address (HARVEST_BIND_IP in .env) rather
 # than 0.0.0.0. Docker publishes ports by writing its own iptables rules in
 # DOCKER-USER, which bypass ufw entirely, so an interface-bound publish -- not a
 # ufw rule -- is what actually keeps these services off the public internet.
@@ -48,7 +48,7 @@ services:
     # call it (Cloudflare bypass is off, and maigret would look for it inside the
     # worker container regardless), and SpiderFoot does not integrate with it. It
     # stays reachable on the compose network as http://flaresolverr:8191 if a client
-    # ever needs it; publish it to <vps-tailscale-ip> again only then.
+    # ever needs it; publish it to HARVEST_BIND_IP again only then.
     expose:
       - "8191"
     security_opt: [no-new-privileges:true]

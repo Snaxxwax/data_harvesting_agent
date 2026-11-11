@@ -112,13 +112,14 @@ for name in sorted(services):
     for port in services[name].get("ports", []):
         print(name, port.get("published", ""), port.get("host_ip", ""))
 ' 2>/dev/null)
+TS_IP=$(tailscale ip -4)
 if [[ -z "$PORTS" ]]; then
     ok "no published ports at all"
 else
     while read -r svc published host_ip; do
         [[ -z "$svc" ]] && continue
         case "$host_ip" in
-            "$(tailscale ip -4)") ok "$svc publishes $published on the Tailscale address only" ;;
+            "$TS_IP") ok "$svc publishes $published on the Tailscale address only" ;;
             127.0.0.1)      ok "$svc publishes $published on loopback only" ;;
             *)              bad "$svc publishes $published on '${host_ip:-0.0.0.0}' -- publicly reachable" ;;
         esac

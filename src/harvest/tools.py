@@ -713,7 +713,7 @@ _SPIDERFOOT_MAX_EVENTS = 5000
 _SF_CANDIDATE_PREFIXES = ("AFFILIATE_", "SIMILAR_", "CO_HOSTED_", "DARKNET_", "LEAKSITE_")
 
 # Modules whose output is derived rather than observed. sfp_names infers human names from the
-# local part of an address ("<operator username>" -> plausible first/last names); that is a guess
+# local part of an address ("jsmith42" -> plausible first/last names); that is a guess
 # about a person, and it is exactly the kind of guess that must never read as confirmed.
 _SF_CANDIDATE_MODULES = frozenset({"sfp_names"})
 

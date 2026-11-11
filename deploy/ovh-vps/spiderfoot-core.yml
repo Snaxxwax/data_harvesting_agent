@@ -6,7 +6,7 @@ include:
   - docker/compose/core.yml
 
 services:
-  # Published on the Tailscale address only. Docker's DOCKER-USER iptables rules
+  # Published on SF_BIND_IP (the Tailscale address, set in .env) only. Docker's DOCKER-USER iptables rules
   # bypass ufw, so the interface-bound publish is the real access control.
   frontend:
     image: ${SF_FRONTEND_IMAGE:?Set SF_FRONTEND_IMAGE to the existing tested image identity}
