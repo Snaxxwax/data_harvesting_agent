@@ -1,0 +1,12 @@
+{
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": false,
+    "ponytail@ponytail": false,
+    "postman@claude-plugins-official": false,
+    "serena@claude-plugins-official": false,
+    "hookify@claude-plugins-official": false,
+    "context7@claude-plugins-official": false,
+    "frontend-design@claude-plugins-official": false,
+    "modern-web-guidance@synced": false
+  }
+}

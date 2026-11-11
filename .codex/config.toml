@@ -1,0 +1,7 @@
+# Enable the existing private Harvest connection only in its owning project.
+# Command, deployment URL, and credentials remain in ~/.codex/config.toml.
+[mcp_servers.harvest]
+enabled = true
+
+[plugins."remotion@openai-curated"]
+enabled = false
