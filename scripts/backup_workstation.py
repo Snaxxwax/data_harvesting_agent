@@ -140,6 +140,11 @@ def main():
             path.unlink()
     (args.directory / "latest-verified.json").write_text(json.dumps(acknowledgment, indent=2))
     print(json.dumps(acknowledgment))
+    # The server writes one backup a day. Fail (and so alert via OnFailure) when the
+    # newest is old: a broken server job otherwise looks like a quiet success here.
+    age_hours = (time.time() - manifest["created"]) / 3600
+    if age_hours > 36:
+        raise RuntimeError(f"newest backup {latest.name} is {age_hours:.0f}h old")
 
 
 if __name__ == "__main__":

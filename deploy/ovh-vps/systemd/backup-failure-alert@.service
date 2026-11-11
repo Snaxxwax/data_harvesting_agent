@@ -1,0 +1,11 @@
+[Unit]
+Description=Send %i failure to the homelab alert bridge (ntfy)
+
+[Service]
+Type=oneshot
+# HARVEST_ALERT_WEBHOOK=http://<bridge-host>:8000/webhook
+EnvironmentFile=%h/.config/harvest-backup/alert.env
+# Alertmanager-shaped payload, so it gets the bridge's formatting and duplicate suppression.
+ExecStart=/usr/bin/curl -fsS -m 20 -H "Content-Type: application/json" \
+  -d '{"status":"firing","alerts":[{"status":"firing","labels":{"alertname":"BackupJobFailed","severity":"critical","instance":"%i"},"annotations":{"summary":"%i failed","description":"journalctl --user -u %i on pop-os"}}]}' \
+  ${HARVEST_ALERT_WEBHOOK}
